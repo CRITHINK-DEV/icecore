@@ -1,0 +1,56 @@
+version: 2
+
+macros:
+  - name: score
+    description: >
+      Anomaly engine dispatcher (spec section 6). Scores the current value of one metric series and
+      returns a dict with the same fields whatever engine scored: `engine` (native or cortex),
+      `expected`, `lower`, `upper` (acceptance band), `score` (signed distance outside the band,
+      0 inside), `is_anomaly` (boolean, after the min_consecutive rule) and `fallback_reason`
+      (null, or why the requested engine did not score: `cortex_unavailable`, `history_too_short`).
+      Selection: `native` never calls Cortex; `cortex` falls back to native when Cortex is unavailable
+      or the series covers fewer than 14 days; `auto` uses Cortex only if it is detected and the series
+      covers at least 14 days, else native. The Cortex engine is not shipped yet, so every request
+      scores with native and records `cortex_unavailable`. Computes and returns values only; emitting
+      them is `emit_metric`'s job.
+    arguments:
+      - name: series_sql
+        type: string
+        description: A SELECT returning the history as columns `observed_at` (timestamp) and `value` (number).
+      - name: current_value
+        type: number
+        description: The value observed in this run. Null scores 0 and is never an anomaly.
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`. Default: `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`. Default: `var('icecore').anomaly_sensitivity`, else `medium`."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed before is_anomaly is true. Default: `var('icecore').anomaly_min_consecutive`, else 1."
+      - name: observed_at
+        type: string
+        description: "Timestamp of the current observation (`YYYY-MM-DD HH:MI:SS`), used by seasonal baselines. Default: now."
+
+  - name: native__score
+    description: >
+      Native engine: pure SQL, always available. Median and MAD of the series; the band is
+      median ± k × MAD with k = 4 (low), 3 (medium) or 2 (high). Called by `score`; returns the
+      contract fields plus `history_points`.
+    arguments:
+      - name: series_sql
+        type: string
+        description: As for `score`.
+      - name: current_value
+        type: number
+        description: As for `score`.
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high` (already resolved by `score`)."
+      - name: min_consecutive
+        type: integer
+        description: As for `score` (already resolved).
+      - name: observed_at
+        type: string
+        description: As for `score`.

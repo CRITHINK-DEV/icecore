@@ -1,0 +1,141 @@
+{#- Zero-scan freshness and row-count readers (UC2).
+    They return values only; emitting METRIC / LOG records is the monitors' job.
+    Every read runs inside a Snowflake Scripting block that catches errors, so a missing table or a
+    missing privilege returns none and logs a warning instead of failing the user's run.
+    Spike S5 (spikes/S5.md) found ROW_COUNT and SYSTEM$LAST_CHANGE_COMMIT_TIME correct within seconds for
+    standard, transient and dynamic tables; Iceberg is unmeasured and falls back to CHANGES by default. -#}
+
+
+{#- Public ----------------------------------------------------------------------------------------- -#}
+
+{% macro get_last_change_time(relation) %}
+  {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- set sql -%}
+    select case when t.token > 0
+                then to_varchar(to_timestamp_ntz(t.token, 9), 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"') end
+    from (select system$last_change_commit_time({{ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation)) }})::number(38, 0) as token) t
+  {%- endset -%}
+  {{ return(icecore._icecore_safe_scalar(sql, 'get_last_change_time', relation)) }}
+{% endmacro %}
+
+
+{% macro get_row_count_source(relation) %}
+  {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- set info = icecore._icecore_table_info(relation) -%}
+  {%- if info is none -%}{{ return(none) }}{%- endif -%}
+  {%- if info['kind'] in icecore._icecore_metadata_fallback_kinds() or info.get('row_count') is none -%}
+    {{ return('changes') }}
+  {%- endif -%}
+  {{ return('metadata') }}
+{% endmacro %}
+
+
+{% macro get_row_count_metadata(relation, since=none) %}
+  {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- set source = icecore.get_row_count_source(relation) -%}
+  {%- if source == 'metadata' -%}
+    {{ return(icecore._icecore_table_info(relation)['row_count'] | int) }}
+  {%- elif source == 'changes' and since is none -%}
+    {% do log('icecore: ' ~ icecore._icecore_quoted_name(relation) ~ ' needs the CHANGES fallback for its row count; pass since to read it', info=True) %}
+    {{ return(none) }}
+  {%- elif source == 'changes' -%}
+    {{ return(icecore._icecore_row_delta_from_changes(relation, since)) }}
+  {%- endif -%}
+  {{ return(none) }}
+{% endmacro %}
+
+
+{#- Private --------------------------------------------------------------------------------------- -#}
+
+{#- Kinds whose metadata row count is not trusted (S5); overridable with vars: icecore: metadata_fallback_kinds. -#}
+{% macro _icecore_metadata_fallback_kinds() %}
+  {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg'])) }}
+{% endmacro %}
+
+
+{#- Name parts as Snowflake resolves them: quoted parts keep their case, unquoted ones are upper-cased. -#}
+{% macro _icecore_name_parts(relation) %}
+  {%- set parts = [] -%}
+  {%- for key, value in [('database', relation.database), ('schema', relation.schema), ('identifier', relation.identifier)] -%}
+    {%- do parts.append(value if relation.quote_policy.get_part(key) else value | upper) -%}
+  {%- endfor -%}
+  {{ return(parts) }}
+{% endmacro %}
+
+
+{#- Fully quoted three-part name with embedded double quotes doubled (adapter.quote does not double them, S5 finding 4). -#}
+{% macro _icecore_quoted_name(relation) %}
+  {%- set quoted = [] -%}
+  {%- for part in icecore._icecore_name_parts(relation) -%}
+    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
+  {%- endfor -%}
+  {{ return(quoted | join('.')) }}
+{% endmacro %}
+
+
+{#- Single-quoted Snowflake string literal: backslash first, then single quote. -#}
+{% macro _icecore_sql_literal(value) %}
+  {{ return("'" ~ (value | string | replace('\\', '\\\\') | replace("'", "\\'")) ~ "'") }}
+{% endmacro %}
+
+
+{#- Run a one-value SELECT so that no error reaches the caller: returns the value, or none (and logs a warning). -#}
+{% macro _icecore_safe_scalar(select_sql, what, relation) %}
+  {%- set block -%}
+declare
+  v variant default null;
+begin
+  select x into :v from (select ({{ select_sql }})::variant as x);
+  return object_construct('value', v);
+exception
+  when other then return object_construct('error', sqlerrm);
+end;
+  {%- endset -%}
+  {%- set out = fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) -%}
+  {%- if 'error' in out -%}
+    {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ out['error'], info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return(out.get('value')) }}
+{% endmacro %}
+
+
+{#- INFORMATION_SCHEMA.TABLES row for the relation as {row_count, kind}, or none when it is not found. -#}
+{% macro _icecore_table_info(relation) %}
+  {%- set parts = icecore._icecore_name_parts(relation) -%}
+  {%- set sql -%}
+    select object_construct(
+        'row_count', row_count,
+        'kind', case
+            when is_iceberg = 'YES' then 'iceberg'
+            when is_dynamic = 'YES' then 'dynamic'
+            when table_type = 'VIEW' then 'view'
+            when table_type = 'MATERIALIZED VIEW' then 'materialized_view'
+            when table_type = 'EXTERNAL TABLE' then 'external'
+            when table_type in ('TEMPORARY TABLE', 'LOCAL TEMPORARY') then 'temporary'
+            when is_transient = 'YES' then 'transient'
+            else 'standard' end)
+    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.tables
+    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
+      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
+  {%- endset -%}
+  {%- set info = icecore._icecore_safe_scalar(sql, 'get_row_count_metadata', relation) -%}
+  {%- if info is none -%}
+    {% do log('icecore: warning: ' ~ icecore._icecore_quoted_name(relation) ~ ' is not in INFORMATION_SCHEMA.TABLES (missing or not visible to this role)', info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return(fromjson(info) if info is string else info) }}
+{% endmacro %}
+
+
+{#- Net rows added since `since` (inserts minus deletes) from CHANGES; needs change tracking on the table. -#}
+{% macro _icecore_row_delta_from_changes(relation, since) %}
+  {%- set sql -%}
+    select count_if(metadata$action = 'INSERT') - count_if(metadata$action = 'DELETE')
+    from {{ icecore._icecore_quoted_name(relation) }}
+      changes (information => default)
+      at (timestamp => to_timestamp_tz({{ icecore._icecore_sql_literal(since) }}))
+  {%- endset -%}
+  {%- set value = icecore._icecore_safe_scalar(sql, 'get_row_count_metadata (CHANGES fallback)', relation) -%}
+  {{ return(none if value is none else value | int) }}
+{% endmacro %}

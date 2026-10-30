@@ -1,0 +1,46 @@
+version: 2
+
+macros:
+  - name: get_last_change_time
+    description: >
+      Zero-scan freshness reader. Returns the time of the last committed change to the relation, read from
+      SYSTEM$LAST_CHANGE_COMMIT_TIME, as an ISO 8601 UTC string (`YYYY-MM-DDTHH:MI:SS.ffffffZ`).
+      Returns none when the table was never written (token 0), and none with a logged warning when the
+      relation is missing or not readable; it never fails the run. For a dynamic table this is the time of
+      its last refresh, not of its sources (spike S5).
+    arguments:
+      - name: relation
+        type: Relation
+        description: >
+          The relation to read (`ref()`, `source()`, `adapter.get_relation()` or `api.Relation.create()`).
+          Its quote policy is honoured: quoted parts keep their case, unquoted parts resolve to upper case.
+
+  - name: get_row_count_metadata
+    description: >
+      Zero-scan volume reader. For kinds whose metadata spike S5 found reliable (standard, transient,
+      dynamic), returns INFORMATION_SCHEMA.TABLES.ROW_COUNT as an integer: the total row count, no data scan.
+      For fallback kinds (see `get_row_count_source`), returns the net number of rows added since `since`
+      (inserts minus deletes), counted over CHANGES, which needs change tracking on the table; without
+      `since` it returns none and logs why. Returns none with a logged warning when the relation is missing
+      or not readable; it never fails the run.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_last_change_time`.
+      - name: since
+        type: string
+        description: >
+          Optional, default none. ISO 8601 timestamp (for example the previous observation); used only by the
+          CHANGES fallback.
+
+  - name: get_row_count_source
+    description: >
+      Which reader `get_row_count_metadata` uses for the relation: `metadata` (total row count from
+      INFORMATION_SCHEMA) or `changes` (row delta over CHANGES). `changes` is chosen when the table kind is in
+      `vars: icecore: metadata_fallback_kinds` (default `['iceberg']`, from spike S5) or when ROW_COUNT is
+      NULL (views, external tables). Kinds: standard, transient, temporary, dynamic, iceberg, view,
+      materialized_view, external. Returns none when the relation is not found.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to classify, as for `get_last_change_time`.

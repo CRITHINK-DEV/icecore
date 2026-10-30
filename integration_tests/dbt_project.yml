@@ -1,0 +1,10 @@
+name: icecore_integration_tests
+version: "0.0.1"
+config-version: 2
+profile: icecore_sandbox
+
+macro-paths: ["macros"]
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests_dbt"]

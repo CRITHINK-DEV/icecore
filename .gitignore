@@ -1,0 +1,10 @@
+target/
+dbt_packages/
+logs/
+.venv/
+__pycache__/
+.pytest_cache/
+.superpowers/
+.user.yml
+package-lock.yml
+.venv-latest/

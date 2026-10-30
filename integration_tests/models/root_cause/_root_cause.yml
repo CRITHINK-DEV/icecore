@@ -1,0 +1,16 @@
+version: 2
+
+# Synthetic graph for the walk_upstream tests: rc_raw.orders -> rc_a -> rc_b -> rc_c -> not_null test.
+# Models are ephemeral so a build creates nothing in the sandbox; the tests only need the graph.
+sources:
+  - name: rc_raw
+    schema: rc_raw
+    tables:
+      - name: orders
+
+models:
+  - name: rc_c
+    columns:
+      - name: id
+        data_tests:
+          - not_null

@@ -1,0 +1,26 @@
+version: 2
+
+macros:
+  - name: walk_upstream
+    description: >
+      Finds the root cause of a failed test or node: walks the dbt graph breadth-first over
+      `depends_on`, starting from the parents of `unique_id`, and returns the nearest ancestor
+      that `classify_cause` flags as `{"unique_id": ..., "kind": ..., "distance": n}`
+      (`distance` 1 = direct parent). At equal distance the first in `depends_on` order wins;
+      the nearest cause wins over its kind. Walks through skipped and healthy nodes, reaches
+      sources. Returns none when nothing upstream is flagged, when `unique_id` is not in the
+      graph, or at parse time. Runs no query; the result fills `dbt.root_cause.unique_id` and
+      `dbt.root_cause.kind`.
+    arguments:
+      - name: unique_id
+        type: string
+        description: unique_id of the failed test (or node) to explain. Required.
+      - name: results
+        type: list
+        description: This run's results, in any shape `classify_cause` accepts as `run_results`. Default `[]`.
+      - name: signals
+        type: dict
+        description: >
+          Signals keyed by unique_id, as for `classify_cause`:
+          `{"freshness_breaches": {unique_id: detail}, "schema_diffs": {unique_id: [changes]}}`.
+          Default `{}`.

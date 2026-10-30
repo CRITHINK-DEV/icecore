@@ -1,7 +1,13 @@
 {#-
-  Native engine (spec section 6): pure SQL, always available.
-  This first version is the flat-window baseline only (median and MAD over the whole series);
-  seasonal buckets and min_consecutive come with the native engine story.
+  Native engine (spec section 6): pure SQL, always available, one query over the history.
+
+  Baseline: when the series spans more than four weeks and the current observation's
+  (day-of-week, hour-of-day) bucket holds at least 4 points, the band is computed within that
+  bucket (seasonal); otherwise over the whole series (flat). Fewer than 7 points never flags.
+  Band: median ± k × MAD, k = 4 (low), 3 (medium), 2 (high); raw MAD, not scaled to a standard deviation.
+  Score: signed distance outside the band, 0 inside.
+  is_anomaly: score <> 0 and the min_consecutive - 1 latest history points were also outside
+  the band of their own bucket.
 -#}
 
 {% macro native__score(series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
@@ -18,7 +24,9 @@
   {% do result.update({
     'engine': 'native',
     'is_anomaly': row['is_anomaly'] == true,
+    'baseline': row['baseline'],
     'history_points': row['history_points'] | int,
+    'history_days': row['history_days'] | int,
   }) %}
   {{ return(result) }}
 {% endmacro %}
@@ -32,35 +40,87 @@
 
 {% macro native__score_sql(series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
   {% set k = icecore._native_mad_multiplier(sensitivity) %}
+  {% set previous = (min_consecutive | int) - 1 %}
+  {% set min_points = 7 %}
+  {% set seasonal_min_days = 28 %}
+  {% set bucket_min_points = 4 %}
   {% set sql %}
 with series as (
-    select value::float as value
+    select observed_at::timestamp_ntz as observed_at, value::float as value,
+           dayofweekiso(observed_at::timestamp_ntz) * 100 + hour(observed_at::timestamp_ntz) as bucket
     from ({{ series_sql }}) as s
-    where value is not null
+    where value is not null and observed_at is not null
 ),
-center as (
-    select median(value) as expected, count(*) as history_points from series
+cur as (
+    select {{ icecore._sql_number(current_value) }}::float as value,
+           dayofweekiso(t) * 100 + hour(t) as bucket
+    from (select {{ icecore._sql_timestamp(observed_at) }} as t)
 ),
-spread as (
-    select median(abs(series.value - center.expected)) as mad
-    from series cross join center
+span as (
+    select count(*) as history_points,
+           coalesce(datediff('day', min(observed_at)::date, max(observed_at)::date) + 1, 0) as history_days,
+           coalesce(datediff('second', min(observed_at), max(observed_at)), 0) > {{ seasonal_min_days }} * 86400 as long_enough,
+           count_if(series.bucket = cur.bucket) as bucket_points
+    from series cross join cur
 ),
-band as (
-    select center.expected, center.history_points,
-           center.expected - {{ k }} * spread.mad as lower,
-           center.expected + {{ k }} * spread.mad as upper,
-           {{ icecore._sql_number(current_value) }}::float as current_value
-    from center cross join spread
+mode as (
+    select history_points, history_days,
+           case when history_points < {{ min_points }} then 'insufficient_history'
+                when long_enough and bucket_points >= {{ bucket_min_points }} then 'seasonal'
+                else 'flat' end as baseline
+    from span
+),
+grouped as (
+    select series.observed_at, series.value,
+           iff(mode.baseline = 'seasonal', series.bucket, 0) as grp
+    from series cross join mode
+),
+centers as (
+    select grp, median(value) as expected from grouped group by grp
+),
+bands as (
+    select grouped.grp, centers.expected,
+           centers.expected - {{ k }} * median(abs(grouped.value - centers.expected)) as lower,
+           centers.expected + {{ k }} * median(abs(grouped.value - centers.expected)) as upper
+    from grouped join centers on grouped.grp = centers.grp
+    group by grouped.grp, centers.expected
+),
+recent as (
+    select grouped.value < bands.lower or grouped.value > bands.upper as outside
+    from grouped join bands on grouped.grp = bands.grp
+    qualify row_number() over (order by grouped.observed_at desc) <= {{ previous }}
+),
+streak as (
+    select coalesce(count_if(outside), 0) as outside_points from recent
+),
+scored as (
+    select mode.baseline, mode.history_points, mode.history_days,
+           bands.expected, bands.lower, bands.upper,
+           case when mode.baseline = 'insufficient_history' or cur.value is null then 0
+                when cur.value > bands.upper then cur.value - bands.upper
+                when cur.value < bands.lower then cur.value - bands.lower
+                else 0 end as score,
+           streak.outside_points
+    from cur
+    cross join mode
+    cross join streak
+    left join bands on bands.grp = iff(mode.baseline = 'seasonal', cur.bucket, 0)
 )
-select expected, lower, upper,
-       case when current_value > upper then current_value - upper
-            when current_value < lower then current_value - lower
-            else 0 end as score,
-       coalesce(score <> 0, false) as is_anomaly,
-       history_points
-from band
+select 'native' as engine, expected, lower, upper, score,
+       score <> 0 and outside_points >= {{ previous }} as is_anomaly,
+       baseline, history_points, history_days
+from scored
   {% endset %}
   {{ return(sql) }}
+{% endmacro %}
+
+
+{#- A timestamp as a SQL literal (escaped); none means now. -#}
+{% macro _sql_timestamp(value) %}
+  {% if value is none %}
+    {{ return('current_timestamp()::timestamp_ntz') }}
+  {% endif %}
+  {{ return("'" ~ (value | string).replace('\\', '\\\\').replace("'", "''") ~ "'::timestamp_ntz") }}
 {% endmacro %}
 
 

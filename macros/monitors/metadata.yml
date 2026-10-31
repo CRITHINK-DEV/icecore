@@ -31,9 +31,12 @@ macros:
 
   - name: get_row_count_changes
     description: >
-      Net number of rows added since `since` (inserts minus deletes), counted over CHANGES. It scans only the
-      micro-partitions written since then (spike S5: 1 partition and 4 KB against 11 partitions and 35 MB for a
-      full scan). Needs change tracking on the table, or on the view and its base tables; without it, or for a
+      Net number of rows added since `since` (inserts minus deletes), counted over CHANGES. This is not a
+      zero-scan read, and its cost depends on what happened in the window (spike S5). When the window holds only
+      inserts, it reads just the new micro-partitions (1 partition and 4 KB against 11 partitions and 35 MB for a
+      full scan). After a DELETE, UPDATE or MERGE (dbt's default incremental strategy) that rewrites existing
+      micro-partitions, it reads their old and new versions and can cost more than a full scan (about 1.9 times in
+      S5). Needs change tracking on the table, or on the view and its base tables; without it, or for a
       `since` outside the tracked window, it returns none and logs Snowflake's error. It never fails the run.
       The volume test emits this value as the metric `rows_added`, never mixed with `row_count`.
     arguments:

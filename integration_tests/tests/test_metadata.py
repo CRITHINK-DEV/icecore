@@ -130,16 +130,18 @@ def test_rows_added_over_changes_and_the_fallback_switch(dbt, sf, run_id):
     name = f"UC2_FALLBACK_{run_id}".upper()
     target = quoted(DATABASE, SCHEMA, name)
     sf.cursor().execute(f"create transient table {target} (id number, note varchar) change_tracking = true")
+    added = 30
     try:
-        time.sleep(2)  # CHANGES needs an AT time after change tracking started
+        write_rows(sf, target)  # 100 rows before since: in the total, not in the delta
+        time.sleep(2)  # CHANGES needs an AT time after change tracking started and after that write
         since = utc_now(sf)
-        write_rows(sf, target)
+        write_rows(sf, target, added)
         default = run_macro("it_metadata", {"relations": [rel(name.lower())], "since": since})[name.lower()]
-        assert default["row_count"] == N_ROWS and default["rows_added"] == N_ROWS
+        assert default["row_count"] == N_ROWS + added and default["rows_added"] == added
         # transient declared a fallback kind: no metadata total, the delta still comes from CHANGES
         switch = ["--vars", json.dumps({"icecore": {"metadata_fallback_kinds": ["transient"]}})]
         got, logs = run_macro_with_logs("it_metadata", {"relations": [rel(name.lower())], "since": since}, switch)
-        assert got[name.lower()]["row_count"] is None and got[name.lower()]["rows_added"] == N_ROWS
+        assert got[name.lower()]["row_count"] is None and got[name.lower()]["rows_added"] == added
         assert any("use get_row_count_changes" in m for m in logs), logs
     finally:
         sf.cursor().execute(f"drop table if exists {target}")

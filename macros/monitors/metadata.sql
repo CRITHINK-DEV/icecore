@@ -4,7 +4,8 @@
     missing privilege returns none and logs a warning instead of failing the user's run.
     Spike S5 (spikes/S5.md) found ROW_COUNT and SYSTEM$LAST_CHANGE_COMMIT_TIME correct within seconds for
     standard, transient and dynamic tables. Iceberg is unmeasured, so its metadata total is not trusted by default.
-    The total (get_row_count_metadata) and the delta over CHANGES (get_row_count_changes) are distinct values:
+    get_row_count_changes is not zero-scan: cheap for insert-only windows, but after DELETE / UPDATE / MERGE it
+    can read more than a full scan (S5). The total (get_row_count_metadata) and the delta over CHANGES (get_row_count_changes) are distinct values:
     the volume test emits them as distinct metrics, row_count and rows_added, never mixed in one history. -#}
 
 
@@ -134,7 +135,8 @@ end;
 {% endmacro %}
 
 
-{#- Net rows added since `since` (inserts minus deletes) from CHANGES; needs change tracking on the table. -#}
+{#- Net rows added since `since` (inserts minus deletes) from CHANGES; needs change tracking on the table.
+    Cost: only the new micro-partitions for insert-only windows; old and new versions of rewritten ones otherwise. -#}
 {% macro _icecore_row_delta_from_changes(relation, since) %}
   {%- set sql -%}
     select count_if(metadata$action = 'INSERT') - count_if(metadata$action = 'DELETE')
@@ -142,6 +144,6 @@ end;
       changes (information => default)
       at (timestamp => to_timestamp_tz({{ icecore._icecore_sql_literal(since) }}))
   {%- endset -%}
-  {%- set value = icecore._icecore_safe_scalar(sql, 'get_row_count_metadata (CHANGES fallback)', relation) -%}
+  {%- set value = icecore._icecore_safe_scalar(sql, 'get_row_count_changes', relation) -%}
   {{ return(none if value is none else value | int) }}
 {% endmacro %}

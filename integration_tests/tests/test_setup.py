@@ -54,9 +54,10 @@ def test_setup_steps_keep_one_ordered_list():
     steps = call_macro("_icecore_setup_steps")
     assert [s["name"] for s in steps] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-        "record_capabilities", "create_views", "create_alerts", "create_tasks"]
+        "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
     assert [s["name"] for s in steps if s["ready"]] == [
-        "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities"]
+        "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
+        "estimate_telemetry_cost"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():
@@ -201,7 +202,7 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
         assert out["levels"]["executed"] == [] and out["levels"]["levels_ok"] is True, out["levels"]
         assert [s["name"] for s in out["steps"] if s["status"] == "done"] == [
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-            "record_capabilities"], out["steps"]
+            "record_capabilities", "estimate_telemetry_cost"], out["steps"]
         assert out["recorded"] == "ok 1"
     assert first["levels"] == second["levels"]
     assert first["steps"] == second["steps"]

@@ -150,3 +150,111 @@ def test_s5_quoted_identifier_table(dbt, sf, run_id):
         assert m["last_change"] is not None and iso(m["last_change"]) >= iso(write_at)
     finally:
         sf.cursor().execute(f"drop table if exists {target}")
+
+
+# --- round 2: dbt write patterns and the CHANGES fallback -----------------------------------------
+
+@pytest.mark.sandbox
+def test_s5_dbt_write_patterns(dbt, sf, run_id):
+    """The statements dbt materializations issue: metadata must follow each one."""
+    name = f"S5_PATTERNS_{run_id}".upper()
+    target = quoted(DATABASE, SCHEMA, name)
+    gen = "select seq4() as id, 's5' as note from table(generator(rowcount => {n}))"
+    steps = [
+        ("ctas", f"create transient table {target} as " + gen.format(n=100), 100),
+        ("create_or_replace_as_select", f"create or replace transient table {target} as " + gen.format(n=250), 250),
+        ("delete", f"delete from {target} where id < 50", 200),
+        ("insert_overwrite", f"insert overwrite into {target} " + gen.format(n=7), 7),
+        ("truncate", f"truncate table {target}", 0),
+    ]
+    seen, previous_token = {}, 0
+    try:
+        for label, sql, expected in steps:
+            started = utc_now(sf)
+            sf.cursor().execute(sql)
+            m = run_macro("s5_metadata", {"relation": target})
+            token = int(m["last_change_token"])
+            seen[label] = {
+                "expected_rows": expected,
+                "row_count": m["row_count"],
+                "row_count_ok": m["row_count"] == expected,
+                "last_change": m["last_change"],
+                "last_change_token": m["last_change_token"],
+                "token_increased": token > previous_token,
+                "last_change_at_or_after_statement": m["last_change"] is not None and iso(m["last_change"]) >= iso(started),
+            }
+            previous_token = token
+        record_finding("s5", "dbt_write_patterns", seen)
+        assert all(s["row_count_ok"] and s["token_increased"] for s in seen.values()), seen
+    finally:
+        sf.cursor().execute(f"drop table if exists {target}")
+
+
+def _query_stats(sf, query_ids: dict) -> dict:
+    """bytes_scanned from QUERY_HISTORY_BY_SESSION, partitions from GET_QUERY_OPERATOR_STATS (TableScan operators)."""
+    ids = ", ".join(f"'{q}'" for q in query_ids.values())
+    rows = sf.cursor().execute(
+        "select query_id, bytes_scanned "
+        f"from table(information_schema.query_history_by_session(result_limit => 200)) where query_id in ({ids})"
+    ).fetchall()
+    bytes_by_id = dict(rows)
+    out = {}
+    for label, q in query_ids.items():
+        scanned, total = sf.cursor().execute(
+            "select sum(operator_statistics:pruning:partitions_scanned::number), sum(operator_statistics:pruning:partitions_total::number) "
+            f"from table(get_query_operator_stats('{q}')) where operator_type = 'TableScan'"
+        ).fetchone()
+        out[label] = {"bytes_scanned": bytes_by_id.get(q), "partitions_scanned": scanned, "partitions_total": total}
+    return out
+
+
+@pytest.mark.sandbox
+def test_s5_changes_fallback(dbt, sf, run_id):
+    """COUNT over CHANGES: what it scans compared with a full count, and whether it works on views."""
+    base = quoted(DATABASE, SCHEMA, f"S5_CHG_{run_id}".upper())
+    plain = quoted(DATABASE, SCHEMA, f"S5_CHG_PLAIN_{run_id}".upper())
+    view_tracked = quoted(DATABASE, SCHEMA, f"S5_CHG_V_{run_id}".upper())
+    view_untracked = quoted(DATABASE, SCHEMA, f"S5_CHG_VPLAIN_{run_id}".upper())
+    cur = sf.cursor()
+    finding = {}
+    try:
+        cur.execute("alter session set use_cached_result = false")
+        cur.execute(f"create transient table {base} (id number, note varchar) change_tracking = true")
+        for batch in range(10):  # ten inserts: at least ten micro-partitions
+            cur.execute(
+                f"insert into {base} select seq4() + {batch * 100000}, uuid_string() from table(generator(rowcount => 100000))"
+            )
+        cur.execute(f"create transient table {plain} (id number, note varchar)")
+        cur.execute(f"create view {view_tracked} change_tracking = true as select id, note from {base}")
+        cur.execute(f"create view {view_untracked} as select id, note from {plain}")
+        time.sleep(2)
+        since = utc_now(sf)
+        cur.execute(f"insert into {base} select seq4() + 1000000, uuid_string() from table(generator(rowcount => {N_ROWS}))")
+        cur.execute(f"insert into {plain} select seq4(), 's5' from table(generator(rowcount => {N_ROWS}))")
+
+        at = f"changes (information => default) at (timestamp => to_timestamp_tz('{since}'))"
+        ids, counts = {}, {}
+        for label, sql in [
+            ("full_count_metadata", f"select count(*) from {base}"),
+            ("full_count_scan", f"select count(*) from {base} where note like '%-%'"),
+            ("changes_count", f"select count(*) from {base} {at}"),
+            ("changes_count_view_tracked", f"select count(*) from {view_tracked} {at}"),
+        ]:
+            counts[label] = cur.execute(sql).fetchone()[0]
+            ids[label] = cur.sfqid
+        try:
+            cur.execute(f"select count(*) from {view_untracked} {at}")
+            finding["view_without_change_tracking"] = {"ok": True}
+        except Exception as e:  # noqa: BLE001 - the error is the finding
+            finding["view_without_change_tracking"] = {"ok": False, "error": str(e).splitlines()[-1][:200]}
+
+        time.sleep(5)  # query history by session is not instant
+        stats = _query_stats(sf, ids)
+        finding.update({label: {"count": counts[label], **(stats[label] or {})} for label in ids})
+        record_finding("s5", "changes_fallback", finding)
+        assert counts["changes_count"] == N_ROWS and counts["changes_count_view_tracked"] == N_ROWS
+    finally:
+        cur.execute(f"drop view if exists {view_tracked}")
+        cur.execute(f"drop view if exists {view_untracked}")
+        cur.execute(f"drop table if exists {base}")
+        cur.execute(f"drop table if exists {plain}")

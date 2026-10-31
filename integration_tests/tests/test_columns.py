@@ -82,7 +82,8 @@ def test_changes_window_reads_only_inserted_row_versions_of_the_column():
     assert f"at (timestamp => to_timestamp_tz('{SINCE.lower()}'))" in sql
     assert "metadata$action = 'insert'" in sql
     assert 'select "amount" from' in sql  # only the monitored column, never select *
-    assert "'row_count'" in sql and "'null_rate'" in sql
+    assert "'window_rows'" in sql and "'null_rate'" in sql
+    assert "'row_count'" not in sql  # the volume monitor's total; the window count is window_rows
 
 
 def test_row_delta_and_column_metrics_share_one_changes_source():
@@ -114,6 +115,20 @@ def test_column_and_since_are_quoted_and_escaped():
     assert '"ICECORE_SANDBOX"."SPIKES"."Mixed Case"' in sql
 
 
+@pytest.mark.parametrize("name,ref", [
+    ("amount", '"AMOUNT"'),        # plain name: resolved like an unquoted identifier
+    ('"amount"', '"amount"'),      # wrapped in double quotes: exact, case kept
+    ("Mixed", '"MIXED"'),
+    ('"Mixed"', '"Mixed"'),
+    ('"Net ""Amount"""', '"Net ""Amount"""'),  # inner quotes un-doubled, then doubled again when quoting
+])
+def test_column_name_forms(name, ref):
+    window = {"mode": "timestamp_column", "since": SINCE, "timestamp_column": name, "timestamp_type": "TIMESTAMP_NTZ"}
+    sql = render(window, column=name)["metrics_sql"]
+    assert f"select {ref} from" in sql, sql
+    assert f"where {ref} > to_timestamp_ntz(" in sql, sql
+
+
 # --- sandbox --------------------------------------------------------------------------------------
 
 def window_metrics_and_scans(sf, name: str, since: str) -> tuple[dict, dict, dict]:
@@ -139,7 +154,7 @@ def test_insert_only_window_reads_only_the_new_micro_partition(dbt, sf, run_id):
         got, changes, full = window_metrics_and_scans(sf, name, since)
         print("insert-only window, full partitions: changes", changes, "full scan", full)
         assert got["window"]["mode"] == "changes", got
-        assert got["metrics"] == {"row_count": 50, "null_rate": 0.2}, got
+        assert got["metrics"] == {"window_rows": 50, "null_rate": 0.2}, got
         assert changes["partitions_scanned"] == 1 and full["partitions_scanned"] > 1, (changes, full)
         assert changes["bytes_scanned"] * 100 < full["bytes_scanned"], (changes, full)
     finally:
@@ -164,7 +179,7 @@ def test_small_insert_into_a_partial_micro_partition_is_still_correct(dbt, sf, r
         got, changes, full = window_metrics_and_scans(sf, name, since)
         print("insert-only window, partial partition: changes", changes, "full scan", full)
         assert got["window"]["mode"] == "changes", got
-        assert got["metrics"] == {"row_count": 50, "null_rate": 0.2}, got
+        assert got["metrics"] == {"window_rows": 50, "null_rate": 0.2}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
 
@@ -186,7 +201,7 @@ def test_update_window_measures_new_row_versions(dbt, sf, run_id):
         got, changes, full = window_metrics_and_scans(sf, name, since)
         print("update window: changes", changes, "full scan", full)
         assert got["window"]["mode"] == "changes", got
-        assert got["metrics"] == {"row_count": 10, "null_rate": 1.0}, got
+        assert got["metrics"] == {"window_rows": 10, "null_rate": 1.0}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
 
@@ -210,7 +225,7 @@ def test_change_tracking_off_falls_back_to_the_timestamp_column(dbt, sf, run_id,
             "it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount", "since": since, "timestamp_column": ts_column})
         assert got["window"]["mode"] == "timestamp_column", got
         assert got["window"]["timestamp_column"] == ts_column
-        assert got["metrics"] == {"row_count": 50, "null_rate": 0.2}, got
+        assert got["metrics"] == {"window_rows": 50, "null_rate": 0.2}, got
         assert any("using timestamp column" in m for m in logs), logs
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
@@ -264,6 +279,85 @@ def test_empty_window_gives_zero_rows_and_no_null_rate(dbt, sf, run_id):
         time.sleep(2)
         got = run_macro("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount", "since": utc_now(sf)})
         assert got["window"]["mode"] == "changes"
-        assert got["metrics"] == {"row_count": 0, "null_rate": None}, got
+        assert got["metrics"] == {"window_rows": 0, "null_rate": None}, got
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_quoted_and_unquoted_column_names(dbt, sf, run_id):
+    # four distinct columns: AMOUNT, "amount", MIXED, "Mixed"; a quoted lower-case timestamp column for the window
+    name = f"UC2_COLS_NAMES_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    cur = sf.cursor()
+    cur.execute(f'create transient table {table} (amount number, "amount" number, mixed number, "Mixed" number, "updated_at" timestamp_ntz)')
+    try:
+        cur.execute(f"""insert into {table} select 1, 1, 1, 1, dateadd(hour, -2, convert_timezone('UTC', current_timestamp())::timestamp_ntz)""")
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        cur.execute(f"""insert into {table} select iff(seq4() < 1, null, 1), iff(seq4() < 2, null, 1), iff(seq4() < 3, null, 1),
+                        null, convert_timezone('UTC', current_timestamp())::timestamp_ntz from table(generator(rowcount => 4))""")
+        expected = {"amount": 0.25, '"amount"': 0.5, "Mixed": 0.75, '"Mixed"': 1.0}
+        for column, rate in expected.items():
+            got = run_macro("it_column_metrics", {"rel": rel(name.lower()), "column_name": column, "since": since,
+                                                  "timestamp_column": '"updated_at"'})
+            assert got["window"]["mode"] == "timestamp_column", (column, got)
+            assert got["metrics"] == {"window_rows": 4, "null_rate": rate}, (column, got)
+    finally:
+        cur.execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_table_recreated_after_since_falls_back_to_the_timestamp_column(dbt, sf, run_id):
+    # dbt full refresh / table models: CREATE OR REPLACE after since. The compile-time probe passes, the CHANGES query
+    # fails (000707 time travel data not available); the timestamp column must take over.
+    name = f"UC2_COLS_RECREATED_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 30)
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        sf.cursor().execute(
+            f"create or replace transient table {table} change_tracking = true as "
+            "select seq4() as id, iff(seq4() < 10, null, 1) as amount, null::varchar as note, "
+            "convert_timezone('UTC', current_timestamp())::timestamp_ntz as updated_at, current_timestamp() as loaded_at "
+            "from table(generator(rowcount => 40))")
+
+        got, logs = run_macro_with_logs("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount",
+                                                              "since": since, "timestamp_column": "updated_at"})
+        assert got["metrics"] == {"window_rows": 40, "null_rate": 0.25}, got
+        assert any("CHANGES query failed" in m and "using timestamp column updated_at" in m for m in logs), logs
+
+        got, logs = run_macro_with_logs("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount", "since": since})
+        assert got["metrics"] is None, got
+        assert any("compute_column_metrics could not read" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_change_tracking_enabled_after_since_falls_back_to_the_timestamp_column(dbt, sf, run_id):
+    # rows written after since but before change tracking was enabled: CHANGES fails (091930) at run time
+    name = f"UC2_COLS_CTLATE_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=False)
+    try:
+        insert_rows(sf, table, 30)
+        sf.cursor().execute(f"update {table} set updated_at = dateadd(hour, -2, updated_at)")
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        insert_rows(sf, table, 20, nulls=5, start=100)
+        sf.cursor().execute(f"alter table {table} set change_tracking = true")
+        time.sleep(1)
+        insert_rows(sf, table, 30, nulls=5, start=200)
+
+        got, logs = run_macro_with_logs("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount",
+                                                              "since": since, "timestamp_column": "updated_at"})
+        assert got["metrics"] == {"window_rows": 50, "null_rate": 0.2}, got
+        assert any("using timestamp column updated_at" in m for m in logs), logs
     finally:
         sf.cursor().execute(f"drop table if exists {table}")

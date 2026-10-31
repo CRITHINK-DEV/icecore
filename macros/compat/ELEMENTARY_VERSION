@@ -1,0 +1,7 @@
+# The Elementary release icecore's Elementary-compatible views target (UC8). Spike S4 captured the
+# `edr report` contract from exactly these versions (spikes/S4.md, spikes/results/s4.json).
+# Change them only together with a new S4 capture; tests/test_elementary_version.py keeps the
+# probe project (integration_tests/elementary_probe/packages.yml) and the pinned requirement
+# (integration_tests/requirements-elementary.txt) in step.
+elementary_dbt_package=0.26.1
+elementary_cli=0.26.1

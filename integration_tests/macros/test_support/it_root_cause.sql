@@ -3,3 +3,7 @@
 {% macro it_classify_cause(node, run_results=[], signals={}) %}
   {% do log('icecore_it_result:' ~ tojson({'kind': icecore.classify_cause(node, run_results, signals)}), info=True) %}
 {% endmacro %}
+
+{% macro it_walk_upstream(unique_id, results=[], signals={}) %}
+  {% do log('icecore_it_result:' ~ tojson({'cause': icecore.walk_upstream(unique_id, results, signals)}), info=True) %}
+{% endmacro %}

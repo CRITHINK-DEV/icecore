@@ -6,8 +6,11 @@
   wiring them to the views comes later.
 
   Precedence when several apply: upstream_failure (the node itself failed in this run),
-  then schema_change, then stale_source. A skipped node is not a cause: it was skipped
-  because of something further up, which the walk will reach.
+  then schema_change, then stale_source (see _root_cause_kind_rank). A skipped node is
+  not a cause: it was skipped because of something further up, which the walk will reach.
+
+  run_results may also be a prepared {unique_id: status} map, so a caller that classifies
+  many nodes (walk_upstream) builds it once with _root_cause_status_map.
 -#}
 {% macro classify_cause(node, run_results=[], signals={}) %}
   {% set unique_id = icecore._root_cause_unique_id(node) %}
@@ -36,12 +39,21 @@
 {% endmacro %}
 
 
+{#- Kind -> precedence (lower wins), shared with walk_upstream for equal-distance ties. -#}
+{% macro _root_cause_kind_rank() %}
+  {{ return({'upstream_failure': 0, 'schema_change': 1, 'stale_source': 2}) }}
+{% endmacro %}
+
+
 {#-
   Run results -> {unique_id: status}. Accepts dbt's on-run-end `results` (objects with
   .node.unique_id and .status) and plain mappings, either {"unique_id", "status"} or
-  {"node": {"unique_id"}, "status"}.
+  {"node": {"unique_id"}, "status"}. A mapping is taken as an already prepared map.
 -#}
 {% macro _root_cause_status_map(run_results) %}
+  {% if run_results is mapping %}
+    {{ return(run_results) }}
+  {% endif %}
   {% set statuses = {} %}
   {% for result in (run_results or []) %}
     {% if result is mapping %}

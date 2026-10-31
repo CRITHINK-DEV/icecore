@@ -1,0 +1,34 @@
+version: 2
+
+macros:
+  - name: collect_sla_config
+    description: >
+      Reads the SLA and alert settings that users declare in model YAML, next to the model.
+      Declare them under `config: meta:` (top-level `meta:` raises
+      PropertyMovedToConfigDeprecation on dbt 1.12):
+      `config: {meta: {sla: {expected_every: 1h, grace: 15m}, alerts: {channel: data-platform, severity: warn}}}`.
+      dbt merges `config()` in SQL > YAML > `+meta` in dbt_project.yml into both `node.meta`
+      and `node.config.meta`, so any of those places works. The macro reads `meta` over
+      `config.meta`, which only matters for nodes built by hand.
+      Returns one entry per node that declares `meta.sla` or `meta.alerts`, sorted by `unique_id`:
+      `{unique_id, name, resource_type, expected_every_minutes, grace_minutes, grace_defaulted,
+      channel, severity}`. Without `meta.sla` the three schedule fields are `none`, `none`,
+      `false`; without `meta.alerts` the channel is `none` and the severity `warn`.
+      Durations are whole numbers with a unit `m`, `h`, `d` or `w`, combinable (`15m`, `1h`,
+      `1h30m`, `1d`), and are returned in minutes. `grace` may not be longer than
+      `expected_every`. When `grace` is omitted the default grace applies, capped at
+      `expected_every` and flagged by `grace_defaulted`. The default is meant to be twice the
+      p95 ingestion lag measured by spike S3; until S3 lands it is a fixed placeholder of 10
+      minutes. Any invalid value raises a compile error that names the node: a bad duration,
+      a missing `expected_every`, a grace longer than `expected_every`, an unknown key under
+      `meta.sla` (allowed: expected_every, grace) or `meta.alerts` (allowed: channel, severity),
+      a severity other than `warn` or `error`, an empty channel, or an `sla` or `alerts` that
+      is not a mapping. Only `graph.nodes` is read: `meta.sla` on sources (`graph.sources`)
+      is ignored. Returns values only: runs no query and renders no SQL; `render_alert_sql`
+      and `render_silence_task_sql` consume the result.
+    arguments:
+      - name: nodes
+        type: list[dict] | none
+        description: >
+          Graph nodes to read (mappings with `unique_id`, `name`, `resource_type`, `meta`,
+          `config.meta`). Default `none`: every node of `graph.nodes`. Returns `[]` at parse time.

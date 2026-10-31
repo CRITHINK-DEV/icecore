@@ -1,0 +1,63 @@
+version: 2
+
+macros:
+  - name: get_change_window
+    description: >
+      Decides which rows the column monitors read: the rows changed since `since`. Returns
+      `{mode: changes, since}` when CHANGES works for the relation over that window (change tracking on and
+      covering it, checked with a compile-only probe that reads no data). Otherwise, when `timestamp_column` is
+      given and is a DATE or TIMESTAMP column, returns
+      `{mode: timestamp_column, since, timestamp_column, timestamp_type}` and logs why CHANGES was not used.
+      Returns none with a logged warning when neither works (no change tracking and no usable timestamp column,
+      missing relation, `since` missing); it never fails the run.
+      Cost, from spike S5 and this story's sandbox tests: a CHANGES window is cheap only when it holds inserts
+      that landed in new micro-partitions (1 partition and 3 KB against 11 partitions and 38 MB for a full scan).
+      After a DELETE, UPDATE or MERGE (dbt's default incremental strategy) CHANGES reads the old and new versions
+      of every rewritten micro-partition: 18 partitions and 80 MB against 8 and 42 MB for a full scan (1.9 times)
+      after 10 updated rows. On a narrow table a small insert can also be written by rewriting a partly filled
+      micro-partition, and CHANGES then reads that partition twice (2.7 MB against 3.6 MB for a full scan).
+      The timestamp fallback costs whatever the filter prunes, which depends on the table's clustering.
+      The time of the previous run is passed in as `since`: reading it from the metric history comes with the
+      monitors that emit metrics (after Gate 1).
+    arguments:
+      - name: relation
+        type: Relation
+        description: >
+          The relation to read (`ref()`, `source()`, `adapter.get_relation()` or `api.Relation.create()`).
+          Its quote policy is honoured: quoted parts keep their case, unquoted parts resolve to upper case.
+      - name: since
+        type: string
+        description: >
+          ISO 8601 UTC time of the previous observation, for example `2026-10-31T08:00:00.000000Z`. Required.
+      - name: timestamp_column
+        type: string
+        description: >
+          Optional, default none. Column used when CHANGES is unavailable: rows with a value after `since`
+          (a TIMESTAMP_NTZ column is read as UTC wall-clock time; a DATE column includes the whole day of `since`).
+          A plain name (letters, digits, `_`, `$`) resolves to upper case like an unquoted identifier; any other
+          name is taken as the exact, case-preserved column name.
+
+  - name: compute_column_metrics
+    description: >
+      Computes metrics for one column over the rows of a change window from `get_change_window`, in one query
+      that selects only that column. With a CHANGES window the rows are the INSERT row versions: new rows and
+      the new values of updated rows (deleted rows are not measured). Returns a dict of the requested metrics,
+      for example `{row_count: 50, null_rate: 0.2}`. Metrics: `row_count`, the number of rows in the window (not
+      the metadata total that the volume monitor reports as `row_count`, nor the net `rows_added` of
+      `get_row_count_changes`); `null_rate`, the share of those rows where the column is null, between 0 and 1,
+      none when the window is empty. Unknown metric names are skipped with a warning. Returns none when the
+      window is none, and none with a logged warning when the query fails (missing column, lost privilege); it
+      never fails the run. Computes and returns values only; it emits nothing.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_change_window`.
+      - name: column_name
+        type: string
+        description: The column to measure; resolved as `timestamp_column` is in `get_change_window`.
+      - name: window
+        type: dict
+        description: The result of `get_change_window` for the same relation, or none.
+      - name: metrics
+        type: list
+        description: Optional, default `[row_count, null_rate]`. The metrics to return.

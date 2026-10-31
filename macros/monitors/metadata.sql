@@ -85,8 +85,9 @@
 {% endmacro %}
 
 
-{#- Run a one-value SELECT so that no error reaches the caller: returns the value, or none (and logs a warning). -#}
-{% macro _icecore_safe_scalar(select_sql, what, relation) %}
+{#- Run a one-value SELECT inside a Snowflake Scripting block that catches every error:
+    returns {'value': <value>} or {'error': <Snowflake message>}, never raises. -#}
+{% macro _icecore_try_scalar(select_sql) %}
   {%- set block -%}
 declare
   v variant default null;
@@ -97,7 +98,13 @@ exception
   when other then return object_construct('error', sqlerrm);
 end;
   {%- endset -%}
-  {%- set out = fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) -%}
+  {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
+{% endmacro %}
+
+
+{#- Run a one-value SELECT so that no error reaches the caller: returns the value, or none (and logs a warning). -#}
+{% macro _icecore_safe_scalar(select_sql, what, relation) %}
+  {%- set out = icecore._icecore_try_scalar(select_sql) -%}
   {%- if 'error' in out -%}
     {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ out['error'], info=True) %}
     {{ return(none) }}
@@ -135,15 +142,26 @@ end;
 {% endmacro %}
 
 
-{#- Net rows added since `since` (inserts minus deletes) from CHANGES; needs change tracking on the table.
-    Cost: only the new micro-partitions for insert-only windows; old and new versions of rewritten ones otherwise. -#}
+{#- The CHANGES source for everything icecore reads since `since`: the rows-added count below and the column
+    monitors (columns.sql). information => default: an UPDATE shows as a DELETE of the old row version and an INSERT
+    of the new one; rows inserted and deleted inside the window cancel out. Needs change tracking on the table, or
+    on the view and its base tables, covering the whole window.
+    Cost (S5): only the new micro-partitions for insert-only windows; old and new versions of every rewritten
+    micro-partition after DELETE / UPDATE / MERGE, about 1.9 times a full scan in S5. -#}
+{% macro _icecore_changes_source(relation, since) %}
+  {{ return(icecore._icecore_quoted_name(relation)
+      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))') }}
+{% endmacro %}
+
+
+{#- Net rows added since `since` (inserts minus deletes) from CHANGES. -#}
+{% macro _icecore_row_delta_sql(relation, since) %}
+  {{ return("select count_if(metadata$action = 'INSERT') - count_if(metadata$action = 'DELETE') from "
+      ~ icecore._icecore_changes_source(relation, since)) }}
+{% endmacro %}
+
+
 {% macro _icecore_row_delta_from_changes(relation, since) %}
-  {%- set sql -%}
-    select count_if(metadata$action = 'INSERT') - count_if(metadata$action = 'DELETE')
-    from {{ icecore._icecore_quoted_name(relation) }}
-      changes (information => default)
-      at (timestamp => to_timestamp_tz({{ icecore._icecore_sql_literal(since) }}))
-  {%- endset -%}
-  {%- set value = icecore._icecore_safe_scalar(sql, 'get_row_count_changes', relation) -%}
+  {%- set value = icecore._icecore_safe_scalar(icecore._icecore_row_delta_sql(relation, since), 'get_row_count_changes', relation) -%}
   {{ return(none if value is none else value | int) }}
 {% endmacro %}

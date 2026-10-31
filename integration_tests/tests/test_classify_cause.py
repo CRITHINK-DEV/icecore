@@ -1,7 +1,7 @@
 """icecore.classify_cause on synthetic inputs, one test per cause kind (offline, no Snowflake)."""
 import pytest
 
-from helpers.operations import install_deps, run_operation_json
+from helpers.operations import install_deps, run_macro
 
 STG = {"unique_id": "model.shop.stg_orders", "resource_type": "model"}
 SRC = {"unique_id": "source.shop.raw.orders", "resource_type": "source"}
@@ -9,12 +9,12 @@ SRC = {"unique_id": "source.shop.raw.orders", "resource_type": "source"}
 
 @pytest.fixture(scope="module", autouse=True)
 def deps():
-    install_deps()
+    install_deps(offline=True)
 
 
 def classify(node, run_results=None, signals=None) -> str:
     args = {"node": node, "run_results": run_results or [], "signals": signals or {}}
-    return run_operation_json("it_classify_cause", args)["kind"]
+    return run_macro("it_classify_cause", args, offline=True)["kind"]
 
 
 def test_ancestor_with_status_error_is_upstream_failure():

@@ -123,9 +123,9 @@ not include before Gate 1 (S1.md, "Consequences").
   others describe the project or hold failed rows and source freshness (S4.md, "Mapping to icecore core views").
 - **Phase 6 must add a node-metadata view** (manifest metadata per node) **and a samples view** before `edr report` can render.
   Until then the compat views serve dashboards, and the report is the Streamlit app (S4.md, "Consequences for Phase 6").
-- **`dbt_invocations` must expose every column of Elementary's table**, with its names and types, and `project_name` and
-  `elementary_version` must carry real values. edr's first query is a `select *` on it at the start of every command. This
-  comes from the S4 capture fix on PR #22, which updates S4.md; S4.md is the reference for the final column lists.
+- **`dbt_invocations` must expose all 35 columns of Elementary's table**, with their names and types, and `project_name` and
+  `elementary_version` must carry real values. edr's first query, at the start of every command, is a `select *` on it
+  (S4.md, "Capture window and environments", Phase 6 impact).
 - Compat views keep Elementary's types: TEXT timestamps that Snowflake can cast, and TEXT JSON fields (S4.md, "The contract").
 - `edr report` creates a temporary table in the schema it reads. Snowflake documents USAGE on the schema as enough; this is
   **unmeasured**, because the probe role owned the schema (S4.md, "What edr does besides selecting").

@@ -8,3 +8,9 @@ model-paths: ["models"]
 seed-paths: ["seeds"]
 snapshot-paths: ["snapshots"]
 test-paths: ["tests_dbt"]
+
+# Spike S3 (hook coverage): inert unless a run passes --vars '{s3_probe: true, run_id: ...}'.
+on-run-start:
+  - "{{ s3_hook_probe('start') if var('s3_probe', false) else '' }}"
+on-run-end:
+  - "{{ s3_hook_probe('end') if var('s3_probe', false) else '' }}"

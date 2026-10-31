@@ -1,0 +1,445 @@
+{
+  "burst.1.12.6": {
+    "call_statuses": {
+      "ok 100": 100
+    },
+    "dbt_version": "1.12.6",
+    "distinct_records": 10000,
+    "emitter_wall_s": [
+      4.724416,
+      4.880671,
+      4.882277,
+      4.935424,
+      4.94551,
+      5.013178,
+      5.035684,
+      5.038142,
+      5.064993,
+      5.072847,
+      5.07626,
+      5.102228,
+      5.106981,
+      5.120708,
+      5.128344,
+      5.149796,
+      5.155999,
+      5.185598,
+      5.205714,
+      5.232421
+    ],
+    "emitters": 20,
+    "emitters_ok": 20,
+    "expected": 10000,
+    "lag": {
+      "max_s": 6.411,
+      "min_s": 1.694,
+      "n": 10000,
+      "p50_s": 3.897,
+      "p95_s": 6.121,
+      "p99_s": 6.371
+    },
+    "lag_vs_event_timestamp": {
+      "max_s": 6.09,
+      "min_s": 1.263,
+      "n": 10000,
+      "p50_s": 3.595,
+      "p95_s": 5.819,
+      "p99_s": 6.041
+    },
+    "per_emitter": 500,
+    "per_emitter_seen": {
+      "1": 500,
+      "10": 500,
+      "11": 500,
+      "12": 500,
+      "13": 500,
+      "14": 500,
+      "15": 500,
+      "16": 500,
+      "17": 500,
+      "18": 500,
+      "19": 500,
+      "2": 500,
+      "20": 500,
+      "3": 500,
+      "4": 500,
+      "5": 500,
+      "6": 500,
+      "7": 500,
+      "8": 500,
+      "9": 500
+    },
+    "poll_interval_s_p50": 2.13,
+    "polls": 9,
+    "records": 10000,
+    "run_id": "81e0e05e57004a7fa8f69a1a854210c3",
+    "seconds_emitters_done": 15.9,
+    "seconds_to_all_seen": 18.5,
+    "seconds_to_first_seen": 13.0,
+    "server": {
+      "call_ms_max": 1160,
+      "call_ms_p50": 873,
+      "calls": 100,
+      "queued_overload_ms": 0,
+      "status": {
+        "SUCCESS": 100
+      },
+      "transaction_blocked_ms": 0
+    },
+    "visibility_batches": [
+      6300,
+      3700
+    ]
+  },
+  "burst.1.8.10": {
+    "call_statuses": {
+      "ok 100": 100
+    },
+    "dbt_version": "1.8.10",
+    "distinct_records": 10000,
+    "emitter_wall_s": [
+      4.781331,
+      4.834149,
+      4.933048,
+      4.966658,
+      4.977934,
+      5.014173,
+      5.028015,
+      5.039981,
+      5.056221,
+      5.065155,
+      5.091107,
+      5.104925,
+      5.108754,
+      5.168384,
+      5.175638,
+      5.178475,
+      5.235506,
+      5.266483,
+      5.298747,
+      5.639477
+    ],
+    "emitters": 20,
+    "emitters_ok": 20,
+    "expected": 10000,
+    "lag": {
+      "max_s": 8.733,
+      "min_s": 3.284,
+      "n": 10000,
+      "p50_s": 5.746,
+      "p95_s": 7.73,
+      "p99_s": 8.298
+    },
+    "lag_vs_event_timestamp": {
+      "max_s": 8.458,
+      "min_s": 2.949,
+      "n": 10000,
+      "p50_s": 5.456,
+      "p95_s": 7.486,
+      "p99_s": 8.018
+    },
+    "per_emitter": 500,
+    "per_emitter_seen": {
+      "1": 500,
+      "10": 500,
+      "11": 500,
+      "12": 500,
+      "13": 500,
+      "14": 500,
+      "15": 500,
+      "16": 500,
+      "17": 500,
+      "18": 500,
+      "19": 500,
+      "2": 500,
+      "20": 500,
+      "3": 500,
+      "4": 500,
+      "5": 500,
+      "6": 500,
+      "7": 500,
+      "8": 500,
+      "9": 500
+    },
+    "poll_interval_s_p50": 60.68,
+    "records": 10000,
+    "run_id": "f68a0732f5464ea0b57e737a61b16561",
+    "seconds_emitters_done": 13.2,
+    "seconds_to_all_seen": 15.8,
+    "server": {
+      "call_ms_max": 965,
+      "call_ms_p50": 817,
+      "calls": 100,
+      "queued_overload_ms": 0,
+      "status": {
+        "SUCCESS": 100
+      },
+      "transaction_blocked_ms": 0
+    }
+  },
+  "hooks.1.12.6.build": {
+    "command_ok": true,
+    "dbt.command": [
+      "build"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 5.1,
+    "end": true,
+    "lag_s": {
+      "end": 20.266,
+      "start": 22.361
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "6160e10d0c3246a79551771c62a36496",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.12.6.run": {
+    "command_ok": true,
+    "dbt.command": [
+      "run"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 3.6,
+    "end": true,
+    "lag_s": {
+      "end": 7.324,
+      "start": 8.248
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "b237c9457c7347c7938490d77d52da95",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.12.6.seed": {
+    "command_ok": true,
+    "dbt.command": [
+      "seed"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 4.4,
+    "end": true,
+    "lag_s": {
+      "end": 3.085,
+      "start": 4.78
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "1a26d7b9c3f4456797fd449e01091f14",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.12.6.snapshot": {
+    "command_ok": true,
+    "dbt.command": [
+      "snapshot"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 4.0,
+    "end": true,
+    "lag_s": {
+      "end": 7.143,
+      "start": 8.438
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "6c9623b53c7642d9b4fb64a3f539e4c4",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.12.6.source freshness": {
+    "command_ok": true,
+    "dbt.command": [
+      "freshness"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 3.3,
+    "end": true,
+    "lag_s": {
+      "end": 5.299,
+      "start": 6.081
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "606e897f1b3f4d03a604a363ae719639",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.12.6.test": {
+    "command_ok": true,
+    "dbt.command": [
+      "test"
+    ],
+    "dbt_version": "1.12.6",
+    "dbt_wall_s": 3.4,
+    "end": true,
+    "lag_s": {
+      "end": 5.149,
+      "start": 5.984
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "999b5103c75041e39d93e387671a85f8",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.build": {
+    "command_ok": true,
+    "dbt.command": [
+      "build"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 10.6,
+    "end": true,
+    "lag_s": {
+      "end": 5.443,
+      "start": 8.236
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "f6e39427454845ab96872d89d62af001",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.run": {
+    "command_ok": true,
+    "dbt.command": [
+      "run"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 5.0,
+    "end": true,
+    "lag_s": {
+      "end": 7.37,
+      "start": 9.094
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "1d2f79375c6541a4a472dcee87dac258",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.seed": {
+    "command_ok": true,
+    "dbt.command": [
+      "seed"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 7.6,
+    "end": true,
+    "lag_s": {
+      "end": 5.192,
+      "start": 5.335
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "fe482e0f58374caeb7488372a63c770b",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.snapshot": {
+    "command_ok": true,
+    "dbt.command": [
+      "snapshot"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 5.5,
+    "end": true,
+    "lag_s": {
+      "end": 3.049,
+      "start": 5.345
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "f6650d647fc6425eba3673f190882ae1",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.source freshness": {
+    "command_ok": true,
+    "dbt.command": [],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 2.1,
+    "end": false,
+    "lag_s": {},
+    "phases": [],
+    "run_id": "56bb2937caf243ad996842f5921afe09",
+    "start": false,
+    "waited_s": 240
+  },
+  "hooks.1.8.10.source freshness +flag source_freshness_run_project_hooks": {
+    "command_ok": true,
+    "dbt.command": [
+      "freshness"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 4.6,
+    "end": true,
+    "lag_s": {
+      "end": 5.031,
+      "start": 7.081
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "cd743a3342034c60afab13646f821efd",
+    "start": true,
+    "waited_s": null
+  },
+  "hooks.1.8.10.test": {
+    "command_ok": true,
+    "dbt.command": [
+      "test"
+    ],
+    "dbt_version": "1.8.10",
+    "dbt_wall_s": 4.5,
+    "end": true,
+    "lag_s": {
+      "end": 7.246,
+      "start": 9.065
+    },
+    "phases": [
+      "end",
+      "start"
+    ],
+    "run_id": "9b1b639c12d94efb90737d302a3ade5e",
+    "start": true,
+    "waited_s": null
+  },
+  "observed_timestamp": {
+    "SPAN": {
+      "observed_timestamp_set": 0,
+      "rows": 100
+    },
+    "SPAN_EVENT": {
+      "observed_timestamp_set": 0,
+      "rows": 10000,
+      "start_timestamp_set": 0
+    },
+    "how": "ad-hoc query after the dbt 1.12.6 burst, filtered on snow.executable.name ICECORE_EMIT_S3_<run_id>",
+    "run_id": "81e0e05e57004a7fa8f69a1a854210c3"
+  }
+}

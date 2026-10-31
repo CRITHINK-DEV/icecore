@@ -1,7 +1,7 @@
 # Gate 1: how icecore writes telemetry
 
 Decision record. Decided on 31 Oct 2026 by the owner, Anouar Zbaida, after spikes S1, S2, S4 and S5. Story cb2e80f0 (S12).
-Spike S3 has not run yet; what depends on it is listed under [Open items](#open-items).
+Spike S3 ran afterwards (31 Oct 2026, `S3.md`); open item 1 records what it settled.
 
 Every number below comes from a spike note or its committed results file, cited as `S<n>.md` or `results/s<n>.json` with
 the key. The spec sections this decision changes are 1, 2, 3, 4, 5, 6, 7, 8, 9 and 10 of `docs/design/scope-and-architecture.md`.
@@ -168,9 +168,14 @@ role. Whether procedure records from a database without an event table of its ow
 
 ## Open items
 
-1. **S3, event-table lag, has not run.** It sets the SLA default grace (2 × measured p95, spec section 10) and the anomaly
-   history delay. Until then the default grace is a **10-minute placeholder** (`_sla_default_grace_minutes` in
-   `macros/control/collect_sla_config.sql`). S3 also confirms which dbt commands fire `on-run-end`.
+1. **Closed by S3 (`S3.md`, `results/s3.json`).** Through an `ICECORE_EMIT`-style procedure, lag p95 was 7.73 s and 6.12 s
+   over two 10,000-record bursts, with a worst record at 20.3 s. 20 concurrent emitters lost no record and waited on no lock.
+   - The SLA default grace is **1 minute** (2 × 7.73 s, rounded up; `_sla_default_grace_minutes` in
+     `macros/control/collect_sla_config.sql`). The anomaly history delay is **1 minute**.
+   - `build`, `run`, `test`, `seed` and `snapshot` fire both hooks on dbt 1.8.10 and 1.12.6. `source freshness` fires them
+     on 1.12.6, but on 1.8.10 only with `flags: {source_freshness_run_project_hooks: true}`.
+   - `OBSERVED_TIMESTAMP` is NULL on `ICECORE_EMIT` records, so views cannot be lag-aware from that column.
+   - Fusion was not measured (open item 5).
 2. **Routing of procedure records from a database with no event table of its own is unmeasured** (S1.md, open point 5). The
    design expects them in the account table. On that table, only LOG records from anonymous blocks were checked, by the lead
    with ACCOUNTADMIN. The query's `value::string` predicate dropped every SPAN and SPAN_EVENT row, so SPAN and SPAN_EVENT

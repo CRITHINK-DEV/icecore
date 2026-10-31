@@ -3,9 +3,14 @@
 The valid cases read the real graph built from integration_tests/models/control/_sla_fixtures.yml.
 The invalid cases pass synthetic nodes, so a broken fixture never breaks the rest of the suite.
 """
+import json
+import math
+
 import pytest
 
-from helpers.macros import MacroFailed, call_macro, install_deps
+from helpers.macros import IT_DIR, MacroFailed, call_macro, install_deps
+
+REPO = IT_DIR.parent
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -74,6 +79,14 @@ def test_missing_grace_gets_the_default(from_graph):
     entry = from_graph["sla_daily_default_grace"]
     assert entry["grace_minutes"] == default
     assert entry["grace_defaulted"] is True
+
+
+def test_default_grace_is_twice_the_s3_p95_lag():
+    """Spec section 10: the default grace is 2 x the p95 ingestion lag measured by spike S3, rounded up
+    to a whole minute (spikes/S3.md; spikes/results/s3.json, key burst.<dbt version>, lag.p95_s)."""
+    results = json.loads((REPO / "spikes" / "results" / "s3.json").read_text())
+    p95 = max(v["lag"]["p95_s"] for k, v in results.items() if k.startswith("burst."))  # one burst per dbt version
+    assert call_macro("_sla_default_grace_minutes") == math.ceil(2 * p95 / 60)
 
 
 def test_alerts_severity_defaults_to_warn():
@@ -176,6 +189,7 @@ def test_grace_equal_to_expected_every_is_allowed():
 
 
 def test_default_grace_never_exceeds_expected_every():
+    # The shortest schedule is 1m; the default grace (1 minute since S3) is clamped to it if ever larger.
     default = call_macro("_sla_default_grace_minutes")
-    [entry] = collect(node("fct_orders", meta={"sla": {"expected_every": f"{default - 1}m"}}))
-    assert entry["grace_minutes"] == default - 1 and entry["grace_defaulted"] is True
+    [entry] = collect(node("fct_orders", meta={"sla": {"expected_every": "1m"}}))
+    assert entry["grace_minutes"] == min(default, 1) and entry["grace_defaulted"] is True

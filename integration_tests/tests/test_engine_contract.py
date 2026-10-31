@@ -8,8 +8,11 @@ from pathlib import Path
 
 import pytest
 
+import os
+
 import yaml
 
+from helpers.env import PLACEHOLDER_ENV, placeholder_env
 from helpers.macros import MacroFailed, _invoke, call_macro
 
 REPO = Path(__file__).resolve().parents[2]
@@ -23,6 +26,24 @@ def daily_series_sql(values: list[float], end: datetime = datetime(2026, 10, 29,
         f"('{(start + timedelta(days=i)).isoformat(sep=' ')}', {v})" for i, v in enumerate(values)
     )
     return f"select column1::timestamp_ntz as observed_at, column2::float as value from values {rows}"
+
+
+# --- the macro bridge (offline) ---------------------------------------------------------------
+
+
+def test_macro_bridge_leaves_no_placeholder_behind():
+    call_macro("_cortex_unavailable_reason")
+    assert all(os.environ.get(key) != value for key, value in PLACEHOLDER_ENV.items() if value != "/dev/null")
+
+
+def test_placeholder_env_fills_only_missing_values_and_restores(monkeypatch):
+    monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
+    monkeypatch.setenv("SNOWFLAKE_ROLE", "REAL_ROLE")
+    with placeholder_env():
+        assert os.environ["SNOWFLAKE_ACCOUNT"] == "placeholder"
+        assert os.environ["SNOWFLAKE_ROLE"] == "REAL_ROLE"
+    assert "SNOWFLAKE_ACCOUNT" not in os.environ
+    assert os.environ["SNOWFLAKE_ROLE"] == "REAL_ROLE"
 
 
 # --- selection rules (offline) ---------------------------------------------------------------

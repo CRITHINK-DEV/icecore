@@ -5,10 +5,13 @@
      expected_every_minutes, grace_minutes, grace_defaulted,   -- none / none / false without meta.sla
      channel, severity}                                         -- none / 'warn' without meta.alerts
 
-  Reads `meta` (top level, then `config.meta`; the top level wins) of every node in `graph.nodes`,
-  or of `nodes` when given (tests and callers that already hold the nodes). Validates as it reads:
-  a bad value raises a compile error that names the node, so a typo never silently disables an
-  alert. Returns values only: it runs no query and renders no SQL; render_alert_sql and
+  Reads the meta of every node in `graph.nodes`, or of `nodes` when given (tests and callers that
+  already hold the nodes). Users declare it under `config: meta:` (top-level `meta:` is deprecated
+  on dbt 1.12). dbt merges config() > YAML > dbt_project `+meta` into both `node.meta` and
+  `node.config.meta`, so for parsed nodes the two agree; reading `meta` over `config.meta` only
+  matters for nodes built by hand. Sources live in `graph.sources` and are not read. Validates as
+  it reads: a bad value or an unknown key raises a compile error that names the node, so a typo
+  never silently disables an alert. Returns values only: it runs no query and renders no SQL; render_alert_sql and
   render_silence_task_sql consume the result.
 -#}
 {% macro collect_sla_config(nodes=none) %}
@@ -75,17 +78,27 @@
     {% if sla.get('expected_every') is none %}
       {% do icecore._sla_fail(node, "meta.sla needs expected_every (e.g. 1h)") %}
     {% endif %}
-    {% do entry.update({'expected_every_minutes': icecore._sla_minutes(node, 'meta.sla.expected_every', sla.get('expected_every'))}) %}
+    {% set every = icecore._sla_minutes(node, 'meta.sla.expected_every', sla.get('expected_every')) %}
+    {% do entry.update({'expected_every_minutes': every}) %}
     {% if sla.get('grace') is none %}
-      {% do entry.update({'grace_minutes': icecore._sla_default_grace_minutes(), 'grace_defaulted': true}) %}
+      {#- The default never exceeds the schedule itself (a 5-minute schedule gets 5 minutes of grace). -#}
+      {% do entry.update({'grace_minutes': [icecore._sla_default_grace_minutes(), every] | min, 'grace_defaulted': true}) %}
     {% else %}
-      {% do entry.update({'grace_minutes': icecore._sla_minutes(node, 'meta.sla.grace', sla.get('grace'))}) %}
+      {% set grace = icecore._sla_minutes(node, 'meta.sla.grace', sla.get('grace')) %}
+      {% if grace > every %}
+        {% do icecore._sla_fail(node, "meta.sla.grace '" ~ sla.get('grace') ~ "' is longer than expected_every '" ~ sla.get('expected_every') ~ "'; a missed run would go unnoticed for more than a whole period") %}
+      {% endif %}
+      {% do entry.update({'grace_minutes': grace}) %}
     {% endif %}
   {% endif %}
 
   {% if alerts is not none %}
     {% if alerts is not mapping %}
       {% do icecore._sla_fail(node, "meta.alerts must be a mapping like {channel: data-platform, severity: warn}") %}
+    {% endif %}
+    {% set unknown = alerts.keys() | reject('in', ['channel', 'severity']) | list %}
+    {% if unknown %}
+      {% do icecore._sla_fail(node, "meta.alerts has unknown key(s) " ~ (unknown | join(', ')) ~ "; allowed: channel, severity") %}
     {% endif %}
     {% set channel = alerts.get('channel') %}
     {% if channel is not none and (channel is not string or (channel | trim) == '') %}

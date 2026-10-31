@@ -62,7 +62,7 @@ def test_models_without_sla_or_alerts_are_left_out(from_graph):
     assert all(name.startswith("sla_") for name in from_graph), "only the fixtures declare meta.sla / meta.alerts"
 
 
-def test_meta_under_config_is_read(from_graph):
+def test_daily_sla_is_1440_minutes(from_graph):
     assert from_graph["sla_daily_default_grace"]["expected_every_minutes"] == 24 * 60
 
 
@@ -93,6 +93,7 @@ def test_duration_forms(text, minutes):
 
 
 def test_top_level_meta_wins_over_config_meta():
+    """Only matters for nodes built by hand: dbt merges both into node.meta and node.config.meta."""
     [entry] = collect(node("fct_orders", meta={"sla": {"expected_every": "2h"}}, config_meta={"sla": {"expected_every": "1h"}}))
     assert entry["expected_every_minutes"] == 120
 
@@ -152,3 +153,29 @@ def test_error_message_reads_well():
         "icecore: model 'fct_orders' (model.shop.fct_orders): meta.sla.expected_every '1 hour' is not a valid duration"
         in str(err.value)
     )
+
+
+def test_unknown_alerts_key_names_the_model():
+    """Review round 1: a typo such as severty must not silently fall back to severity warn."""
+    with pytest.raises(MacroFailed) as err:
+        collect(node("fct_orders", meta={"alerts": {"channel": "c1", "severty": "error"}}))
+    message = str(err.value)
+    assert "fct_orders" in message and "meta.alerts" in message and "severty" in message
+
+
+def test_grace_longer_than_expected_every_is_an_error():
+    with pytest.raises(MacroFailed) as err:
+        collect(node("fct_orders", meta={"sla": {"expected_every": "15m", "grace": "1h"}}))
+    message = str(err.value)
+    assert "fct_orders" in message and "meta.sla.grace" in message
+
+
+def test_grace_equal_to_expected_every_is_allowed():
+    [entry] = collect(node("fct_orders", meta={"sla": {"expected_every": "1h", "grace": "60m"}}))
+    assert entry["grace_minutes"] == 60
+
+
+def test_default_grace_never_exceeds_expected_every():
+    default = call_macro("_sla_default_grace_minutes")
+    [entry] = collect(node("fct_orders", meta={"sla": {"expected_every": f"{default - 1}m"}}))
+    assert entry["grace_minutes"] == default - 1 and entry["grace_defaulted"] is True

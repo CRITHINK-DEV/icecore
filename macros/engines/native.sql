@@ -4,10 +4,14 @@
   Baseline: when the series spans more than four weeks and the current observation's
   (day-of-week, hour-of-day) bucket holds at least 4 points, the band is computed within that
   bucket (seasonal); otherwise over the whole series (flat). Fewer than 7 points never flags.
-  Band: median ± k × MAD, k = 4 (low), 3 (medium), 2 (high); raw MAD, not scaled to a standard deviation.
+  Band: median ± k × MAD, k = 4 (low), 3 (medium), 2 (high); raw MAD, not scaled to a standard deviation,
+  floored at greatest(anomaly_mad_floor_pct × |median|, anomaly_mad_floor_abs) so a constant series
+  does not get a zero-width band. A median of exactly 0 (a null rate that was always 0) keeps a zero
+  floor by default: any move off 0 is an anomaly.
   Score: signed distance outside the band, 0 inside.
   is_anomaly: score <> 0 and the min_consecutive - 1 latest history points were also outside
-  the band of their own bucket.
+  the band of their own bucket, on the same side.
+  Timestamps are UTC (as in the event table); observed_at defaults to the current UTC time.
 -#}
 
 {% macro native__score(series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
@@ -44,6 +48,9 @@
   {% set min_points = 7 %}
   {% set seasonal_min_days = 28 %}
   {% set bucket_min_points = 4 %}
+  {% set cfg = var('icecore', {}) %}
+  {% set floor_pct = icecore._sql_number(cfg.get('anomaly_mad_floor_pct', 0.01)) %}
+  {% set floor_abs = icecore._sql_number(cfg.get('anomaly_mad_floor_abs', 0)) %}
   {% set sql %}
 with series as (
     select observed_at::timestamp_ntz as observed_at, value::float as value,
@@ -78,20 +85,29 @@ grouped as (
 centers as (
     select grp, median(value) as expected from grouped group by grp
 ),
-bands as (
+spreads as (
     select grouped.grp, centers.expected,
-           centers.expected - {{ k }} * median(abs(grouped.value - centers.expected)) as lower,
-           centers.expected + {{ k }} * median(abs(grouped.value - centers.expected)) as upper
+           greatest(median(abs(grouped.value - centers.expected)),
+                    {{ floor_pct }} * abs(centers.expected),
+                    {{ floor_abs }}) as mad
     from grouped join centers on grouped.grp = centers.grp
     group by grouped.grp, centers.expected
 ),
+bands as (
+    select grp, expected, expected - {{ k }} * mad as lower, expected + {{ k }} * mad as upper
+    from spreads
+),
 recent as (
-    select grouped.value < bands.lower or grouped.value > bands.upper as outside
+    select case when grouped.value > bands.upper then 1
+                when grouped.value < bands.lower then -1
+                else 0 end as direction
     from grouped join bands on grouped.grp = bands.grp
     qualify row_number() over (order by grouped.observed_at desc) <= {{ previous }}
 ),
 streak as (
-    select coalesce(count_if(outside), 0) as outside_points from recent
+    select coalesce(count_if(direction = 1), 0) as above_points,
+           coalesce(count_if(direction = -1), 0) as below_points
+    from recent
 ),
 scored as (
     select mode.baseline, mode.history_points, mode.history_days,
@@ -100,14 +116,14 @@ scored as (
                 when cur.value > bands.upper then cur.value - bands.upper
                 when cur.value < bands.lower then cur.value - bands.lower
                 else 0 end as score,
-           streak.outside_points
+           streak.above_points, streak.below_points
     from cur
     cross join mode
     cross join streak
     left join bands on bands.grp = iff(mode.baseline = 'seasonal', cur.bucket, 0)
 )
 select 'native' as engine, expected, lower, upper, score,
-       score <> 0 and outside_points >= {{ previous }} as is_anomaly,
+       score <> 0 and iff(score > 0, above_points, below_points) >= {{ previous }} as is_anomaly,
        baseline, history_points, history_days
 from scored
   {% endset %}
@@ -118,7 +134,7 @@ from scored
 {#- A timestamp as a SQL literal (escaped); none means now. -#}
 {% macro _sql_timestamp(value) %}
   {% if value is none %}
-    {{ return('current_timestamp()::timestamp_ntz') }}
+    {{ return("convert_timezone('UTC', current_timestamp())::timestamp_ntz") }}
   {% endif %}
   {{ return("'" ~ (value | string).replace('\\', '\\\\').replace("'", "''") ~ "'::timestamp_ntz") }}
 {% endmacro %}

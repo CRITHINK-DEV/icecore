@@ -32,7 +32,7 @@ macros:
         description: "Integer of at least 1: consecutive out-of-band observations needed before is_anomaly is true. Default: `var('icecore').anomaly_min_consecutive` (1)."
       - name: observed_at
         type: string
-        description: "Timestamp of the current observation (`YYYY-MM-DD HH:MI:SS`), used by seasonal baselines. Default: now."
+        description: "UTC timestamp of the current observation (`YYYY-MM-DD HH:MI:SS`), used by seasonal baselines. Default: the current UTC time."
 
   - name: native__score
     description: >
@@ -40,10 +40,19 @@ macros:
       when the series spans more than four weeks and the current observation's (day-of-week,
       hour-of-day) bucket holds at least 4 points, the band then being computed within that bucket;
       flat (whole series) otherwise. Band: median ± k × MAD with k = 4 (low), 3 (medium) or 2 (high),
-      raw MAD. Score: signed distance outside the band, 0 inside. is_anomaly: score <> 0 and the
-      min_consecutive - 1 latest history points were also outside their own band. Fewer than 7 history
-      points never flags (baseline `insufficient_history`). Called by `score`; returns the contract
-      fields plus `baseline` (flat, seasonal, insufficient_history), `history_points` and `history_days`.
+      raw MAD floored at greatest(`anomaly_mad_floor_pct` × |median|, `anomaly_mad_floor_abs`)
+      (defaults 0.01 and 0), so a constant series of 1000 accepts 970 to 1030 at medium. A median of
+      exactly 0 keeps a zero floor by default: a null rate moving off 0 is always an anomaly (set
+      `anomaly_mad_floor_abs` to tolerate it). Score: signed distance outside the band, 0 inside.
+      is_anomaly: score <> 0 and the min_consecutive - 1 latest history points were also outside their
+      own band on the same side. Fewer than 7 history points never flags (baseline
+      `insufficient_history`). Timestamps are UTC, as in the event table; observed_at defaults to the
+      current UTC time. Known limits: a 4-point bucket minimum means 5 weeks of hourly data are enough
+      for seasonality but bands from small buckets are coarse; a steadily growing metric (a table
+      that only gains rows) drifts out of a median band and is flagged, mostly at high sensitivity,
+      since trend handling (EWMA) is not implemented yet. Called by `score`; returns the contract
+      fields plus `baseline` (flat, seasonal, insufficient_history), `history_points` and
+      `history_days`.
     arguments:
       - name: series_sql
         type: string

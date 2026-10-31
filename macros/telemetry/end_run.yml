@@ -1,0 +1,20 @@
+version: 2
+
+macros:
+  - name: end_run
+    description: >
+      The on-run-end hook of run telemetry. Add it to dbt_project.yml as the on-run-end hook calling
+      icecore.end_run with dbt's `results` (README, "Try it in 60 seconds"). One orchestrator: it builds the
+      run's batch and sends it with `icecore.emit_run` to ICECORE_EMIT_RUN, in as many guarded CALLs of at most
+      512 KB as needed. The batch holds the items of each end-of-run emitter whose var is on, then the
+      invocation-end LOG record (`icecore.kind = run_end`), which carries `dbt.invocation.status` (`error` when
+      a node errored or failed, else `warn` when one warned, else `success`), `dbt.invocation.nodes_total`,
+      `nodes_success`, `nodes_failed` (error, fail, runtime error), `nodes_warned` (warn, partial success) and
+      `nodes_skipped`, plus `dbt.version` and the engine settings; its level is error, warn or info to match.
+      Every record carries `dbt.invocation_id`; each CALL is its own trace, so a run is grouped by that
+      attribute. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
+      `var('icecore').telemetry` is false.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results` (run results with their nodes). Default none, read as no nodes.

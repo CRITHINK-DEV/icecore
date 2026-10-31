@@ -1,0 +1,4 @@
+# Pinned to the release the S4 contract was captured from (macros/compat/ELEMENTARY_VERSION).
+packages:
+  - package: elementary-data/elementary
+    version: 0.26.1

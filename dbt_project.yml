@@ -20,5 +20,6 @@ vars:
     anomaly_mad_floor_abs: 0
     shadow_engine: none
     payload_cap_kb: 64
+    obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     metadata_fallback_kinds: [iceberg]   # table kinds whose metadata row count is not trusted (spike S5)
     dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

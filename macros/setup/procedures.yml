@@ -1,0 +1,32 @@
+version: 2
+
+macros:
+  - name: create_emit_procedures
+    description: >
+      Create (CREATE OR REPLACE, EXECUTE AS OWNER) the two procedures every icecore record is written through,
+      in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). Called by `setup`; the schema must exist,
+      and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
+      dbt needs USAGE on the database, the schema and both procedures.
+      `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
+      `SYSTEM$ADD_EVENT`; a name without the `icecore.` prefix gets it. Refuses a CALL of more than 100 events
+      (returns `icecore-error too_many_events: ...` and writes nothing). Returns `ok <n>`. `SCOPE` is `global`.
+      `ICECORE_EMIT_RUN(spans ARRAY)`: LANGUAGE PYTHON 3.11, `PACKAGES = ('snowflake-snowpark-python',
+      'opentelemetry-api==1.38.0')` (pinned: unpinned, opentelemetry-api resolved to 1.45.1 and failed to import;
+      `snowflake-telemetry-python` must not be added, S1.md). Each element is a span `{name, start_ns, end_ns,
+      attrs, events: [{name, ts_ns, attrs}]}`, written with its explicit times, or a log `{type: 'log', level,
+      message, attrs}` (levels `debug`, `info`, `warn`, `error`), written as a LOG record with attributes.
+      `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
+      Records land in the event table of the procedures' database, at that database's levels. Returns the two
+      qualified procedure names (empty at parse time).
+    arguments: []
+
+  - name: obs_schema_name
+    description: >
+      The name of icecore's schema in the target database, upper-cased as Snowflake resolves an unquoted
+      identifier: `var('icecore').obs_schema`, default `ICECORE_OBS`. The procedures and views live there, and
+      the views filter `snow.schema.name` on it.
+    arguments: []
+
+  - name: obs_schema
+    description: The obs schema fully qualified and quoted, `"<TARGET_DATABASE>"."<OBS_SCHEMA>"` (both parts upper-cased).
+    arguments: []

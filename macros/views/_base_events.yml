@@ -1,0 +1,62 @@
+version: 2
+
+macros:
+  - name: base_events
+    description: >
+      The filtered, typed SELECT every icecore view starts from, returned as SQL text to use as a CTE body:
+      `with events as (<the rendered icecore.base_events()>)`, rendered inside a
+      macro or model. It reads the event table that `resolve_event_table` returns for
+      the database and keeps only the records of icecore's two procedures in this environment (spikes/GATE1.md,
+      "Identity and record shape"). The predicates come first and in this order, so the filter sits directly on
+      the table scan: `RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')`; `RESOURCE_ATTRIBUTES` `snow.database.name` =
+      the database, `snow.schema.name` = the icecore schema and `snow.executable.name like 'ICECORE_EMIT%'`;
+      then the icecore identity, `SCOPE:name = 'icecore'` (ICECORE_EMIT_RUN records) or a SPAN_EVENT whose name
+      starts with `icecore.` (ICECORE_EMIT records, SCOPE `global`). Records of other libraries, other procedures,
+      other schemas or other databases sharing the table are never returned; native dbt Projects records are not
+      either, until their own predicate is defined (GATE1.md, open item 8).
+      Columns: `event_at` (TIMESTAMP), `started_at` (START_TIMESTAMP), `observed_at` (OBSERVED_TIMESTAMP; NULL on every
+      ICECORE_EMIT span event, spike S3),
+      `record_type`, `record_name`, `severity`, `scope_name`, `trace_id`, `span_id`, `parent_span_id`,
+      `executable_name`, `emit_query_id` (the emitting CALL's query id), one typed column per attribute of spec
+      section 4 (strings; `result_rows_affected`, `test_failures`, `icecore_schema_version` as NUMBER;
+      `result_execution_time_s`, `metric_value`, `anomaly_expected`, `anomaly_lower`, `anomaly_upper`,
+      `anomaly_score`, `cost_credits` as FLOAT; `anomaly_is_anomaly` as BOOLEAN), `value` and `attributes` (raw
+      RECORD_ATTRIBUTES). Typed columns use TRY_TO_*, so a malformed value reads as null and never fails a view.
+      Spans are written after the fact with dbt's times, so do not window incremental reads on `event_at` alone.
+    arguments:
+      - name: event_table
+        type: string
+        description: >
+          The relation to read. Default none: resolved with `resolve_event_table(database)` when the macro
+          executes (at parse time a placeholder is rendered).
+      - name: database
+        type: string
+        description: >
+          The database whose icecore procedures wrote the records. Default `target.database`. A plain identifier is
+          matched in upper case, as Snowflake stores it; any other name is matched as written.
+      - name: obs_schema
+        type: string
+        description: >
+          The schema holding ICECORE_EMIT and ICECORE_EMIT_RUN. Default `var('icecore', {}).get('obs_schema',
+          'ICECORE_OBS')`. Matched like `database`.
+
+  - name: resolve_event_table
+    description: >
+      The event table the icecore views read for a database, resolved with
+      `SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE <database>` (spikes/GATE1.md, "What setup creates"): the
+      table it names, or `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` when it names the account table
+      `SNOWFLAKE.TELEMETRY.EVENTS` (readers then need the `EVENTS_VIEWER` application role). Raises a compiler error
+      when no event table is active, since no view could read anything. Returns none at parse time.
+    arguments:
+      - name: database
+        type: string
+        description: The database to resolve for. Default `target.database`.
+
+  - name: event_table_to_read
+    description: >
+      Maps an EVENT_TABLE parameter value to the relation to read: `SNOWFLAKE.TELEMETRY.EVENTS` (any case) becomes
+      `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`, any other table is returned as it is, none or empty gives none. No query.
+    arguments:
+      - name: event_table
+        type: string
+        description: The value of the EVENT_TABLE parameter.

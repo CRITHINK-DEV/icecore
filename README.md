@@ -31,7 +31,7 @@ icecore is a dbt package, in development, for teams that run dbt on Snowflake. I
 ## Try it in 60 seconds
 
 > [!NOTE]
-> Available from **0.1.0** (not released yet). The snippets show the planned interface from the [design](docs/design/scope-and-architecture.md); they will not work before the release.
+> **Nothing is released yet.** The hooks (run telemetry) are planned from **0.1.0-alpha**, the `icecore.volume` and `icecore.freshness` tests from **0.1.0**. The snippets show the planned interface from the [design](docs/design/scope-and-architecture.md); they will not work before those releases.
 
 ```yaml
 # packages.yml
@@ -39,11 +39,11 @@ packages:
   - package: crithink-dev/icecore
     version: [">=0.1.0", "<1.0.0"]
 
-# dbt_project.yml
+# dbt_project.yml (hooks: from 0.1.0-alpha)
 on-run-start: "{{ icecore.start_run() }}"
 on-run-end: "{{ icecore.end_run(results) }}"
 
-# models/schema.yml
+# models/schema.yml (tests: from 0.1.0)
 models:
   - name: fct_orders
     data_tests:
@@ -163,6 +163,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-floor.txt
 
 Issues and pull requests are welcome. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
 
+<!-- enable at public release (Gate 3) -->
+<!--
 <a href="https://star-history.com/#crithink-dev/icecore&Date">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=crithink-dev/icecore&type=Date&theme=dark">
@@ -175,6 +177,7 @@ Issues and pull requests are welcome. Start with [Develop icecore](#develop-icec
 <a href="https://github.com/crithink-dev/icecore/graphs/contributors">
   <img alt="icecore contributors" src="https://contrib.rocks/image?repo=crithink-dev/icecore">
 </a>
+-->
 
 ## Licence
 

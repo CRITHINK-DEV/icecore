@@ -16,6 +16,8 @@ vars:
     anomaly_engine: auto
     anomaly_sensitivity: medium
     anomaly_min_consecutive: 1
+    anomaly_mad_floor_pct: 0.01
+    anomaly_mad_floor_abs: 0
     shadow_engine: none
     payload_cap_kb: 64
     metadata_fallback_kinds: [iceberg]   # table kinds whose metadata row count is not trusted (spike S5)

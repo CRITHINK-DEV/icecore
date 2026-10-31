@@ -238,6 +238,23 @@ def test_no_window_returns_none_without_failing(dbt, sf, run_id):
 
 
 @pytest.mark.sandbox
+def test_null_rate_keeps_full_float_precision(dbt, sf, run_id):
+    # NUMBER division in Snowflake stops at scale 6 (1/3 -> 0.333333); the rate is computed in FLOAT
+    name = f"UC2_COLS_THIRD_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 10)
+        time.sleep(2)
+        since = utc_now(sf)
+        insert_rows(sf, table, 3, nulls=1, start=100)
+        got = run_macro("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount", "since": since})
+        assert got["metrics"]["null_rate"] == pytest.approx(1 / 3, rel=1e-12), got
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
 def test_empty_window_gives_zero_rows_and_no_null_rate(dbt, sf, run_id):
     name = f"UC2_COLS_EMPTY_{run_id}".upper()
     table = quoted(DATABASE, SCHEMA, name)

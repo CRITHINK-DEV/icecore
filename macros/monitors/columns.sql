@@ -67,7 +67,7 @@
 {% macro _icecore_column_metric_exprs(c) %}
   {{ return({
       'row_count': 'count(*)',
-      'null_rate': '(count_if(' ~ c ~ ' is null) / nullif(count(*), 0))::float',
+      'null_rate': 'count_if(' ~ c ~ ' is null)::float / nullif(count(*), 0)',
   }) }}
 {% endmacro %}
 

@@ -1,36 +1,16 @@
 """Checks that need no Snowflake connection: the package parses and declares its contract."""
 import os
-from pathlib import Path
 
 import pytest
 import yaml
-from dbt.cli.main import dbtRunner, dbtRunnerResult
 
-IT_DIR = Path(__file__).resolve().parents[1]
+from helpers.macros import IT_DIR, invoke as run_dbt
+
 REPO = IT_DIR.parent
 
-PLACEHOLDER_ENV = {
-    "SNOWFLAKE_ACCOUNT": "placeholder",
-    "SNOWFLAKE_USER": "placeholder",
-    "SNOWFLAKE_PRIVATE_KEY_PATH": "/dev/null",
-    "SNOWFLAKE_ROLE": "placeholder",
-    "SNOWFLAKE_WAREHOUSE": "placeholder",
-}
 
-
-def run_dbt(args: list[str]) -> dbtRunnerResult:
-    return dbtRunner().invoke(args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)])
-
-
-@pytest.fixture
-def placeholder_env(monkeypatch):
-    # only for this test's duration: real SNOWFLAKE_* values win, placeholders never outlive the test
-    for key, value in PLACEHOLDER_ENV.items():
-        if not os.environ.get(key):
-            monkeypatch.setenv(key, value)
-
-
-def test_dbt_parse_succeeds_without_a_connection(placeholder_env):
+def test_dbt_parse_succeeds_without_a_connection():
+    # run_dbt fills missing SNOWFLAKE_* with placeholders for each call only (helpers.env.placeholder_env)
     assert run_dbt(["deps"]).success
     assert run_dbt(["parse"]).success
 

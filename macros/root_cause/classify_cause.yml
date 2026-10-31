@@ -1,0 +1,28 @@
+version: 2
+
+macros:
+  - name: classify_cause
+    description: >
+      Says why a node could be the root cause of a downstream test failure. Returns one of
+      `upstream_failure` (the node errored or failed in this run), `schema_change` (a schema
+      diff signal exists for it), `stale_source` (a freshness breach signal exists for it) or
+      `none`. When several apply, the order of precedence is the order above. A skipped node
+      returns `none`: it was skipped because of something further upstream. Runs no query;
+      the result becomes `dbt.root_cause.kind`.
+    arguments:
+      - name: node
+        type: dict | string
+        description: A dbt graph node (any mapping with `unique_id`) or the unique_id itself. Required.
+      - name: run_results
+        type: list
+        description: >
+          This run's results. Either dbt's on-run-end `results` (objects with `.node.unique_id`
+          and `.status`) or mappings `{"unique_id": ..., "status": ...}` /
+          `{"node": {"unique_id": ...}, "status": ...}`. Statuses `error`, `fail` and
+          `runtime error` count as a failure. Default `[]`.
+      - name: signals
+        type: dict
+        description: >
+          Signals keyed by unique_id: `{"freshness_breaches": {unique_id: detail},
+          "schema_diffs": {unique_id: [changes]}}`. A node is flagged when its entry is
+          truthy. Either key may be missing. Default `{}`.

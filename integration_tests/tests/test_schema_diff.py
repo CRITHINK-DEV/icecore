@@ -3,38 +3,17 @@
 The macros are called through the wrappers in integration_tests/macros/test_support/it_schema.sql, which log
 their results as `icecore_it_result:<json>`. diff_schema is pure Jinja, so its tests run offline.
 """
-import json
 import os
 
 import pytest
-from dbt.cli.main import dbtRunner
 
-from conftest import IT_DIR
-from test_offline import PLACEHOLDER_ENV
+from helpers.macros import install_deps, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES")
-RESULT_PREFIX = "icecore_it_result:"
 NUMBER = "NUMBER(38,0)"
 VARCHAR = "VARCHAR(16777216)"
 EMPTY = {"added": [], "removed": [], "type_changed": []}
-
-
-def run_macro(macro: str, args: dict):
-    """Run a macro through dbt run-operation and return the JSON value it logged with RESULT_PREFIX."""
-    seen = []
-
-    def capture(event):
-        msg = getattr(event.data, "msg", "")
-        if event.info.name == "JinjaLogInfo" and msg.startswith(RESULT_PREFIX):
-            seen.append(json.loads(msg[len(RESULT_PREFIX):]))
-
-    res = dbtRunner(callbacks=[capture]).invoke(
-        ["run-operation", macro, "--args", json.dumps(args), "--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]
-    )
-    detail = res.exception or [getattr(r, "message", r) for r in getattr(res.result, "results", [])]
-    assert res.success, f"{macro} failed: {detail}"
-    return seen[-1] if seen else None
 
 
 def quoted(*parts: str) -> str:
@@ -49,14 +28,7 @@ def col(name: str, data_type: str) -> dict:
 
 @pytest.fixture(scope="module")
 def offline_dbt():
-    saved = {k: os.environ.get(k) for k in PLACEHOLDER_ENV}
-    for key, value in PLACEHOLDER_ENV.items():
-        os.environ.setdefault(key, value)
-    assert dbtRunner().invoke(["deps", "--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]).success
-    yield
-    for key, value in saved.items():
-        if value is None:
-            os.environ.pop(key, None)
+    install_deps()
 
 
 def diff(previous, current):

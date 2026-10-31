@@ -10,42 +10,13 @@ import time
 from datetime import datetime, timezone
 
 import pytest
-from dbt.cli.main import dbtRunner
 
-from conftest import IT_DIR
-from test_offline import PLACEHOLDER_ENV
+from helpers.macros import run_macro, run_macro_with_logs
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES")
 N_ROWS = 100
 WAIT_S = 60
-RESULT_PREFIX = "icecore_it_result:"
-
-
-def run_macro_with_logs(macro: str, args: dict, extra: list[str] | None = None):
-    """Run a macro through dbt run-operation; return (JSON value logged with RESULT_PREFIX, other icecore log lines)."""
-    seen, logs = [], []
-
-    def capture(event):
-        msg = getattr(event.data, "msg", "")
-        if event.info.name != "JinjaLogInfo":
-            return
-        if msg.startswith(RESULT_PREFIX):
-            seen.append(json.loads(msg[len(RESULT_PREFIX):]))
-        elif msg.startswith("icecore:"):
-            logs.append(msg)
-
-    res = dbtRunner(callbacks=[capture]).invoke(
-        ["run-operation", macro, "--args", json.dumps(args), "--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]
-        + (extra or [])
-    )
-    detail = res.exception or [getattr(r, "message", r) for r in getattr(res.result, "results", [])]
-    assert res.success, f"{macro} failed: {detail}"
-    return (seen[-1] if seen else None), logs
-
-
-def run_macro(macro: str, args: dict, extra: list[str] | None = None):
-    return run_macro_with_logs(macro, args, extra)[0]
 
 
 def quoted(*parts: str) -> str:
@@ -74,10 +45,7 @@ def write_rows(sf, relation: str, n: int = N_ROWS) -> None:
     ("fct_orders", False, '"ICECORE_SANDBOX"."SPIKES"."FCT_ORDERS"'),
     ('Mixed Case "Orders"', True, '"ICECORE_SANDBOX"."SPIKES"."Mixed Case ""Orders"""'),
 ])
-def test_quoted_name_follows_quote_policy(monkeypatch, identifier, quoted_identifier, expected):
-    for key, value in PLACEHOLDER_ENV.items():
-        monkeypatch.setenv(key, os.environ.get(key, value))
-    assert dbtRunner().invoke(["deps", "--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]).success
+def test_quoted_name_follows_quote_policy(identifier, quoted_identifier, expected):
     args = {"database": "icecore_sandbox", "schema": "spikes", "identifier": identifier, "quoted": quoted_identifier}
     assert run_macro("it_quoted_name", args) == expected
 

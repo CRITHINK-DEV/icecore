@@ -1,6 +1,7 @@
 """Offline tests of the harness helpers: they must behave before any Snowflake call."""
 import datetime as dt
 import json
+import os
 import threading
 
 import pytest
@@ -59,3 +60,14 @@ def test_record_finding_is_safe_under_concurrent_writers(tmp_path, monkeypatch):
     threads = [threading.Thread(target=findings.record_finding, args=("s0", f"k{i}", i)) for i in range(20)]
     [t.start() for t in threads]; [t.join() for t in threads]
     assert len(json.load(open(tmp_path / "s0.json"))) == 20
+
+
+def test_placeholder_env_restores_after_an_error_and_keeps_empty_values(monkeypatch):
+    monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
+    monkeypatch.setenv("SNOWFLAKE_ROLE", "")
+    with pytest.raises(RuntimeError):
+        with env.placeholder_env():
+            assert os.environ["SNOWFLAKE_ROLE"] == "placeholder"
+            raise RuntimeError("boom")
+    assert "SNOWFLAKE_ACCOUNT" not in os.environ
+    assert os.environ["SNOWFLAKE_ROLE"] == ""

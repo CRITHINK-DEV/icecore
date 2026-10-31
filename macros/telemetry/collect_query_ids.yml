@@ -1,0 +1,14 @@
+version: 2
+
+macros:
+  - name: collect_query_ids
+    description: >
+      The Snowflake query ids behind one dbt run result, read from `result.adapter_response.query_id` (a
+      string, or a list where an adapter reports several). Empty values are dropped and duplicates kept once, in
+      order. dbt's adapter response holds the id of the node's main statement, so a node usually has one id.
+      Returns a list of strings, empty when the result has none (a skipped node, or an adapter response without
+      an id).
+    arguments:
+      - name: result
+        type: run result
+        description: One of dbt's on-run-end `results`, or a dict shaped like a run_results.json result.

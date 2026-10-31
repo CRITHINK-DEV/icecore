@@ -115,7 +115,9 @@ def test_invocation_span_runs_from_run_started_at_to_end_run():
     assert end["type"] == "log" and end["attrs"]["icecore.kind"] == "run_end"
     for key in ("dbt.invocation.started_at", "dbt.invocation.completed_at", "dbt.invocation.duration_s"):
         assert end["attrs"][key] == a[key]
-    assert [r.get("name", r.get("type")) for r in records] == ["icecore.invocation", "icecore.node", "icecore.node", "log"]
+    # Spans first, the emitters' items (here two node-result LOGs) next, the end LOG last.
+    assert [r.get("name", r.get("type")) for r in records] == [
+        "icecore.invocation", "icecore.node", "icecore.node", "log", "log", "log"]
 
 
 def test_start_record_carries_run_started_at():

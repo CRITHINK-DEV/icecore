@@ -42,3 +42,16 @@
   {% endfor %}
   {% do _it_result({'records': records, 'chunk_sizes': sizes, 'chunk_bytes': bytes}) %}
 {% endmacro %}
+
+{% macro it_collect_query_ids(result) %}
+  {% do _it_result(icecore.collect_query_ids(result)) %}
+{% endmacro %}
+
+{#- end_run's emitter list without the macros themselves. -#}
+{% macro it_end_run_emitters() %}
+  {% set out = [] %}
+  {% for emitter in icecore._icecore_end_run_emitters() %}
+    {% do out.append({'name': emitter['name'], 'var': emitter['var'], 'default': emitter['default']}) %}
+  {% endfor %}
+  {% do _it_result(out) %}
+{% endmacro %}

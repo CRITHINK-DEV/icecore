@@ -9,6 +9,8 @@ test-paths: ["tests"]
 vars:
   icecore:
     telemetry: true
+    node_results: true                  # end_run: one LOG per node result (UC1)
+    query_events: true                  # end_run: one icecore.query span event per node query id (UC1)
     monitors: true
     cost: false
     root_cause: false

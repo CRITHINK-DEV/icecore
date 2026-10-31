@@ -24,7 +24,10 @@
     batch['node_spans'][unique_id]['events']. batch['timing'] holds the invocation's times. Later stories add
     theirs here: lineage, samples, cost, root cause. -#}
 {% macro _icecore_end_run_emitters() %}
-  {{ return([]) }}
+  {{ return([
+      {'name': 'node_results', 'var': 'node_results', 'default': true, 'macro': icecore.emit_node_results},
+      {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
+  ]) }}
 {% endmacro %}
 
 

@@ -55,3 +55,12 @@
   {% endfor %}
   {% do _it_result(out) %}
 {% endmacro %}
+
+{#- dbt.result.message as node_attributes writes it, for each message, in the current result_message mode. -#}
+{% macro it_result_message(messages) %}
+  {% set out = [] %}
+  {% for message in messages %}
+    {% do out.append(icecore.node_attributes(none, {'message': message, 'status': 'error'}).get('dbt.result.message')) %}
+  {% endfor %}
+  {% do _it_result(out) %}
+{% endmacro %}

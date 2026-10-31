@@ -51,11 +51,39 @@
     {%- do icecore._icecore_put(out, 'dbt.result.status', none if status is none else status | string) -%}
     {%- do icecore._icecore_put(out, 'dbt.result.rows_affected', icecore._icecore_number(get(response, 'rows_affected'))) -%}
     {%- do icecore._icecore_put(out, 'dbt.result.execution_time_s', icecore._icecore_number(get(result, 'execution_time'))) -%}
-    {%- do icecore._icecore_put(out, 'dbt.result.message', get(result, 'message')) -%}
+    {%- do icecore._icecore_put(out, 'dbt.result.message', icecore._icecore_result_message(get(result, 'message'))) -%}
     {%- do icecore._icecore_put(out, 'dbt.test.failures', icecore._icecore_number(get(result, 'failures'))) -%}
     {%- do icecore._icecore_put(out, 'snow.query.id', get(response, 'query_id')) -%}
   {%- endif -%}
   {{ return(out) }}
+{% endmacro %}
+
+
+{#- dbt.result.message as var('icecore').result_message wants it. dbt's message can quote data values from a
+    Snowflake error (Numeric value 'jane@x.com' is not recognized), and the event table may be readable by more
+    people than the data, so the default is `redacted`: every single-quoted literal becomes '?' and every
+    double-quoted one "?" (doubled and backslash-escaped quotes inside a literal are part of it; an
+    unterminated literal is redacted to the end), then the text is cut at 1,000 characters. `full` keeps the
+    message as dbt wrote it, `none` leaves the key out. An unknown mode reads as `redacted`. -#}
+{% macro _icecore_result_message(message) %}
+  {%- if message is none -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set mode = icecore._icecore_setting('result_message', 'redacted') | string | trim | lower -%}
+  {%- if mode == 'none' -%}
+    {{ return(none) }}
+  {%- elif mode == 'full' -%}
+    {{ return(message | string) }}
+  {%- endif -%}
+  {{ return(icecore._icecore_redact_literals(message | string)[:1000]) }}
+{% endmacro %}
+
+
+{% macro _icecore_redact_literals(text) %}
+  {%- set q, dq, bs = "'", '"', '\\\\' -%}
+  {%- set pattern = '(?s)(' ~ q ~ ')(?:[^' ~ q ~ bs ~ ']|' ~ bs ~ '.|' ~ q ~ q ~ ')*(?:' ~ q ~ '|$)'
+      ~ '|(' ~ dq ~ ')(?:[^' ~ dq ~ bs ~ ']|' ~ bs ~ '.|' ~ dq ~ dq ~ ')*(?:' ~ dq ~ '|$)' -%}
+  {{ return(modules.re.sub(pattern, '\\1\\2?\\1\\2', text)) }}
 {% endmacro %}
 
 

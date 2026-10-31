@@ -115,11 +115,41 @@ def test_end_run_lists_its_emitters_with_their_vars():
     ]
 
 
+SECRET = ("Database Error in model x\n  100038 (22018): Numeric value 'jane@x.com' is not recognized; "
+          "column \"o'k \"\"name\"\"\" and 'it''s \\' escaped' end")
+
+
+@pytest.mark.parametrize("mode,expected", [
+    (None, "Database Error in model x\n  100038 (22018): Numeric value '?' is not recognized; "
+           "column \"?\" and '?' end"),
+    ("redacted", "Database Error in model x\n  100038 (22018): Numeric value '?' is not recognized; "
+                 "column \"?\" and '?' end"),
+    ("full", SECRET),
+    ("none", None),
+])
+def test_result_message_modes(mode, expected):
+    settings = {} if mode is None else {"result_message": mode}
+    failed = result("model.p.bad", "error", query_id=None, message=SECRET)
+    log, = node_logs(batch([failed], **settings))
+    assert log["attrs"].get("dbt.result.message") == expected
+    assert "jane@x.com" not in log["message"] or mode == "full"
+    assert log["message"] == "model.p.bad error" + (": " + expected if expected else "")
+
+
+def test_redacted_message_is_capped_at_1000_characters():
+    long = "x" * 5000 + " 'secret'"
+    out = run_macro("it_result_message", {"messages": [long, "value 'a' and \"b\" then 'tail data"]})
+    assert out[0] == "x" * 1000
+    assert out[1] == "value '?' and \"?\" then '?'"
+    assert "tail data" not in out[1]
+
+
 def test_package_declares_the_emitter_vars():
     import yaml
     from helpers.macros import IT_DIR
     cfg = yaml.safe_load(open(IT_DIR.parent / "dbt_project.yml"))["vars"]["icecore"]
     assert cfg["node_results"] is True and cfg["query_events"] is True
+    assert cfg["result_message"] == "redacted"
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -190,3 +220,23 @@ def test_query_events_match_query_history(sf, build):
             break
         time.sleep(5)
     assert seen == set(ids)
+
+
+@pytest.mark.sandbox
+def test_failing_model_result_message_is_redacted(sf, obs):
+    run_id = uuid.uuid4().hex
+    since = snowflake_since(sf)
+    try:
+        res, run_results = run_with_hooks(["build", "--select", "hooks_fail"], run_id, obs,
+                                          extra_vars={"hooks_fail": True})
+    finally:
+        drop_fixture_views(sf, run_id)
+    assert not res.success
+    failed, = node_results(run_results)
+    assert "'NO_SUCH_COLUMN'" in failed["message"]  # what dbt itself reports
+    rows = invocation_records(sf, obs, run_results["metadata"]["invocation_id"], min_rows=3, since=since)
+    log = landed_node_results(rows)[failed["unique_id"]]
+    message = log["record_attributes"]["dbt.result.message"]
+    assert "invalid identifier '?'" in message and "NO_SUCH_COLUMN" not in message and len(message) <= 1000
+    assert log["value"] == f"{failed['unique_id']} error: {message}"
+    assert log["record"]["severity_text"] == "ERROR"

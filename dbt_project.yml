@@ -11,6 +11,7 @@ vars:
     telemetry: true
     node_results: true                  # end_run: one LOG per node result (UC1)
     query_events: true                  # end_run: one icecore.query span event per node query id (UC1)
+    result_message: redacted            # dbt.result.message: redacted (quoted literals as '?', max 1,000 chars), full or none
     monitors: true
     cost: false
     root_cause: false

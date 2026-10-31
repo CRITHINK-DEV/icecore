@@ -4,12 +4,16 @@ macros:
   - name: get_change_window
     description: >
       Decides which rows the column monitors read: the rows changed since `since`. Returns
-      `{mode: changes, since}` when CHANGES works for the relation over that window (change tracking on and
-      covering it, checked with a compile-only probe that reads no data). Otherwise, when `timestamp_column` is
-      given and is a DATE or TIMESTAMP column, returns
-      `{mode: timestamp_column, since, timestamp_column, timestamp_type}` and logs why CHANGES was not used.
-      Returns none with a logged warning when neither works (no change tracking and no usable timestamp column,
-      missing relation, `since` missing); it never fails the run.
+      `{mode: changes, since}` (plus `timestamp_column` when one is given) when a compile-time probe of CHANGES
+      succeeds; that probe reads no data and catches change tracking being off. It does not prove that change
+      tracking covers the whole window: a table re-created after `since` (dbt full refresh, table models), or one
+      whose change tracking was enabled after rows were written since then, passes the probe and fails only when
+      the CHANGES query runs. `compute_column_metrics` and `compute_dimension_metrics` catch that failure, log it,
+      and run again over `timestamp_column` when the window carries one. A probe that runs would have to read the
+      change data, which is the expensive part. When the probe fails and `timestamp_column` is a DATE or TIMESTAMP
+      column, returns `{mode: timestamp_column, since, timestamp_column, timestamp_type}` and logs why CHANGES was
+      not used. Returns none with a logged warning when neither works (no change tracking and no usable timestamp
+      column, missing relation, `since` missing); it never fails the run.
       Cost, from spike S5 and this story's sandbox tests: a CHANGES window is cheap only when it holds inserts
       that landed in new micro-partitions (1 partition and 3 KB against 11 partitions and 38 MB for a full scan).
       After a DELETE, UPDATE or MERGE (dbt's default incremental strategy) CHANGES reads the old and new versions
@@ -32,22 +36,26 @@ macros:
       - name: timestamp_column
         type: string
         description: >
-          Optional, default none. Column used when CHANGES is unavailable: rows with a value after `since`
-          (a TIMESTAMP_NTZ column is read as UTC wall-clock time; a DATE column includes the whole day of `since`).
-          A plain name (letters, digits, `_`, `$`) resolves to upper case like an unquoted identifier; any other
-          name is taken as the exact, case-preserved column name.
+          Optional, default none. Column used when CHANGES is unavailable or fails: rows with a value after `since`.
+          A TIMESTAMP_NTZ column is read as UTC wall-clock time. A DATE column has day granularity: the window
+          starts at the day of `since`, so the rows of that day are counted again on every run that day; prefer a
+          timestamp column. Name forms: wrapped in double quotes (`'"amount"'`, `'"Mixed"'`) is the exact name with
+          its case kept (inner `""` stand for one `"`); a plain name (letters, digits, `_`, `$`, such as `amount` or
+          `Mixed`) resolves to upper case like an unquoted identifier; any other name is taken as the exact,
+          case-preserved column name.
 
   - name: compute_column_metrics
     description: >
       Computes metrics for one column over the rows of a change window from `get_change_window`, in one query
       that selects only that column. With a CHANGES window the rows are the INSERT row versions: new rows and
       the new values of updated rows (deleted rows are not measured). Returns a dict of the requested metrics,
-      for example `{row_count: 50, null_rate: 0.2}`. Metrics: `row_count`, the number of rows in the window (not
-      the metadata total that the volume monitor reports as `row_count`, nor the net `rows_added` of
+      for example `{window_rows: 50, null_rate: 0.2}`. Metrics: `window_rows`, the number of rows in the window
+      (named so that it never collides with the volume monitor's `row_count` total or the net `rows_added` of
       `get_row_count_changes`); `null_rate`, the share of those rows where the column is null, between 0 and 1,
       none when the window is empty. Unknown metric names are skipped with a warning. Returns none when the
-      window is none, and none with a logged warning when the query fails (missing column, lost privilege); it
-      never fails the run. Computes and returns values only; it emits nothing.
+      window is none. When a CHANGES query fails at run time and the window carries a `timestamp_column`, it runs
+      again over that column (see `get_change_window`); when the query still fails (missing column, lost
+      privilege) it returns none with a logged warning. It never fails the run. Computes and returns values only; it emits nothing.
     arguments:
       - name: relation
         type: Relation
@@ -60,4 +68,4 @@ macros:
         description: The result of `get_change_window` for the same relation, or none.
       - name: metrics
         type: list
-        description: Optional, default `[row_count, null_rate]`. The metrics to return.
+        description: Optional, default `[window_rows, null_rate]`. The metrics to return.

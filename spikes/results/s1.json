@@ -330,6 +330,197 @@
       ]
     }
   },
+  "proc.batch": {
+    "call_ok": true,
+    "dbt_wall_s": 1.63,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "eeb9fe47603442c7970dd83945dfbf5a",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.4,
+    "server_ms": 657,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_EEB9FE47603442C7970DD83945DFBF5A(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 1,
+    "status": {
+      "SUCCESS": 1
+    },
+    "trace_ids": 1
+  },
+  "proc.batch_unguarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.5,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "25e71f45a8244b88abf4efdd801bcbe3",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.4,
+    "server_ms": 521,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_25E71F45A8244B88ABF4EFDD801BCBE3(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 1,
+    "status": {
+      "SUCCESS": 1
+    },
+    "trace_ids": 1
+  },
+  "proc.escaping": {
+    "byte_identical": true,
+    "call_ok": true,
+    "landed": 1,
+    "landed_text": "it's a \\ test\nnew line \u00e9 \u00fc \u6f22",
+    "run_id": "f918dd80e8984c2b87340bef89300aec"
+  },
+  "proc.levels_off": {
+    "call_ok": true,
+    "has_snow_query_id": true,
+    "landed": 1,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 1
+    },
+    "run_id": "795cb0af5ce740a2996a28bef4a5c173",
+    "scope_names": [
+      "global"
+    ],
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_795CB0AF5CE740A2996A28BEF4A5C173(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "trace_ids": 1
+  },
+  "proc.missing_guarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.1,
+    "errors": [],
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_576BFC798137446ABCCF0733167A4F23",
+    "run_id": "576bfc798137446abccf0733167a4f23",
+    "warnings": [
+      "icecore: telemetry not written (ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_576BFC798137446ABCCF0733167A4F23): icecore-error 2141: SQL compilation error:\nUnknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_576BFC798137446ABCCF0733167A4F23."
+    ]
+  },
+  "proc.missing_unguarded": {
+    "call_ok": false,
+    "dbt_wall_s": 1.25,
+    "errors": [
+      "Encountered an error while running operation: Database Error\n  002141 (42601): SQL compilation error:\n  Unknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_9158B7566DFD46B3B8C3FAFB24A64266."
+    ],
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_9158B7566DFD46B3B8C3FAFB24A64266",
+    "run_id": "9158b7566dfd46b3b8c3fafb24a64266",
+    "warnings": []
+  },
+  "proc.no_usage_guarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.18,
+    "errors": [],
+    "proc": "SNOWFLAKE.TELEMETRY.ICECORE_EMIT",
+    "run_id": "f267278a41414db692b48635104a7ba0",
+    "warnings": [
+      "icecore: telemetry not written (SNOWFLAKE.TELEMETRY.ICECORE_EMIT): icecore-error 2141: SQL compilation error:\nUnknown user-defined function SNOWFLAKE.TELEMETRY.ICECORE_EMIT."
+    ]
+  },
+  "proc.per_event": {
+    "call_ok": true,
+    "dbt_wall_s": 60.3,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "5b4aedc64e784af8b397046aaa84adda",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.8,
+    "server_ms": 55200,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_5B4AEDC64E784AF8B397046AAA84ADDA(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 100,
+    "status": {
+      "SUCCESS": 100
+    },
+    "trace_ids": 100
+  },
+  "proc.rollback": {
+    "call_ok": true,
+    "expected": 2,
+    "has_snow_query_id": true,
+    "landed": 2,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 2
+    },
+    "run_id": "c73b4a671cf4472881fbe81e78a904e2",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.3,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_C73B4A671CF4472881FBE81E78A904E2(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "trace_ids": 2
+  },
   "routing": {
     "account_table_access": {
       "errors": {

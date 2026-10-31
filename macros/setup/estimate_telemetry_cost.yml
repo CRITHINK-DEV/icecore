@@ -1,0 +1,46 @@
+version: 2
+
+macros:
+  - name: estimate_telemetry_cost
+    description: >
+      Estimates the rows icecore writes to the event table and the ingestion credits, before telemetry is turned on.
+      `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`; `setup` runs it too. Reads
+      only the dbt graph and runs no query. Rows per run follow the write-path design (spec section 4;
+      spikes/GATE1.md, "Consequences for the build"): one start record, one end LOG, one span per node (models,
+      seeds, snapshots and tests), `query_events_per_node` query events per node, one lineage record per payload cap
+      of edges (sized from the graph), one sample per failing test, plus the rows the procedures write themselves:
+      one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL
+      (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag,
+      not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5:
+      Telemetry Data Ingest, 0.0212 Platform Credits per GB. The range runs from `bytes_per_record` per row to the
+      payload cap per row, with GB taken as 10^9 bytes. Until Telemetry Data Ingest replaces Logging on an account,
+      Logging is billed instead (1.25 x serverless compute plus 0.28 credits per 1000 file batches), which a row
+      count cannot predict; the message says to check `METERING_HISTORY` for the service types
+      `TELEMETRY_DATA_INGEST` and `LOGGING`. Monitor metrics are not included. Without a usable `runs_per_day` it
+      prints the rows per run, asks for `runs_per_day` and does not fail. Returns `{status, nodes, runs_per_day,
+      days, records_per_run, rows_per_run, emit_run_calls, rows_per_month, gb_per_month, credits_per_month,
+      credits_per_gb, message}`; status is `ok` or `needs_runs_per_day`.
+    arguments:
+      - name: runs_per_day
+        type: number
+        description: dbt runs per day that fire the hooks. Required for the monthly figures; missing, zero or not a number, the estimate asks for it.
+      - name: nodes
+        type: integer
+        description: Nodes per run. Default the models, seeds, snapshots and tests of the graph.
+      - name: query_events_per_node
+        type: integer
+        description: Queries per node, one query event each. Default 1.
+      - name: lineage
+        type: boolean
+        description: Default true. Counts the lineage records sent every run.
+      - name: failing_tests_per_run
+        type: integer
+        description: Failing tests per run that send a sample. Default 0 (samples are off for warn tests by default).
+      - name: days
+        type: integer
+        description: Days per month. Default 30.
+      - name: bytes_per_record
+        type: integer
+        description: >
+          Bytes per row for the low end of the range. Default 1500: icecore rows measured in the sandbox on 31 Oct
+          2026 had a median of 1.1 to 1.5 KB serialized.

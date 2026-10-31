@@ -59,11 +59,12 @@ Then `dbt deps`, `dbt run-operation icecore.setup` (creates the views in `<targe
 `setup` and `doctor` run today; the views, alerts, tasks and app that `setup` will also create are not built yet, and `setup` lists them as planned.
 
 ```bash
-dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false}'
+dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'
 dbt run-operation icecore.doctor
 ```
 
 - `setup` detects the account's capabilities, creates the schema if it is missing, creates the procedures `ICECORE_EMIT` and `ICECORE_EMIT_RUN` in it, and checks the database's `LOG_LEVEL` and `TRACE_LEVEL`. When its role cannot set the levels, it prints the `ALTER DATABASE` statement for an admin. Running it again changes nothing, and grants on the procedures are kept. All arguments are optional; `schema` defaults to the `obs_schema` var (`ICECORE_OBS`). If you pass another schema, set the var to it too, because dbt runs write through the procedures of the var's schema.
+- `setup` ends with an estimate of the rows icecore will write per month and the ingestion credits, from your node count and `runs_per_day`. Run it alone with `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`. For 100 nodes and 24 runs a day it estimates 149,760 rows and 0.0048 to 0.21 credits a month at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It prints its assumptions and sources.
 - `doctor` never fails. It checks the event table, the database's levels, makes one test `CALL` of each procedure, and counts icecore records of the last 24 hours. It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, most often the hooks above.
 - The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema) and CREATE PROCEDURE on the schema ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
 

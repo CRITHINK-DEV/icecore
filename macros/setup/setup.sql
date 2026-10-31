@@ -1,6 +1,6 @@
 {#- UC5 setup (spec section 5; spikes/GATE1.md, "What setup creates and the grants it needs").
 
-    dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false}'
+    dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'
 
     One ordered list of steps (_icecore_setup_steps), run in order:
       1. detect_capabilities      reads only; recorded in step 5, once the procedures exist;
@@ -8,7 +8,8 @@
       3. create_emit_procedures   ICECORE_EMIT and ICECORE_EMIT_RUN (CREATE OR REPLACE ... COPY GRANTS);
       4. set_telemetry_levels     the database's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
-      6. create_views, create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
+      7. create_views, create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -18,16 +19,17 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- Returns {database, schema, compat, app, capabilities, procedures, levels, recorded, steps: [{name, status,
-    detail}]}; status is done or planned. Nothing at parse time. -#}
-{% macro setup(schema=none, compat='none', app=false) %}
+{#- Returns {database, schema, compat, app, capabilities, procedures, levels, recorded, estimate, steps: [{name,
+    status, detail}]}; status is done or planned. Nothing at parse time. -#}
+{% macro setup(schema=none, compat='none', app=false, runs_per_day=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set state = {
       'database': target.database | string | upper,
       'schema': icecore.obs_schema_name(schema),
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
-      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'steps': [],
+      'runs_per_day': runs_per_day,
+      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
   {% do log('icecore: setup in ' ~ icecore.obs_schema(state['schema']) ~ ' (' ~ steps | length ~ ' steps)', info=True) %}
@@ -59,6 +61,7 @@
       {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT and ICECORE_EMIT_RUN'},
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
+      {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
       {'name': 'create_views', 'ready': false, 'detail': 'the core views over base_events'},
   ] -%}
   {%- if (compat or 'none') | string | lower != 'none' -%}
@@ -100,6 +103,14 @@
         icecore._icecore_capability_attributes(state['capabilities'])) -%}
     {%- do state.update({'recorded': status}) -%}
     {{ return('icecore.capabilities: ' ~ status) }}
+  {%- elif name == 'estimate_telemetry_cost' -%}
+    {%- set e = icecore.estimate_telemetry_cost(runs_per_day=state['runs_per_day']) -%}
+    {%- do state.update({'estimate': e}) -%}
+    {%- if e['status'] == 'ok' -%}
+      {{ return('{:,}'.format(e['rows_per_month']) ~ ' rows per month, ' ~ '%.4f' | format(e['credits_per_month'][0]) ~ ' to '
+          ~ '%.4f' | format(e['credits_per_month'][1]) ~ ' credits per month') }}
+    {%- endif -%}
+    {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

@@ -15,3 +15,5 @@ package-lock.yml
 rsa_key*
 .env
 .env.*
+spikes/results/.*.lock
+spikes/results/*.json.tmp

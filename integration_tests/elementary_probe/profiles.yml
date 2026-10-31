@@ -1,0 +1,25 @@
+# Both profiles point at the per-run schema ICECORE_SANDBOX.ELEMENTARY_PROBE_<run_id> (env ICECORE_EDR_SCHEMA),
+# created by dbt and dropped by the test. Distinct query tags let the test find edr's sessions in the
+# query history of a user other agents share.
+elementary_probe:
+  target: sandbox
+  outputs:
+    sandbox: &sandbox
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'ICECORE_SANDBOX') }}"
+      schema: "{{ env_var('ICECORE_EDR_SCHEMA') }}"
+      query_tag: "{{ env_var('ICECORE_DBT_QUERY_TAG', 'icecore_s4_dbt') }}"
+      threads: 4
+
+# The profile `edr` reads: Elementary's CLI always uses the profile named `elementary`.
+elementary:
+  target: sandbox
+  outputs:
+    sandbox:
+      <<: *sandbox
+      query_tag: "{{ env_var('ICECORE_EDR_QUERY_TAG', 'icecore_s4_edr') }}"

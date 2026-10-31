@@ -1,0 +1,20 @@
+# Spike S4 probe: a tiny dbt project with the Elementary package, so `edr report` has something to read.
+# Not part of the icecore package or of the integration project; run only by tests/spikes/test_s4_edr_contract.py.
+name: elementary_probe
+version: "0.0.1"
+config-version: 2
+profile: elementary_probe
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+flags:
+  # Elementary overrides the test materialization to capture results (required by Elementary on dbt >= 1.8).
+  require_explicit_package_overrides_for_builtin_materializations: false
+
+models:
+  elementary_probe:
+    +materialized: table
+  elementary:
+    # Elementary's own tables; generate_schema_name keeps them in the probe schema too.
+    +schema: elementary

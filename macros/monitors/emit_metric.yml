@@ -1,0 +1,45 @@
+version: 2
+
+macros:
+  - name: emit_metric
+    description: >
+      Write one metric, the same way for every monitor (spec section 4). It calls `icecore.emit_events` once, so
+      every record of one `emit_metric` goes in one guarded `CALL` of `ICECORE_EMIT` (spikes/GATE1.md, option B),
+      and a telemetry failure is a logged warning, never a failed run. It writes a span event `icecore.metric` with
+      `base_attributes()` (including `dbt.invocation_id`), `dbt.metric.name`, `dbt.metric.value` (always a JSON
+      number), `dbt.metric.column` and `dbt.metric.dimension` when given, and `dbt.node.relation`, the quoted
+      `"DB"."SCHEMA"."NAME"` as Snowflake resolves it. Only when `anomaly` is given does the record also carry
+      `dbt.anomaly.engine`, `dbt.anomaly.expected`, `dbt.anomaly.lower`, `dbt.anomaly.upper`, `dbt.anomaly.score`
+      and `dbt.anomaly.is_anomaly` (fields that are null are left out). When `is_anomaly` is true, a second span
+      event `icecore.anomaly` at `icecore.level = warn` goes in the same CALL, with the same keys and a message
+      naming the metric, the relation, the value and the band. ICECORE_EMIT writes span events only; LOG records
+      come from ICECORE_EMIT_RUN at on-run-end (GATE1.md), so this event is the anomaly record. A value that is
+      not a number (none, a boolean, a non-numeric string) writes nothing and logs
+      `icecore: warning: emit_metric ...`. Numeric strings and Decimals from `run_query` are written as numbers.
+      A no-op at parse time. Returns what `emit_events` returns, `{events, calls, statuses}`. How a monitor uses
+      it, once per metric it computed - read the value (for example `icecore.get_row_count_metadata(model)`),
+      score it (`icecore.score(history_sql, value)`), then call `icecore.emit_metric(model, 'row_count', value,
+      anomaly=result)`.
+    arguments:
+      - name: relation
+        type: Relation
+        description: >
+          The monitored relation (`model` in a generic test, `ref()`, `source()` or `api.Relation.create()`); its
+          quote policy is honoured. A string is written as it is.
+      - name: metric
+        type: string
+        description: "The metric name, such as `row_count`, `rows_added`, `freshness_lag_s`, `null_rate`."
+      - name: value
+        type: number
+        description: The metric value. Written as an int or a float; anything else is not written.
+      - name: column
+        type: string
+        description: The column the metric is about, as `dbt.metric.column`. Default none (key absent).
+      - name: dimension
+        type: string
+        description: "The dimension slice, such as `country=FR`, as `dbt.metric.dimension`. Default none (key absent)."
+      - name: anomaly
+        type: dict
+        description: >
+          The anomaly result for this value, as `icecore.score` returns it (`engine`, `expected`, `lower`, `upper`,
+          `score`, `is_anomaly`; other keys are ignored). Default none: no `dbt.anomaly.*` key is written.

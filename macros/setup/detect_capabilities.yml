@@ -1,0 +1,42 @@
+version: 2
+
+macros:
+  - name: detect_capabilities
+    description: >
+      Detects what the account supports for icecore, with reads only, each inside a guard so that none can fail the
+      run. The edition comes from SNOWFLAKE.ORGANIZATION_USAGE.ACCOUNTS for the current account. When that view cannot
+      be read, a database with an event table of its own counts as ENTERPRISE (database-level event tables need
+      Enterprise); otherwise the edition is UNKNOWN. The database's `EVENT_TABLE` (and the level it is set at),
+      `LOG_LEVEL` and `TRACE_LEVEL` come from `SHOW PARAMETERS IN DATABASE`. Cortex is available when the class
+      `SNOWFLAKE.ML.ANOMALY_DETECTION` is visible to the role (`SHOW CLASSES`); any error, a missing privilege
+      included, gives false with the reason. Logs a one-line summary and the vars block for `dbt_project.yml`
+      (`capabilities_vars_block`), then records the result in-band as one span event `icecore.capabilities` through
+      `icecore.emit`, with the keys `icecore.capability.database`, `.edition`, `.edition_source`, `.event_table`,
+      `.event_table_level`, `.log_level`, `.trace_level`, `.cortex` (boolean) and `.cortex_reason`. A missing
+      emitter procedure only logs a warning (emit's guard). Returns `{database, edition, edition_source,
+      event_table, event_table_level, log_level, trace_level, cortex, cortex_reason, recorded}`, the dict
+      `set_telemetry_levels` takes as `capabilities`. Returns none at parse time.
+    arguments:
+      - name: record
+        type: boolean
+        description: Default true. Emit the capabilities record; false only detects and prints (`recorded` is none).
+      - name: database
+        type: string
+        description: >
+          The database to detect for. Default `target.database`. A plain identifier is upper-cased, as Snowflake
+          stores it.
+      - name: cortex_class
+        type: string
+        description: >
+          The fully qualified class whose visibility means Cortex anomaly detection is available. Default
+          `SNOWFLAKE.ML.ANOMALY_DETECTION`.
+
+  - name: capabilities_vars_block
+    description: >
+      The `vars:` block for `dbt_project.yml` that matches a detection result: `obs_schema` (the current var, default
+      ICECORE_OBS), `anomaly_engine` (`auto` when Cortex is available, `native` otherwise) and `shadow_engine: none`,
+      with a comment on each choice. No query.
+    arguments:
+      - name: capabilities
+        type: dict
+        description: The result of `detect_capabilities`.

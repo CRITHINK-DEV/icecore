@@ -1,9 +1,12 @@
-"""Spike S1, Gate 1 option B: one persisted SQL procedure that receives an ARRAY of events.
+"""Spike S1, Gate 1 option B: two persisted procedures, ICECORE_EMIT (SQL) and ICECORE_EMIT_RUN (Python).
 
 Shape that will ship: `icecore.setup` creates `<target_db>.ICECORE_OBS.ICECORE_EMIT(events ARRAY)`
 (LANGUAGE SQL, EXECUTE AS OWNER), and hooks CALL it through `run_query`; each element
 `{name, attrs}` becomes one SPAN_EVENT via `SYSTEM$ADD_EVENT`. Here the probe procedure is
 `ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_<run_id>`, created by `s1_emit_proc_create` and dropped at the end.
+`ICECORE_EMIT_RUN(spans ARRAY)` (LANGUAGE PYTHON, pinned packages, EXECUTE AS OWNER) writes one custom
+span per element with explicit start and end times; its probe is `ICECORE_EMIT_RUN_<run_id>`, created
+by `s1_emit_run_proc_create`. The decision is recorded in spikes/GATE1.md.
 
 The calls are guarded: `EXECUTE IMMEDIATE $$ ... CALL ... EXCEPTION WHEN OTHER ... $$`, so that a
 missing procedure or a missing grant logs a warning instead of failing the dbt run.

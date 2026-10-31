@@ -70,11 +70,11 @@ flowchart LR
     views --> alerts["Snowflake Alerts and tasks<br/>email, Slack, Teams"]
 ```
 
-- **Write path** (`building`). Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called once per dbt run at `on-run-end` and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Spike S1 measured why: anonymous Snowflake Scripting blocks write only to the account's event table, and only when the session sets `LOG_LEVEL` and `TRACE_LEVEL`, while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
+- **Write path** (`building`). Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 512 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks write only to the account's event table, and only when the session sets `LOG_LEVEL` and `TRACE_LEVEL`, while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
 - **Read path** (`planned`). `icecore.setup` creates views over the event table (and the two emitter procedures; no tables). Views are the only public interface: the app and your BI tools read views, never the raw table.
 - **Control path** (`planned`). Snowflake Alerts run against the views and notify through a notification integration. A Snowflake task detects runs that never happened.
 
-<!-- SNOWSIGHT TRACE: add docs/assets/icecore-snowsight-trace.png (one dbt invocation as a trace, one span per node) once spans are emitted. -->
+<!-- SNOWSIGHT TRACE: add docs/assets/icecore-snowsight-trace.png (one dbt invocation's spans, one per node, grouped by dbt.invocation_id) once spans are emitted. -->
 
 ## Features
 
@@ -89,12 +89,12 @@ flowchart LR
 | **Native anomaly engine** | `score` and `native__score`: pure SQL, seasonal median and MAD bands, the same output fields whatever engine scores. | `shipped` (macro) |
 | **Root-cause walk** | `walk_upstream` and `classify_cause` find the nearest upstream failure, schema change or stale source in the dbt graph. Not yet wired to `on-run-end`. | `shipped` (macro) |
 | **Streamlit app shell** | Navigation for six pages (Runs, Tests and anomalies, Lineage, Cost, SLAs, Settings) and the views schema setting. Pages show empty states until the views exist. | `shipped` (shell) |
-| **Telemetry write path** | Two procedures created by `icecore.setup` in the target database, chosen at Gate 1 (31 Oct) from spike S1: `ICECORE_EMIT` (SQL, frequent small writes such as test metrics) and `ICECORE_EMIT_RUN` (Python, once per run at `on-run-end`: spans and LOG records). | `building` |
-| **Traces in Snowsight** | One trace per dbt invocation with a span per node and the real dbt timings, via the Python run emitter `ICECORE_EMIT_RUN` (S1: only the Python path gives real spans). | `building` |
+| **Telemetry write path** | Two procedures created by `icecore.setup` in the target database, chosen at Gate 1 (31 Oct) from spike S1: `ICECORE_EMIT` (SQL, frequent small writes such as test metrics) and `ICECORE_EMIT_RUN` (Python, at `on-run-end` in as many `CALL`s as needed: spans and LOG records, grouped by `dbt.invocation_id`). | `building` |
+| **Traces in Snowsight** | Invocation and node spans with the real dbt timings, one trace per `CALL`, a run grouped by `dbt.invocation_id`, via the Python run emitter `ICECORE_EMIT_RUN` (S1: only the Python path gives real spans). | `building` |
 | **SLA and alert settings in YAML** | `collect_sla_config` reads `meta.sla` and `meta.alerts` from your models. | `building` |
 | **Column monitors over `CHANGES`** | Column metrics read over `CHANGES` since the last run. Cheap for insert-only windows on large tables; after a DELETE or MERGE, `CHANGES` reads every rewritten micro-partition (1.8–1.9x a full scan, S5). | `building` |
 | **Elementary compatibility target** | Pin the Elementary release the compatibility views follow; spike S4 on `edr report`. | `building` |
-| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent once per run through `ICECORE_EMIT_RUN`. | `planned` |
+| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `planned` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
 | **Setup and views** | `icecore.setup` and `icecore.doctor`; views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`. | `planned` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
@@ -119,7 +119,7 @@ Facts about each tool's design, not a benchmark. The icecore column describes th
 
 Why each row holds:
 
-- **Owns tables.** Elementary's package inserts into its own tables from hooks ([spec section 1](docs/design/scope-and-architecture.md#1-vision-and-positioning)); dbt_artifacts uploads dbt's artifacts into its own tables from an `on-run-end` hook. icecore's design writes nothing itself and owns no tables or stages ([section 3](docs/design/scope-and-architecture.md#3-architecture-overview)). Gate 1 kept that design: `icecore.setup` creates only views and the two emitter procedures, and records reach the event table through those procedures.
+- **Owns tables.** Elementary's package inserts into its own tables from hooks ([spec section 1](docs/design/scope-and-architecture.md#1-vision-and-positioning)); dbt_artifacts uploads dbt's artifacts into its own tables from an `on-run-end` hook. icecore's design writes nothing itself and owns no tables or stages ([section 3](docs/design/scope-and-architecture.md#3-architecture-overview)). Gate 1 kept that design: `icecore.setup` creates views and the two emitter procedures (plus the alerts and tasks), no tables, and records reach the event table through those procedures.
 - **Needs a CLI.** Elementary needs its Python CLI to render the report and send alerts (section 1). dbt_artifacts produces tables only. icecore's UI is a Streamlit in Snowflake app and its alerts are Snowflake Alerts.
 - **Scans data for monitors.** Elementary rescans data to compute metrics (section 1). icecore's freshness, row count and schema readers use metadata only ([spike S5](spikes/S5.md): correct within 2 s for standard, transient and dynamic tables). The opt-in `CHANGES` reader does read data: it returns a net delta (inserts minus deletes), needs change tracking, and is cheap only for insert-only windows on large tables. After a DELETE or MERGE it read 1.8–1.9x the bytes of a full scan (S5), and on a narrow table a small insert that rewrote a partly filled micro-partition read 2.7 MB against 3.6 MB for a full scan (PR #13, in review).
 - **Cost per model.** Elementary OSS has no cost data (section 1); dbt_artifacts records execution times, not credits. icecore joins each node's query id to `QUERY_ATTRIBUTION_HISTORY`.
@@ -129,7 +129,7 @@ Why each row holds:
 ## Coming from Elementary?
 
 > [!TIP]
-> icecore is designed to keep what Elementary got right: run and test results per invocation, failed-row samples, volume, freshness, schema and column monitors, lineage and Slack alerts. **Planned:** opt-in views with Elementary's table names and columns (`dbt_invocations`, `dbt_run_results`, `elementary_test_results` and others), so your dashboards keep working, plus a step-by-step migration guide. Spike S4 checks whether `edr report` can render from them.
+> icecore is designed to keep what Elementary got right: run and test results per invocation, failed-row samples, volume, freshness, schema and column monitors, lineage and Slack alerts. **Planned:** opt-in views with Elementary's table names and columns (`dbt_invocations`, `dbt_run_results`, `elementary_test_results` and others), so your dashboards keep working, plus a step-by-step migration guide. [Spike S4](spikes/S4.md) found that `edr report` also needs a node-metadata view and a samples view, planned for Phase 6.
 
 ## Compatibility
 
@@ -140,8 +140,8 @@ Targets from the design (`require-dbt-version: [">=1.8.0", "<3.0.0"]`). Only dbt
 | dbt Core 1.8 to latest | Supported | Yes: CI runs the offline suite on dbt-core 1.8 and on the latest release; the sandbox suite runs on 1.8, on manual dispatch only |
 | dbt Fusion 2.x | Supported | Not yet |
 | dbt Cloud | Supported | Not yet |
-| dbt Projects on Snowflake (`EXECUTE DBT PROJECT`) | Supported, through Snowflake's own dbt telemetry | Not yet |
-| Snowflake Standard edition | Supported, with the account's active event table | Not yet |
+| dbt Projects on Snowflake (`EXECUTE DBT PROJECT`) | Supported, through Snowflake's own dbt telemetry (how the views select those records is still to be defined) | Not yet |
+| Snowflake Standard edition | Supported, with the account's active event table (that procedure records land there is not measured yet, [Gate 1](spikes/GATE1.md)) | Not yet |
 | Snowflake Enterprise edition | Supported, optionally with a dedicated database-level event table | Not yet |
 
 Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is designed to print that statement for an admin, never to run it.

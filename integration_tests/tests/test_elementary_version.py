@@ -12,6 +12,7 @@ VERSION_FILE = REPO / "macros" / "compat" / "ELEMENTARY_VERSION"
 S4_NOTE = REPO / "spikes" / "S4.md"
 S4_RESULTS = REPO / "spikes" / "results" / "s4.json"
 REQUIREMENT = REPO / "integration_tests" / "requirements-elementary.txt"
+CONSTRAINTS = REPO / "integration_tests" / "constraints-elementary.txt"
 PROBE_PACKAGES = REPO / "integration_tests" / "elementary_probe" / "packages.yml"
 SEMVER = r"[0-9]+\.[0-9]+\.[0-9]+"
 
@@ -50,9 +51,21 @@ def test_s4_results_were_captured_from_the_pinned_versions():
     assert versions["elementary_cli"] == values["elementary_cli"]
 
 
-def test_ci_requirement_pins_the_cli():
-    lines = [l.strip() for l in REQUIREMENT.read_text().splitlines() if l.strip() and not l.startswith("#")]
-    assert lines == [f"elementary-data[snowflake]=={pinned()['elementary_cli']}"]
+def _lines(path: Path) -> list[str]:
+    return [l.strip() for l in path.read_text().splitlines() if l.strip() and not l.strip().startswith("#")]
+
+
+def test_ci_requirement_pins_the_cli_under_the_constraints():
+    assert _lines(REQUIREMENT) == ["-c constraints-elementary.txt", f"elementary-data[snowflake]=={pinned()['elementary_cli']}"]
+
+
+def test_constraints_pin_what_s4_ran_with():
+    """dbt-core, sqlglot and pytest exact, so S4's parse_fallbacks == 0 and the drift check stay stable."""
+    pins = dict(line.split("==") for line in _lines(CONSTRAINTS))
+    assert {"dbt-core", "dbt-snowflake", "sqlglot", "pytest"} <= set(pins)
+    assert all(re.fullmatch(SEMVER, v) for v in pins.values()), pins
+    versions = json.loads(S4_RESULTS.read_text())["versions"]
+    assert pins["dbt-core"] == versions["dbt_core"] and pins["dbt-snowflake"] == versions["dbt_snowflake"]
 
 
 def test_probe_project_pins_the_package():

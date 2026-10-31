@@ -1,0 +1,17 @@
+target/
+dbt_packages/
+logs/
+.venv/
+__pycache__/
+.pytest_cache/
+.superpowers/
+.user.yml
+package-lock.yml
+.venv-latest/
+
+# credentials: never committed
+*.p8
+*.pem
+rsa_key*
+.env
+.env.*

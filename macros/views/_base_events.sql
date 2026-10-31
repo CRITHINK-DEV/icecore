@@ -11,7 +11,8 @@
     Native dbt Projects records fail this filter by design; their own predicate is still to be defined (GATE1.md,
     open item 8).
 
-    Attributes are typed with TRY_TO_*: a malformed value reads as null and never fails a view. -#}
+    Attributes are typed with TRY_TO_*: a malformed value reads as null and never fails a view.
+    observed_at is OBSERVED_TIMESTAMP, which is NULL on every ICECORE_EMIT span event (spike S3); use event_at there. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -103,7 +104,6 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('command', 'dbt.command', 'string'),
     ('target_name', 'dbt.target', 'string'),
     ('project', 'dbt.project', 'string'),
-    ('dbt_version', 'dbt.version', 'string'),
     ('node_unique_id', 'dbt.node.unique_id', 'string'),
     ('node_type', 'dbt.node.type', 'string'),
     ('node_name', 'dbt.node.name', 'string'),

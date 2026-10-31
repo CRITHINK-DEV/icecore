@@ -4,7 +4,8 @@ macros:
   - name: base_events
     description: >
       The filtered, typed SELECT every icecore view starts from, returned as SQL text to use as a CTE body:
-      `with events as ({{ icecore.base_events() }})`. It reads the event table that `resolve_event_table` returns for
+      `with events as (<the rendered icecore.base_events()>)`, rendered inside a
+      macro or model. It reads the event table that `resolve_event_table` returns for
       the database and keeps only the records of icecore's two procedures in this environment (spikes/GATE1.md,
       "Identity and record shape"). The predicates come first and in this order, so the filter sits directly on
       the table scan: `RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')`; `RESOURCE_ATTRIBUTES` `snow.database.name` =
@@ -13,7 +14,8 @@ macros:
       starts with `icecore.` (ICECORE_EMIT records, SCOPE `global`). Records of other libraries, other procedures,
       other schemas or other databases sharing the table are never returned; native dbt Projects records are not
       either, until their own predicate is defined (GATE1.md, open item 8).
-      Columns: `event_at` (TIMESTAMP), `started_at` (START_TIMESTAMP), `observed_at` (OBSERVED_TIMESTAMP),
+      Columns: `event_at` (TIMESTAMP), `started_at` (START_TIMESTAMP), `observed_at` (OBSERVED_TIMESTAMP; NULL on every
+      ICECORE_EMIT span event, spike S3),
       `record_type`, `record_name`, `severity`, `scope_name`, `trace_id`, `span_id`, `parent_span_id`,
       `executable_name`, `emit_query_id` (the emitting CALL's query id), one typed column per attribute of spec
       section 4 (strings; `result_rows_affected`, `test_failures`, `icecore_schema_version` as NUMBER;

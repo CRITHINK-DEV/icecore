@@ -19,6 +19,7 @@ import json
 import os
 import re
 import uuid
+from pathlib import Path
 
 import pytest
 from snowflake.connector import DictCursor
@@ -105,6 +106,15 @@ def test_numeric_attributes_are_typed():
     assert """try_to_boolean(RECORD_ATTRIBUTES:"dbt.anomaly.is_anomaly"::string) as anomaly_is_anomaly""" in sql
     for column in ("event_at", "started_at", "observed_at", "invocation_id", "attributes"):
         assert re.search(rf"\bas {column}\b", sql), column
+
+
+def test_package_docs_have_no_jinja():
+    """dbt renders descriptions as Jinja at parse time, where `icecore` is undefined: one `{{ ... }}` in a package
+    yml breaks parsing for every project that installs icecore."""
+    repo = Path(__file__).resolve().parents[2]
+    offenders = [f"{p.relative_to(repo)}:{n}" for p in (repo / "macros").rglob("*.yml")
+                 for n, line in enumerate(p.read_text().splitlines(), 1) if "{{" in line or "{%" in line]
+    assert not offenders, offenders
 
 
 @pytest.mark.parametrize("value,expected", [

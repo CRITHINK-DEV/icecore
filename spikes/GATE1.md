@@ -4,7 +4,7 @@ Decision record. Decided on 31 Oct 2026 by the owner, Anouar Zbaida, after spike
 Spike S3 has not run yet; what depends on it is listed under [Open items](#open-items).
 
 Every number below comes from a spike note or its committed results file, cited as `S<n>.md` or `results/s<n>.json` with
-the key. The spec sections this decision changes are 2, 3, 4, 5, 7, 8 and 10 of `docs/design/scope-and-architecture.md`.
+the key. The spec sections this decision changes are 1, 2, 3, 4, 5, 6, 7, 8, 9 and 10 of `docs/design/scope-and-architecture.md`.
 
 ## Decision
 
@@ -14,13 +14,17 @@ Hooks and tests emit by `CALL`ing them through `run_query`, and every `CALL` is 
 | Procedure | Language | Writes | `SCOPE` | Called | Measured |
 |---|---|---|---|---|---|
 | `ICECORE_EMIT(events ARRAY)` | SQL | One SPAN_EVENT per element, through `SYSTEM$ADD_EVENT`, named `icecore.<kind>` | `global` | Any time, for frequent small writes such as test metrics | 100 events in one CALL: **0.73 s server**, 1.71 s dbt wall. One CALL per event: **78.3 s server**, 88.2 s dbt wall (S1.md, `proc.batch`, `proc.per_event`) |
-| `ICECORE_EMIT_RUN(spans ARRAY)` | Python 3.11 | Custom spans with explicit start and end times, with their events; LOG records with attributes | `icecore` | Once per run, at `on-run-end`, for the invocation and node spans | 100 spans in one CALL: **2.82 s server**, 3.93 s dbt wall; start and end kept to the millisecond for all 100 (S1.md, `proc.emit_run_python`) |
+| `ICECORE_EMIT_RUN(spans ARRAY)` | Python 3.11 | Custom spans with explicit start and end times, with their events; LOG records with attributes | `icecore` | At `on-run-end`, for the invocation and node spans, in as many CALLs as the 512 KB chunking needs | 100 spans in one CALL: **2.82 s server**, 3.93 s dbt wall; start and end kept to the millisecond for all 100 (S1.md, `proc.emit_run_python`) |
 
-- **Records route to the event table of the procedures' database.** That is the database's own event table on Enterprise, and
-  the account's table otherwise. They inherit that database's `LOG_LEVEL` and `TRACE_LEVEL` (S1.md, "Routing" and "Levels").
+- **Records route to the event table of the procedures' database** and inherit that database's `LOG_LEVEL` and `TRACE_LEVEL`
+  (S1.md, "Routing" and "Levels"). This was measured for a database with an event table of its own (`ICECORE_SANDBOX`). For a
+  database without one, whose records would go to the account table, it is **unmeasured** (S1.md, open point 5).
 - **No session-level change and no `EVENTS_VIEWER` grant are needed to write.** With the session at `LOG_LEVEL = OFF` and
   `TRACE_LEVEL = OFF`, procedure records still landed, because the database's INFO / ALWAYS wins (S1.md, `proc.levels_off`).
-- **The run's spans become native Snowsight traces.** All records of one `CALL` share one trace (S1.md, "Trace grouping").
+- **Spans show in Snowsight's trace viewer, one trace per `CALL`.** All records of one `CALL` share one trace, and each `CALL` is
+  its own trace (S1.md, "Trace grouping"). A run whose spans need several 512 KB chunks therefore spans several traces. Every
+  record carries `dbt.invocation_id`, and the views and the app group on it. Whether the invocation span can parent node spans
+  written in a later `CALL` is unmeasured (open item).
 - **Both procedures are persisted, not temporary**, because dbt threads use separate sessions. A temporary procedure would also
   cost a `CREATE` and a `DROP` per emission, and `CREATE PROCEDURE` at run time (S1.md, "Consequences").
 - **Python packages are pinned:** `('snowflake-snowpark-python', 'opentelemetry-api==1.38.0')`.
@@ -32,7 +36,9 @@ Hooks and tests emit by `CALL`ing them through `run_query`, and every `CALL` is 
   macro turns it into a dbt warning (S1.md, "ICECORE_EMIT (SQL)").
   - A guarded `CALL` to a missing procedure succeeds with a warning; an unguarded one fails the run-operation with `002141`
     (`proc.missing_guarded`, `proc.missing_unguarded`).
-  - A missing grant returns the same error, 2141, as a missing procedure (`proc.no_usage_guarded`).
+  - A procedure name in a schema the role cannot use (`SNOWFLAKE.TELEMETRY.ICECORE_EMIT`, no USAGE on that schema) returns the
+    same error, 2141, as a missing procedure, and the guarded call succeeds with a warning (`proc.no_usage_guarded`). A
+    missing USAGE grant on an existing procedure was not measured.
   - The guard costs about 0.1 s (`proc.batch_unguarded`: 0.63 s server against 0.73 s).
   - The guard block is anonymous, but the events belong to the procedure, so routing is unaffected (S1.md, "Routing").
 
@@ -59,8 +65,13 @@ the documented last resort only.
 - `ICECORE_EMIT` records: `RECORD_TYPE = 'SPAN_EVENT'`, `SCOPE:name = 'global'`, record name prefix `icecore.`.
   SQL cannot set `SCOPE` (S1.md, "SQL record names").
 - `ICECORE_EMIT_RUN` records: `SCOPE:name = 'icecore'`.
-- Both: `snow.executable.type = PROCEDURE`, `snow.executable.name` starting with `ICECORE_EMIT`, `snow.database.name` =
-  `<target_db>`, and `snow.query.id` = the query id of the `CALL` (S1.md, "Record shape").
+- Both: `snow.executable.type = PROCEDURE`, `snow.executable.name` starting with `ICECORE_EMIT`, `snow.database.name` and
+  `snow.schema.name` of the procedure, and `snow.query.id` = the query id of the `CALL` (S1.md, "Record shape").
+- **Base view filter**, on `RESOURCE_ATTRIBUTES`: `snow.database.name = '<TARGET_DB>'`, `snow.schema.name = 'ICECORE_OBS'` and
+  `snow.executable.name` starting with `ICECORE_EMIT`, then the identity above. The database and schema predicates keep
+  environments that share one event table apart.
+- Native dbt Projects records are not written by these procedures, so this filter excludes them. The views read them through
+  a predicate of their own, unioned with icecore's. How native records are identified is to be defined; no spike measured them.
 - Each `CALL` is its own trace, so a dbt invocation has no common trace across CALLs: `dbt.invocation_id` goes on every record
   (S1.md, "Trace grouping").
 - SPAN and SPAN_EVENT rows have a NULL `VALUE` (S1.md, "Routing"). Values, metric values included, travel as attributes.
@@ -95,27 +106,37 @@ building, escaping and logging the literal.
 - **icecore truncates and flags** a value it cuts: Snowflake drops oversize records silently, and Python truncates log
   messages without a flag. Samples keep the spec's row-wise truncation with `dbt.sample.truncated = true`.
 - **Large values go in attributes, not in log messages** (S2.md, "Payload cap and chunk size for option B").
+- Failed-row samples are LOG records at **INFO**, not DEBUG, because the levels are the database's and the requirement below
+  is INFO.
 
 ## What setup creates and the grants it needs
 
-`icecore.setup` creates the views and the two procedures in `<target_db>.ICECORE_OBS`, plus the alert and task objects it
-already created. It creates no tables. The procedures are package-owned objects that the spec's list of allowed objects did
-not include before Gate 1 (S1.md, "Consequences").
+`icecore.setup` creates the views and the two procedures in `<target_db>.ICECORE_OBS`, plus the alert and task objects the spec
+already had it create (and, on request, the Streamlit app). It creates no tables. The procedures are package-owned objects that
+the spec's list of allowed objects did not include before Gate 1 (S1.md, "Consequences").
+
+**Which event table the views read.** `setup` resolves it once, with `SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE
+<target_db>`, and builds the views on the result. That is the table they read, except when the result is
+`SNOWFLAKE.TELEMETRY.EVENTS`: then they read `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`, and readers need the `EVENTS_VIEWER` application
+role. Whether procedure records from a database without an event table of its own land in the account table is unmeasured
+(open item 2).
+
+**Prerequisites.**
+
+- The organization has accepted the Anaconda terms for Snowflake's third-party Python packages, which the Python procedure's
+  `PACKAGES` need.
+- The target database has `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ON_EVENT` or `ALWAYS`. S1 measured `INFO` and
+  `ALWAYS` (S1.md, header); `ON_EVENT` is unmeasured. `doctor` checks the effective levels. `setup` prints the `ALTER
+  DATABASE` statement for an admin when its role cannot set them.
 
 | Role | Needs | Why |
 |---|---|---|
-| The role that runs `setup` (owns the procedures and the views) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE and CREATE VIEW on `ICECORE_OBS`; read access to the event table the views read | `EXECUTE AS OWNER`: the procedures write with this role's rights |
-| The role that runs dbt | USAGE on `<target_db>` and `ICECORE_OBS`, and USAGE on both procedures. No session-level change, no `EVENTS_VIEWER` | S1.md, open point 2 |
-| People and the app | SELECT on the views | Views are the public interface |
+| The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)`, and the Cortex privileges of spec section 6 for the optional refresh task | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
+| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read. No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
+| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
 
-- A missing grant does not fail a run (the guard), but the telemetry is lost. `icecore.doctor` therefore makes a test `CALL`
-  of both procedures and checks the grants (S1.md, "Consequences for building option B").
-- The levels that matter are the database's. The sandbox ran with `LOG_LEVEL = INFO` and `TRACE_LEVEL = ALWAYS` on
-  `ICECORE_SANDBOX` (S1.md, header). `setup` reports the effective levels and, when its role cannot set them, prints the
-  statement for an admin.
-- When `<target_db>` has no event table of its own, the views read the account table, through
-  `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` on Standard (S1.md, "Views"). The role that owns the views then needs read access to it; the
-  dbt role still needs none.
+- A missing procedure or grant does not fail a run (the guard), but the telemetry is lost. `icecore.doctor` therefore makes a
+  test `CALL` of both procedures and checks the grants (S1.md, "Consequences for building option B").
 
 ## Elementary compatibility (S4): consequences for Phase 6
 
@@ -150,22 +171,29 @@ not include before Gate 1 (S1.md, "Consequences").
 1. **S3, event-table lag, has not run.** It sets the SLA default grace (2 × measured p95, spec section 10) and the anomaly
    history delay. Until then the default grace is a **10-minute placeholder** (`_sla_default_grace_minutes` in
    `macros/control/collect_sla_config.sql`). S3 also confirms which dbt commands fire `on-run-end`.
-2. **SPAN and SPAN_EVENT routing to the account table is unmeasured.** Only LOG records were checked there, by the lead with
-   ACCOUNTADMIN; the query's `value::string` predicate dropped every SPAN and SPAN_EVENT row (S1.md, "Routing"). Procedure
-   records from a database with no event table of its own were not measured either (S1.md, open point 5).
+2. **Routing of procedure records from a database with no event table of its own is unmeasured** (S1.md, open point 5). The
+   design expects them in the account table. On that table, only LOG records from anonymous blocks were checked, by the lead
+   with ACCOUNTADMIN. The query's `value::string` predicate dropped every SPAN and SPAN_EVENT row, so SPAN and SPAN_EVENT
+   routing there is unmeasured too (S1.md, "Routing").
 3. **Rollback through the persisted Python procedure is unmeasured.** It was measured for `ICECORE_EMIT` (both records kept,
    `proc.rollback`) and for the temporary procedures (S1.md, open point 3).
 4. **The temporary-table privilege for `edr report` is unmeasured** (S4.md, consequence 3).
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
+6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later
+   `ICECORE_EMIT_RUN` `CALL` can name the invocation span as their parent was not tested.
+7. **`TRACE_LEVEL = ON_EVENT`** on the target database is unmeasured; S1 ran with `ALWAYS`.
+8. **The identity of native dbt Projects records** (their own view predicate) is to be defined and measured.
 
 ## Consequences for the build (sprint 3: UC1 and UC5)
 
 - **UC1, write path.** The writer macro chunks and `CALL`s `ICECORE_EMIT` (at most 100 events and 512 KB) for anything emitted
   during the run. `end_run` sends the invocation and node spans, with dbt's own timings, and the per-run LOG records to
-  `ICECORE_EMIT_RUN` in 512 KB chunks. Both go through the guard. `dbt.invocation_id` is on every record.
-- **UC5, setup and read layer.** `setup` creates the two procedures and the views in `<target_db>.ICECORE_OBS`. The views read
-  the event table of `<target_db>` (`SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE <target_db>`). The base event filter
-  selects on `snow.executable.name` and the icecore identity: the `icecore.` name prefix for `ICECORE_EMIT` span events and
-  `SCOPE:name = 'icecore'` for `ICECORE_EMIT_RUN` records. `doctor` makes a test `CALL` of both. Telemetry levels are the
-  database's, not the session's.
+  `ICECORE_EMIT_RUN`, in as many 512 KB CALLs as needed. Samples are LOG records at INFO. Both go through the guard.
+  `dbt.invocation_id` is on every record.
+- **UC5, setup and read layer.** `setup` creates the two procedures and the views in `<target_db>.ICECORE_OBS`. It resolves
+  the event table once (`SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE <target_db>`), and uses `EVENTS_VIEW` when the result
+  is `SNOWFLAKE.TELEMETRY.EVENTS`. The base event filter selects on `snow.database.name`, `snow.schema.name` and
+  `snow.executable.name`, then the icecore identity: the `icecore.` name prefix for `ICECORE_EMIT` span events and
+  `SCOPE:name = 'icecore'` for `ICECORE_EMIT_RUN` records. `doctor` makes a test `CALL` of both and checks the database's levels
+  (`LOG_LEVEL` at least INFO, `TRACE_LEVEL` ON_EVENT or ALWAYS). Telemetry levels are the database's, not the session's.
 - **Payload.** `payload_cap_kb` defaults to 64 and is clamped at 256; truncation is flagged.

@@ -49,11 +49,15 @@ macros:
       Row counts per value of one dimension column (country, segment, ...) over the rows of a change window from
       `get_change_window`, in one query that selects only that column. With a CHANGES window the rows are the
       INSERT row versions: new rows and the new values of updated rows. Returns a list of
-      `{value, row_count, other}` ordered by row count, highest first: one entry per value for the `max_values`
+      `{value, window_rows, other}` ordered by `window_rows` (rows in the window with that value; named, as in
+      `compute_column_metrics`, so that it never collides with the volume monitor's `row_count` total), highest
+      first: one entry per value for the `max_values`
       most frequent values (`value` as a string; null is a value of its own), then, when there are more distinct
-      values, one entry `{value: none, row_count: <sum of the rest>, other: true}`. Returns an empty list when the
-      window has no rows, none when the window is none, and none with a logged warning when the query fails
-      (missing column, lost privilege); it never fails the run. The cost is that of the window (see
+      values, one entry `{value: none, window_rows: <sum of the rest>, other: true}`. Returns an empty list when
+      the window has no rows and none when the window is none. When a CHANGES query fails at run time and the
+      window carries a `timestamp_column`, it runs again over that column (see `get_change_window`); when the
+      query still fails (missing column, lost privilege) it returns none with a logged warning. It never fails
+      the run. The cost is that of the window (see
       `get_change_window`). Computes and returns values only; it emits nothing.
     arguments:
       - name: relation

@@ -211,13 +211,13 @@
 {% macro compute_dimension_metrics(relation, dimension_column, window, max_values=none) %}
   {%- if not execute or window is none -%}{{ return(none) }}{%- endif -%}
   {%- set cap = icecore._icecore_dimension_max_values(max_values) -%}
-  {%- set value = icecore._icecore_safe_scalar(
-      icecore._icecore_dimension_metrics_sql(relation, dimension_column, window, cap), 'compute_dimension_metrics', relation) -%}
+  {%- set value = icecore._icecore_window_scalar(
+      relation, window, 'compute_dimension_metrics', '_icecore_dimension_metrics_sql', dimension_column, cap) -%}
   {%- if value is none -%}{{ return(none) }}{%- endif -%}
   {%- set parsed = fromjson(value) if value is string else value -%}
   {%- set out = [] -%}
   {%- for row in parsed -%}
-    {%- do out.append({'value': row.get('value'), 'row_count': row['row_count'] | int, 'other': row['other']}) -%}
+    {%- do out.append({'value': row.get('value'), 'window_rows': row['window_rows'] | int, 'other': row['other']}) -%}
   {%- endfor -%}
   {{ return(out) }}
 {% endmacro %}
@@ -230,16 +230,16 @@
 {% endmacro %}
 
 
-{#- One array of {value, row_count, other}: the `cap` most frequent values (as strings; null is a value of its own),
-    then one `other` entry summing the rest. Ordered by other, row_count desc, value. Empty array for no rows. -#}
+{#- One array of {value, window_rows, other}: the `cap` most frequent values (as strings; null is a value of its own),
+    then one `other` entry summing the rest. Ordered by other, window_rows desc, value. Empty array for no rows. -#}
 {% macro _icecore_dimension_metrics_sql(relation, dimension_column, window, cap) %}
   {%- set d = icecore._icecore_column_ref(dimension_column) -%}
   {%- set cap = cap | int -%}
   {{ return(
-"select coalesce(array_agg(object_construct_keep_null('value', value, 'row_count', row_count, 'other', other))
-         within group (order by other, row_count desc, value nulls last), array_construct())
+"select coalesce(array_agg(object_construct_keep_null('value', value, 'window_rows', window_rows, 'other', other))
+         within group (order by other, window_rows desc, value nulls last), array_construct())
 from (
-  select iff(rk <= " ~ cap ~ ", value, null) as value, rk > " ~ cap ~ " as other, sum(n) as row_count
+  select iff(rk <= " ~ cap ~ ", value, null) as value, rk > " ~ cap ~ " as other, sum(n) as window_rows
   from (
     select value, n, row_number() over (order by n desc, value nulls last) as rk
     from (select to_varchar(" ~ d ~ ") as value, count(*) as n from (" ~ icecore._icecore_window_rows_sql(relation, window, [dimension_column]) ~ ") w group by 1)

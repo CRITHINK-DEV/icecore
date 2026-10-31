@@ -67,8 +67,8 @@ def test_counts_per_value(dbt, sf, tracked_table):
     got = run_macro("it_dimension_metrics", {"rel": rel(name.lower()), "dimension_column": "country", "since": since})
     assert got["window"]["mode"] == "changes"
     assert got["dimensions"] == [
-        {"value": "FR", "row_count": 10, "other": False},
-        {"value": "DE", "row_count": 5, "other": False},
+        {"value": "FR", "window_rows": 10, "other": False},
+        {"value": "DE", "window_rows": 5, "other": False},
     ], got
 
 
@@ -79,19 +79,19 @@ def test_values_beyond_the_cap_are_grouped_as_other(dbt, sf, tracked_table):
         insert_country(sf, table, country, n)
     got = run_macro("it_dimension_metrics", {"rel": rel(name.lower()), "dimension_column": "country", "since": since, "max_values": 2})
     assert got["dimensions"] == [
-        {"value": "FR", "row_count": 10, "other": False},
-        {"value": "DE", "row_count": 5, "other": False},
-        {"value": None, "row_count": 9, "other": True},  # IT 3 + null 4 + ES 2
+        {"value": "FR", "window_rows": 10, "other": False},
+        {"value": "DE", "window_rows": 5, "other": False},
+        {"value": None, "window_rows": 9, "other": True},  # IT 3 + null 4 + ES 2
     ], got
 
     # the cap also comes from vars: icecore: dimension_max_values; a null value is a value of its own
     switch = ["--vars", json.dumps({"icecore": {"dimension_max_values": 3}})]
     got, _ = run_macro_with_logs("it_dimension_metrics", {"rel": rel(name.lower()), "dimension_column": "country", "since": since}, switch)
     assert got["dimensions"] == [
-        {"value": "FR", "row_count": 10, "other": False},
-        {"value": "DE", "row_count": 5, "other": False},
-        {"value": None, "row_count": 4, "other": False},
-        {"value": None, "row_count": 5, "other": True},  # IT 3 + ES 2
+        {"value": "FR", "window_rows": 10, "other": False},
+        {"value": "DE", "window_rows": 5, "other": False},
+        {"value": None, "window_rows": 4, "other": False},
+        {"value": None, "window_rows": 5, "other": True},  # IT 3 + ES 2
     ], got
 
 
@@ -109,3 +109,29 @@ def test_missing_dimension_column_returns_none_without_failing(dbt, sf, tracked_
     got, logs = run_macro_with_logs("it_dimension_metrics", {"rel": rel(name.lower()), "dimension_column": "segment", "since": since})
     assert got["dimensions"] is None
     assert any("compute_dimension_metrics could not read" in m for m in logs), logs
+
+
+@pytest.mark.sandbox
+def test_table_recreated_after_since_falls_back_to_the_timestamp_column(dbt, sf, run_id):
+    # same run-time fallback as the column metrics: CHANGES fails (000707), the timestamp column takes over
+    name = f"UC2_DIM_RECREATED_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    sf.cursor().execute(f"create transient table {table} (id number, country varchar, updated_at timestamp_ltz) change_tracking = true")
+    try:
+        sf.cursor().execute(f"insert into {table} select seq4(), 'US', current_timestamp() from table(generator(rowcount => 7))")
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        sf.cursor().execute(
+            f"create or replace transient table {table} change_tracking = true as "
+            "select seq4() as id, iff(seq4() < 10, 'FR', 'DE') as country, current_timestamp() as updated_at "
+            "from table(generator(rowcount => 15))")
+        got, logs = run_macro_with_logs("it_dimension_metrics", {"rel": rel(name.lower()), "dimension_column": "country",
+                                                                 "since": since, "timestamp_column": "updated_at"})
+        assert got["dimensions"] == [
+            {"value": "FR", "window_rows": 10, "other": False},
+            {"value": "DE", "window_rows": 5, "other": False},
+        ], got
+        assert any("CHANGES query failed" in m and "using timestamp column updated_at" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")

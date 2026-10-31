@@ -1,0 +1,52 @@
+version: 2
+
+macros:
+  - name: base_attributes
+    description: >
+      Invocation-level attributes that go on every icecore record, as a dict of typed values. Each `CALL` of the
+      emitter procedures is its own trace (spikes/GATE1.md), so views and the app group a run on
+      `dbt.invocation_id`, never on `TRACE`. Keys:
+      `dbt.invocation_id` (string, dbt's `invocation_id`);
+      `dbt.runtime` (string: `fusion` when dbt is 2.x, `cloud` when `DBT_CLOUD_RUN_ID`, `DBT_CLOUD_PROJECT_ID`,
+      `DBT_CLOUD_JOB_ID` or `DBT_CLOUD_ENVIRONMENT_ID` is set, else `core`; `snowflake_native` is not detected
+      yet, because no spike measured what `EXECUTE DBT PROJECT` exposes, GATE1.md open item 5);
+      `dbt.command` (string, `flags.WHICH`: `build`, `run`, `test`, `run-operation`, ...);
+      `dbt.target` (string, `target.name`);
+      `dbt.project` (string, the root project's name);
+      `icecore.version` (string, the installed package's `version` from its dbt_project.yml, read from dbt's
+      runtime config; `unknown` when the runtime does not expose it);
+      `icecore.schema_version` (number, the record layout version, currently 1; views use it to read older
+      records). Renders without a connection.
+    arguments: []
+
+  - name: node_attributes
+    description: >
+      Attributes of one dbt node and, optionally, of its run result, as a dict of typed values: numbers stay
+      numbers (numeric strings are parsed), booleans stay booleans, and a missing value is left out rather than
+      written as null. Accepts graph dicts and dbt objects alike, so it works on `graph.nodes` entries and on
+      the `results` of `on-run-end`. Keys:
+      `dbt.node.unique_id`, `dbt.node.type` (resource type), `dbt.node.name`, `dbt.node.materialization`
+      (`config.materialized`);
+      `dbt.node.relation`, the fully quoted `"DB"."SCHEMA"."NAME"` of models, seeds, snapshots and sources
+      (sources use their `identifier`, others their `alias`), for joins to metadata views. Unquoted parts are
+      upper-cased as Snowflake resolves them, quoted parts (source `quoting:` or model `config.quoting`) keep
+      their case, and embedded double quotes are doubled. Absent for tests and other node types.
+      For tests: `dbt.test.name` (the generic test's name, or the node name for a singular test),
+      `dbt.test.type` (`generic` or `singular`), `dbt.test.column` (`column_name`, when set),
+      `dbt.test.severity` (`config.severity`).
+      With a result: `dbt.result.status` (string), `dbt.result.rows_affected` (number, from the adapter
+      response), `dbt.result.execution_time_s` (number, seconds), `dbt.result.message` (string),
+      `dbt.test.failures` (number) and `snow.query.id` (the node's query id from the adapter response; the
+      `RESOURCE_ATTRIBUTES` key of the same name holds the emitting `CALL`'s id instead). Combine with
+      `base_attributes()` for a full record.
+    arguments:
+      - name: node
+        type: dict or node object
+        description: >
+          The node: a `graph.nodes` / `graph.sources` entry or a result's `.node`. When none and `result` is
+          given, `result.node` is used.
+      - name: result
+        type: dict or RunResult
+        description: >
+          Optional. A run result (an element of `results` in `on-run-end`, or a dict with `status`,
+          `execution_time`, `message`, `failures` and `adapter_response`). Default none: node keys only.

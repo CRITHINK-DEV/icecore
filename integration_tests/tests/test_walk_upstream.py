@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from helpers.operations import IT_DIR, _invoke, install_deps, run_operation_json
+from helpers.operations import IT_DIR, install_deps, invoke, run_macro
 
 P = "icecore_integration_tests"
 SRC = "source.icecore_integration_tests.rc_raw.orders"
@@ -22,8 +22,8 @@ FIXTURE_TAG = "root_cause_fixture"
 
 @pytest.fixture(scope="module")
 def test_id() -> str:
-    install_deps()
-    assert _invoke(["parse"]).success
+    install_deps(offline=True)
+    assert invoke(["parse"], offline=True).success
     manifest = json.load(open(IT_DIR / "target" / "manifest.json"))
     ids = [uid for uid, n in manifest["nodes"].items()
            if n["resource_type"] == "test" and n.get("attached_node") == C]
@@ -33,7 +33,7 @@ def test_id() -> str:
 
 def walk(unique_id, results=None, signals=None):
     args = {"unique_id": unique_id, "results": results or [], "signals": signals or {}}
-    return run_operation_json("it_walk_upstream", args)["cause"]
+    return run_macro("it_walk_upstream", args, offline=True)["cause"]
 
 
 def statuses(**by_id):
@@ -103,9 +103,9 @@ def test_prepared_status_map_is_accepted(test_id):
 
 def test_fixtures_are_left_out_of_default_selection(test_id):
     """A plain dbt build/test must not touch the fixtures: rc_raw.orders does not exist."""
-    tagged = _invoke(["ls", "--select", f"tag:{FIXTURE_TAG}", "--resource-type", "all", "--output", "name"])
+    tagged = invoke(["ls", "--select", f"tag:{FIXTURE_TAG}", "--resource-type", "all", "--output", "name"], offline=True)
     assert tagged.success and len(tagged.result) == 9, tagged.result  # 5 models, test, seed, snapshot, source
-    default = _invoke(["ls", "--resource-type", "all", "--output", "name"])
+    default = invoke(["ls", "--resource-type", "all", "--output", "name"], offline=True)
     assert default.success
     assert not [name for name in default.result if "rc_" in name], default.result
 

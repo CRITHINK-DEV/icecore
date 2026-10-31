@@ -159,12 +159,16 @@ def test_s5_dbt_write_patterns(dbt, sf, run_id):
     """The statements dbt materializations issue: metadata must follow each one."""
     name = f"S5_PATTERNS_{run_id}".upper()
     target = quoted(DATABASE, SCHEMA, name)
-    gen = "select seq4() as id, 's5' as note from table(generator(rowcount => {n}))"
+    gen = "select seq4() as id, 's5'::varchar as note from table(generator(rowcount => {n}))"
     steps = [
         ("ctas", f"create transient table {target} as " + gen.format(n=100), 100),
         ("create_or_replace_as_select", f"create or replace transient table {target} as " + gen.format(n=250), 250),
         ("delete", f"delete from {target} where id < 50", 200),
         ("insert_overwrite", f"insert overwrite into {target} " + gen.format(n=7), 7),
+        # dbt's default incremental strategy on Snowflake: 7 ids matched and updated, 3 inserted
+        ("merge", f"merge into {target} t using ({gen.format(n=10)}) s on t.id = s.id "
+                  "when matched then update set note = 'merged' "
+                  "when not matched then insert (id, note) values (s.id, s.note)", 10),
         ("truncate", f"truncate table {target}", 0),
     ]
     seen, previous_token = {}, 0
@@ -210,13 +214,30 @@ def _query_stats(sf, query_ids: dict) -> dict:
 
 @pytest.mark.sandbox
 def test_s5_changes_fallback(dbt, sf, run_id):
-    """COUNT over CHANGES: what it scans compared with a full count, and whether it works on views."""
+    """COUNT over CHANGES against a full count, per change window: inserts only, a DELETE and a MERGE
+    spread across the table; and whether it works on views."""
     base = quoted(DATABASE, SCHEMA, f"S5_CHG_{run_id}".upper())
     plain = quoted(DATABASE, SCHEMA, f"S5_CHG_PLAIN_{run_id}".upper())
     view_tracked = quoted(DATABASE, SCHEMA, f"S5_CHG_V_{run_id}".upper())
     view_untracked = quoted(DATABASE, SCHEMA, f"S5_CHG_VPLAIN_{run_id}".upper())
+    net = "count_if(metadata$action = 'INSERT') - count_if(metadata$action = 'DELETE')"  # the UC2 reader's query
+    full_scan = f"select count(*) from {base} where note like '%-%'"
     cur = sf.cursor()
     finding = {}
+
+    def window(statement: str, queries: list[tuple[str, str]]) -> tuple[dict, dict]:
+        time.sleep(2)
+        since = utc_now(sf)
+        cur.execute(statement)
+        at = f"changes (information => default) at (timestamp => to_timestamp_tz('{since}'))"
+        ids, counts = {}, {}
+        for label, sql in queries:
+            counts[label] = cur.execute(sql.format(at=at)).fetchone()[0]
+            ids[label] = cur.sfqid
+        time.sleep(5)  # query history by session is not instant
+        stats = _query_stats(sf, ids)
+        return {label: {"count": counts[label], **(stats[label] or {})} for label in ids}, counts
+
     try:
         cur.execute("alter session set use_cached_result = false")
         cur.execute(f"create transient table {base} (id number, note varchar) change_tracking = true")
@@ -227,32 +248,50 @@ def test_s5_changes_fallback(dbt, sf, run_id):
         cur.execute(f"create transient table {plain} (id number, note varchar)")
         cur.execute(f"create view {view_tracked} change_tracking = true as select id, note from {base}")
         cur.execute(f"create view {view_untracked} as select id, note from {plain}")
-        time.sleep(2)
-        since = utc_now(sf)
-        cur.execute(f"insert into {base} select seq4() + 1000000, uuid_string() from table(generator(rowcount => {N_ROWS}))")
-        cur.execute(f"insert into {plain} select seq4(), 's5' from table(generator(rowcount => {N_ROWS}))")
 
-        at = f"changes (information => default) at (timestamp => to_timestamp_tz('{since}'))"
-        ids, counts = {}, {}
-        for label, sql in [
-            ("full_count_metadata", f"select count(*) from {base}"),
-            ("full_count_scan", f"select count(*) from {base} where note like '%-%'"),
-            ("changes_count", f"select count(*) from {base} {at}"),
-            ("changes_count_view_tracked", f"select count(*) from {view_tracked} {at}"),
-        ]:
-            counts[label] = cur.execute(sql).fetchone()[0]
-            ids[label] = cur.sfqid
+        # window 1: inserts only
+        stats, counts = window(
+            f"insert into {base} select seq4() + 1000000, uuid_string() from table(generator(rowcount => {N_ROWS}))",
+            [
+                ("full_count_metadata", f"select count(*) from {base}"),
+                ("full_count_scan", full_scan),
+                ("changes_count", f"select count(*) from {base} {{at}}"),
+                ("changes_net", f"select {net} from {base} {{at}}"),
+                ("changes_count_view_tracked", f"select count(*) from {view_tracked} {{at}}"),
+            ],
+        )
+        finding["inserts_only"] = stats
+        assert counts["changes_net"] == N_ROWS and counts["changes_count_view_tracked"] == N_ROWS
+
+        # window 2: DELETE of 10 rows, one in each of the ten 100k-row batches
+        stats, counts = window(
+            f"delete from {base} where mod(id, 100000) = 7 and id < 1000000",
+            [("changes_net", f"select {net} from {base} {{at}}"), ("full_count_scan", full_scan)],
+        )
+        finding["delete_10_rows_across_partitions"] = stats
+        assert counts["changes_net"] == -10
+
+        # window 3: MERGE (dbt's default incremental strategy): 10 rows updated across the batches, 50 inserted
+        stats, counts = window(
+            f"merge into {base} t using ("
+            f"  select id, 'merged' as note from {base} where mod(id, 100000) = 13 and id < 1000000"
+            f"  union all select seq4() + 2000000, uuid_string() from table(generator(rowcount => 50))"
+            f") s on t.id = s.id when matched then update set note = s.note "
+            f"when not matched then insert (id, note) values (s.id, s.note)",
+            [("changes_net", f"select {net} from {base} {{at}}"), ("full_count_scan", full_scan)],
+        )
+        finding["merge_10_updates_across_partitions_50_inserts"] = stats
+        assert counts["changes_net"] == 50
+
+        since = utc_now(sf)
+        cur.execute(f"insert into {plain} select seq4(), 's5' from table(generator(rowcount => {N_ROWS}))")
         try:
-            cur.execute(f"select count(*) from {view_untracked} {at}")
+            cur.execute(f"select count(*) from {view_untracked} changes (information => default) "
+                        f"at (timestamp => to_timestamp_tz('{since}'))")
             finding["view_without_change_tracking"] = {"ok": True}
         except Exception as e:  # noqa: BLE001 - the error is the finding
             finding["view_without_change_tracking"] = {"ok": False, "error": str(e).splitlines()[-1][:200]}
-
-        time.sleep(5)  # query history by session is not instant
-        stats = _query_stats(sf, ids)
-        finding.update({label: {"count": counts[label], **(stats[label] or {})} for label in ids})
         record_finding("s5", "changes_fallback", finding)
-        assert counts["changes_count"] == N_ROWS and counts["changes_count_view_tracked"] == N_ROWS
     finally:
         cur.execute(f"drop view if exists {view_tracked}")
         cur.execute(f"drop view if exists {view_untracked}")

@@ -1,0 +1,33 @@
+version: 2
+
+macros:
+  - name: setup
+    description: >
+      Installs icecore in one command: `dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none,
+      app: false}'`. Runs one ordered list of steps: detect_capabilities (reads only), `CREATE SCHEMA IF NOT EXISTS`
+      for the obs schema, create_emit_procedures (`ICECORE_EMIT` and `ICECORE_EMIT_RUN`, `CREATE OR REPLACE ... COPY
+      GRANTS`, so grants made by an admin survive a re-run), set_telemetry_levels (the database's levels only; what
+      the role cannot run is printed for an admin), then records the capabilities as an `icecore.capabilities` span
+      event through the new `ICECORE_EMIT`. The steps that do not exist yet (create_views, compat views,
+      create_alerts, create_tasks, deploy_app) keep their place in the list and are reported as planned. Idempotent:
+      a second run leaves the schema, the procedures' DDL and their grants as they were, and changes no level that is
+      already sufficient. Creates no tables. When `schema` differs from the `obs_schema` var, a warning says to set
+      the var, because dbt runs write through the procedures of the var's schema. The role needs USAGE on the target
+      database, CREATE SCHEMA on it (or an existing schema it can use) and CREATE PROCEDURE on the schema
+      (spikes/GATE1.md, "What setup creates and the grants it needs"). Returns `{database, schema, compat, app,
+      capabilities, procedures, levels, recorded, steps}`, each step `{name, status, detail}` with status `done` or
+      `planned`.
+    arguments:
+      - name: schema
+        type: string
+        description: >
+          The obs schema in the target database. Default the `obs_schema` var (`ICECORE_OBS`). Upper-cased as
+          Snowflake resolves an unquoted identifier.
+      - name: compat
+        type: string
+        description: >
+          Default `none`. Any other value (such as `elementary`) adds the compat views step, reported as planned until
+          the compat views exist.
+      - name: app
+        type: boolean
+        description: Default false. True adds the deploy_app step, reported as planned until the app can be deployed.

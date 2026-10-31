@@ -1,0 +1,23 @@
+version: 2
+
+macros:
+  - name: doctor
+    description: >
+      Checks an icecore install and reports; it never fails the run. `dbt run-operation icecore.doctor`. Re-detects
+      the capabilities (detect_capabilities, reads only), then checks in order: an active event table; the database's
+      levels (`LOG_LEVEL` at least INFO, `TRACE_LEVEL` ON_EVENT or ALWAYS; the `ALTER DATABASE` fix is printed, never
+      run); one guarded test `CALL` of `ICECORE_EMIT` and of `ICECORE_EMIT_RUN`, tagged `icecore.doctor.probe = true`
+      (an `icecore.doctor_probe` span event and an INFO LOG record), so a missing procedure or grant shows; and the
+      icecore records of the last 24 hours, counted through `base_events` on Snowflake's clock, without doctor's
+      probes and the `icecore.capabilities` records of setup and doctor. Reports `OK: <n> icecore records in the last
+      24 h`, or `no records in 24 h` with the likely cause: the first failed check (event table, levels, procedures),
+      else the telemetry hooks (`on-run-start: icecore.start_run()` and `on-run-end: icecore.end_run(results)`; on
+      dbt 1.8, `source freshness` fires them only with the `source_freshness_run_project_hooks` flag, spikes/S3.md).
+      Records were found but a check failed, or the count could not be read: status `warn`. Then records the
+      capabilities through `ICECORE_EMIT`, as setup does. Returns `{status, cause, message, records_24h, checks,
+      database, schema, probes, capabilities, recorded}`; status is `ok`, `no_records` or `warn`, and each check is
+      `{name, ok, detail}`.
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema to check. Default the `obs_schema` var (`ICECORE_OBS`).

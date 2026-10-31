@@ -22,7 +22,7 @@
   {%- set database = database | upper if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', database) else database -%}
 
   {%- set params = {} -%}
-  {%- set shown = icecore._icecore_try_show("show parameters in database " ~ icecore._icecore_capability_identifier(database)) -%}
+  {%- set shown = icecore._icecore_try_show("show parameters in database " ~ icecore._icecore_identifier(database)) -%}
   {%- for row in shown.get('rows') or [] -%}
     {%- do params.update({row['key'] | upper: row}) -%}
   {%- endfor -%}
@@ -123,11 +123,4 @@ exception
 end;
   {%- endset -%}
   {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
-{% endmacro %}
-
-
-{#- A database name for SQL text: a plain identifier as it is, anything else double-quoted. -#}
-{% macro _icecore_capability_identifier(name) %}
-  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', name | string) -%}{{ return(name | string) }}{%- endif -%}
-  {{ return('"' ~ (name | string | replace('"', '""')) ~ '"') }}
 {% endmacro %}

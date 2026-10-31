@@ -60,7 +60,7 @@
     {{ exceptions.raise_compiler_error("icecore: set_telemetry_levels needs the result of icecore.detect_capabilities() as `capabilities`") }}
   {%- endif -%}
   {%- set database = database or capabilities.get('database') or target.database -%}
-  {%- set db = icecore._icecore_levels_identifier(database) -%}
+  {%- set db = icecore._icecore_identifier(database) -%}
   {%- set edition = (capabilities.get('edition') or 'UNKNOWN') | upper -%}
   {%- set active = (capabilities.get('event_table') or '') | trim -%}
   {%- set log_level = (capabilities.get('log_level') or 'OFF') | upper -%}
@@ -118,12 +118,4 @@ exception
 end;
   {%- endset -%}
   {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).columns[0].values()[0]) }}
-{% endmacro %}
-
-
-{#- A database name for SQL text: a plain identifier as it is (Snowflake resolves it upper case), anything else
-    double-quoted. -#}
-{% macro _icecore_levels_identifier(name) %}
-  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', name | string) -%}{{ return(name | string) }}{%- endif -%}
-  {{ return('"' ~ (name | string | replace('"', '""')) ~ '"') }}
 {% endmacro %}

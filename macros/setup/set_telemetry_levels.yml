@@ -1,0 +1,54 @@
+version: 2
+
+macros:
+  - name: set_telemetry_levels
+    description: >
+      Makes sure icecore's records are captured, without ACCOUNTADMIN for normal use (spikes/GATE1.md,
+      "Prerequisites"). Levels belong to the target database, never to the session or the account: `LOG_LEVEL` at
+      least INFO and `TRACE_LEVEL` ON_EVENT or ALWAYS. When they are already sufficient nothing is changed. Otherwise
+      the one statement icecore may run, `ALTER DATABASE <db> SET LOG_LEVEL = 'INFO'` and/or `TRACE_LEVEL = 'ALWAYS'`
+      (only the missing ones), is tried inside a guard; if the role lacks the privilege it is printed for an admin
+      and the run goes on. Everything else is printed, never run: `ALTER ACCOUNT SET EVENT_TABLE` when no event table
+      is active (ACCOUNTADMIN), and, on Enterprise or above when a dedicated table is requested, `CREATE EVENT TABLE`,
+      its clustering key and `ALTER DATABASE <db> SET EVENT_TABLE`. On Standard a dedicated table is not available and
+      the account's active table is used. A custom event table gets the recommended clustering key
+      `(TO_DATE(TIMESTAMP), RECORD_TYPE)`; when the views read the account table, a note says readers need the
+      `SNOWFLAKE.EVENTS_VIEWER` application role. Returns `{database, levels_ok, executed, printed, notes}` and logs
+      every line as `icecore: ...`.
+    arguments:
+      - name: capabilities
+        type: dict
+        description: >
+          The detection result (`icecore.detect_capabilities()`), required. Keys read: `edition` (STANDARD,
+          ENTERPRISE, BUSINESS_CRITICAL, VIRTUAL_PRIVATE_SNOWFLAKE or UNKNOWN), `event_table` (the database's
+          EVENT_TABLE parameter, empty when none is active), `log_level`, `trace_level` (the database's effective
+          values) and optionally `database`.
+      - name: database
+        type: string
+        description: The target database. Default `capabilities.database`, then `target.database`.
+      - name: dedicated_event_table
+        type: string
+        description: >
+          Fully qualified name of a dedicated database-level event table to use (Enterprise or above). Default none:
+          use the active event table.
+      - name: apply
+        type: boolean
+        description: >
+          Default true: try the database's level statement (guarded). False: print it instead. No other statement is
+          ever run.
+
+  - name: telemetry_levels_plan
+    description: >
+      The pure part of `set_telemetry_levels`: what to do for a detection result, with no query. Returns
+      `{database, log_level, trace_level, levels_ok, attempt, print, notes}`, where `attempt` only ever holds the
+      database's `ALTER DATABASE ... SET LOG_LEVEL / TRACE_LEVEL` and `print` holds the statements for an admin.
+    arguments:
+      - name: capabilities
+        type: dict
+        description: As for `set_telemetry_levels`.
+      - name: database
+        type: string
+        description: As for `set_telemetry_levels`.
+      - name: dedicated_event_table
+        type: string
+        description: As for `set_telemetry_levels`.

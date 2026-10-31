@@ -8,3 +8,12 @@ __pycache__/
 .user.yml
 package-lock.yml
 .venv-latest/
+
+# credentials: never committed
+*.p8
+*.pem
+rsa_key*
+.env
+.env.*
+spikes/results/.*.lock
+spikes/results/*.json.tmp

@@ -1,0 +1,29 @@
+# Manual sandbox deployment of the app shell with the Snowflake CLI (snow streamlit deploy).
+# Production deployment is setup(app=true) from a Snowflake Git repository object.
+definition_version: 2
+entities:
+  icecore_app_shell:
+    type: streamlit
+    identifier:
+      name: ICECORE_APP_SHELL
+      database: ICECORE_SANDBOX
+      schema: SPIKES
+    title: icecore
+    query_warehouse: ICECORE_CI_WH
+    # Warehouse runtime: packages come from environment.yml (Snowflake Anaconda channel).
+    # Without it the account default (container runtime) ignores environment.yml.
+    runtime_name: SYSTEM$WAREHOUSE_RUNTIME
+    main_file: streamlit_app.py
+    artifacts:
+      - streamlit_app.py
+      - environment.yml
+      - lib/__init__.py
+      - lib/navigation.py
+      - lib/settings.py
+      - lib/ui.py
+      - pages/runs.py
+      - pages/tests_and_anomalies.py
+      - pages/lineage.py
+      - pages/cost.py
+      - pages/slas.py
+      - pages/settings.py

@@ -12,7 +12,8 @@ macros:
       or the series covers fewer than 14 days; `auto` uses Cortex only if it is detected and the series
       covers at least 14 days, else native. The Cortex engine is not shipped yet, so every request
       scores with native and records `cortex_unavailable`. Computes and returns values only; emitting
-      them is `emit_metric`'s job.
+      them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
+      keys are returned with null values, so a model or test calling score always parses.
     arguments:
       - name: series_sql
         type: string
@@ -25,10 +26,10 @@ macros:
         description: "`native`, `cortex` or `auto`. Default: `var('icecore').anomaly_engine` (auto)."
       - name: sensitivity
         type: string
-        description: "`low`, `medium` or `high`. Default: `var('icecore').anomaly_sensitivity`, else `medium`."
+        description: "`low`, `medium` or `high`. Default: `var('icecore').anomaly_sensitivity` (medium)."
       - name: min_consecutive
         type: integer
-        description: "Consecutive out-of-band observations needed before is_anomaly is true. Default: `var('icecore').anomaly_min_consecutive`, else 1."
+        description: "Integer of at least 1: consecutive out-of-band observations needed before is_anomaly is true. Default: `var('icecore').anomaly_min_consecutive` (1)."
       - name: observed_at
         type: string
         description: "Timestamp of the current observation (`YYYY-MM-DD HH:MI:SS`), used by seasonal baselines. Default: now."

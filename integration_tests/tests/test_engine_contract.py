@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from helpers.macros import MacroFailed, call_macro
+import yaml
+
+from helpers.macros import MacroFailed, _invoke, call_macro
 
 REPO = Path(__file__).resolve().parents[2]
 CONTRACT_FIELDS = {"engine", "expected", "lower", "upper", "score", "is_anomaly", "fallback_reason"}
@@ -78,6 +80,24 @@ def test_settings_default_to_project_var():
         "sensitivity": "medium",
         "min_consecutive": 1,
     }
+
+
+@pytest.mark.parametrize("value", [1.5, True, "2", 0])
+def test_min_consecutive_must_be_a_positive_integer(value):
+    with pytest.raises(MacroFailed, match="min_consecutive"):
+        call_macro("_anomaly_settings", engine="native", sensitivity=None, min_consecutive=value)
+
+
+def test_package_declares_the_anomaly_var_defaults():
+    cfg = yaml.safe_load(open(REPO / "dbt_project.yml"))["vars"]["icecore"]
+    assert cfg["anomaly_engine"] == "auto"
+    assert cfg["anomaly_sensitivity"] == "medium"
+    assert cfg["anomaly_min_consecutive"] == 1
+
+
+def test_a_model_calling_score_parses():
+    """models/engines/probe_engine_score.sql calls icecore.score; parse renders it with execute false."""
+    assert _invoke(["parse", "--no-partial-parse"]).success
 
 
 def test_engine_macros_never_call_cortex_or_write():

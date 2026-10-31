@@ -14,5 +14,7 @@ vars:
     root_cause: false
     alerts: false
     anomaly_engine: auto
+    anomaly_sensitivity: medium
+    anomaly_min_consecutive: 1
     shadow_engine: none
     payload_cap_kb: 64

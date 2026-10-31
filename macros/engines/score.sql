@@ -6,6 +6,11 @@
 
 {% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none) %}
   {% set settings = icecore._anomaly_settings(engine, sensitivity, min_consecutive) %}
+  {#- At parse time nothing runs: return the contract shape with nulls so callers can render. -#}
+  {% if not execute %}
+    {{ return({'engine': none, 'expected': none, 'lower': none, 'upper': none, 'score': none,
+               'is_anomaly': none, 'fallback_reason': none}) }}
+  {% endif %}
 
   {% if settings.engine == 'native' %}
     {% set choice = {'engine': 'native', 'fallback_reason': none} %}
@@ -45,10 +50,10 @@
   {% if sensitivity not in ['low', 'medium', 'high'] %}
     {{ exceptions.raise_compiler_error("icecore: unknown anomaly sensitivity '" ~ sensitivity ~ "' (expected low, medium or high)") }}
   {% endif %}
-  {% if min_consecutive is not number or min_consecutive < 1 %}
-    {{ exceptions.raise_compiler_error("icecore: min_consecutive must be an integer of at least 1") }}
+  {% if min_consecutive is not integer or min_consecutive < 1 %}
+    {{ exceptions.raise_compiler_error("icecore: min_consecutive must be an integer of at least 1, got '" ~ min_consecutive ~ "'") }}
   {% endif %}
-  {{ return({'engine': engine, 'sensitivity': sensitivity, 'min_consecutive': min_consecutive | int}) }}
+  {{ return({'engine': engine, 'sensitivity': sensitivity, 'min_consecutive': min_consecutive}) }}
 {% endmacro %}
 
 

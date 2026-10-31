@@ -115,6 +115,19 @@ def test_column_and_since_are_quoted_and_escaped():
     assert '"ICECORE_SANDBOX"."SPIKES"."Mixed Case"' in sql
 
 
+def test_numeric_metrics_render_avg_min_max():
+    sql = " ".join(render({"mode": "changes", "since": SINCE}, metrics=["avg", "min", "max"])["metrics_sql"].split())
+    assert """'avg', avg("AMOUNT")::float""" in sql
+    assert """'min', min("AMOUNT")::float""" in sql
+    assert """'max', max("AMOUNT")::float""" in sql
+    assert "'null_rate'" not in sql and "'window_rows'" not in sql
+
+
+def test_metrics_argument_selects_what_is_rendered():
+    sql = render({"mode": "changes", "since": SINCE}, metrics=["null_rate"])["metrics_sql"]
+    assert "'null_rate'" in sql and "'window_rows'" not in sql and "avg(" not in sql
+
+
 @pytest.mark.parametrize("name,ref", [
     ("amount", '"AMOUNT"'),        # plain name: resolved like an unquoted identifier
     ('"amount"', '"amount"'),      # wrapped in double quotes: exact, case kept
@@ -359,5 +372,32 @@ def test_change_tracking_enabled_after_since_falls_back_to_the_timestamp_column(
                                                               "since": since, "timestamp_column": "updated_at"})
         assert got["metrics"] == {"window_rows": 50, "null_rate": 0.2}, got
         assert any("using timestamp column updated_at" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_numeric_metrics_selection_and_non_numeric_column(dbt, sf, run_id):
+    name = f"UC2_COLS_NUM_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 10)
+        time.sleep(2)
+        since = utc_now(sf)
+        sf.cursor().execute(f"insert into {table} (id, amount, note) values (1, 1, 'a'), (2, 2, null), (3, 3, 'c')")
+        r = rel(name.lower())
+
+        got = run_macro("it_column_metrics", {"rel": r, "column_name": "amount", "since": since,
+                                              "metrics": ["window_rows", "null_rate", "avg", "min", "max"]})
+        assert got["metrics"] == {"window_rows": 3, "null_rate": 0.0, "avg": 2.0, "min": 1.0, "max": 3.0}, got
+
+        got, logs = run_macro_with_logs("it_column_metrics", {"rel": r, "column_name": "note", "since": since,
+                                                              "metrics": ["null_rate", "avg", "max"]})
+        assert got["metrics"] == {"null_rate": pytest.approx(1 / 3)}, got
+        assert any("avg, max skipped" in m and "not numeric" in m for m in logs), logs
+
+        got = run_macro("it_column_metrics", {"rel": r, "column_name": "amount", "since": since, "metrics": ["null_rate"]})
+        assert got["metrics"] == {"null_rate": 0.0}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")

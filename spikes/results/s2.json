@@ -1,20 +1,418 @@
 {
-  "python_attr.1024": {
+  "emit_run_batch.100x1": {
     "call_ok": true,
-    "dbt_wall_s": 4.12,
-    "expected_chars": 1048576,
+    "dbt_wall_s": 4.91,
+    "errors": [],
+    "expected": 100,
+    "icecore_warnings": [],
+    "intact_payloads": 100,
+    "landed_spans": 100,
+    "run_id": "79b1c83df66b4f06a30451303d5065a4",
+    "total_kb": 100
+  },
+  "emit_run_batch.15x64": {
+    "call_ok": true,
+    "dbt_wall_s": 12.94,
+    "errors": [],
+    "expected": 15,
+    "icecore_warnings": [],
+    "intact_payloads": 15,
+    "landed_spans": 15,
+    "run_id": "4f28ba90d5cf4257b5964b7c8456851e",
+    "total_kb": 960
+  },
+  "emit_run_batch.16x64": {
+    "call_ok": true,
+    "dbt_wall_s": 14.0,
+    "errors": [],
+    "expected": 16,
+    "icecore_warnings": [],
+    "intact_payloads": 16,
+    "landed_spans": 16,
+    "run_id": "c5f43b9204f34b769912f8713f2c3a3f",
+    "total_kb": 1024
+  },
+  "emit_run_batch.200x1": {
+    "call_ok": true,
+    "dbt_wall_s": 5.3,
+    "errors": [],
+    "expected": 200,
+    "icecore_warnings": [],
+    "intact_payloads": 200,
+    "landed_spans": 200,
+    "run_id": "a00dc157dad54c2a8b430802c3f6d645",
+    "total_kb": 200
+  },
+  "emit_run_batch.64x64": {
+    "call_ok": true,
+    "dbt_wall_s": 153.81,
+    "errors": [],
+    "expected": 64,
+    "icecore_warnings": [],
+    "intact_payloads": 64,
+    "landed_spans": 64,
+    "run_id": "e976351308e242bb819b5ca1e6c96b43",
+    "total_kb": 4096
+  },
+  "proc_batch.1000x1": {
+    "call_ok": true,
+    "dbt_wall_s": 20.87,
+    "dropped_events_count": 872,
+    "expected_chars": 1024,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 1024,
+    "landed_rows": 128,
+    "payload_chars": 1024,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "74bfa393217b4c9399319b8af05ab6ed",
+    "seconds_to_visible": null,
+    "seq_range": [
+      873,
+      1000
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.1000x1.expected_landed": 128,
+  "proc_batch.128x1": {
+    "call_ok": true,
+    "dbt_wall_s": 4.63,
+    "dropped_events_count": null,
+    "expected_chars": 1024,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 1024,
+    "landed_rows": 128,
+    "payload_chars": 1024,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "701837b2f92b48ecb77cfececa99a19f",
+    "seconds_to_visible": 22.1,
+    "seq_range": [
+      1,
+      128
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.128x1.expected_landed": 128,
+  "proc_batch.129x1": {
+    "call_ok": true,
+    "dbt_wall_s": 3.35,
+    "dropped_events_count": 1,
+    "expected_chars": 1024,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 1024,
+    "landed_rows": 128,
+    "payload_chars": 1024,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "9d29b028df6b4b8286a892b01bf59d35",
+    "seconds_to_visible": null,
+    "seq_range": [
+      2,
+      129
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.129x1.expected_landed": 128,
+  "proc_batch.12x64": {
+    "call_ok": true,
+    "dbt_wall_s": 7.65,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 12,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "a69db39719e84f90937786abb889d9c7",
+    "seconds_to_visible": 5.8,
+    "seq_range": [
+      1,
+      12
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.12x64.expected_landed": 12,
+  "proc_batch.15x64": {
+    "call_ok": true,
+    "dbt_wall_s": 10.38,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 15,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "b1595bccee954b638cd4e0698e12d1af",
+    "seconds_to_visible": 5.6,
+    "seq_range": [
+      1,
+      15
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.15x64.expected_landed": 15,
+  "proc_batch.16x64": {
+    "call_ok": true,
+    "dbt_wall_s": 11.32,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
     "intact": null,
     "landed_len": null,
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "c9b8b7ac6d794a97900fe2ab9139ade9",
-    "seconds_to_visible": null
+    "run_id": "153fd8d14dfa4d148c50c7f97f977ba0",
+    "seconds_to_visible": null,
+    "seq_range": null,
+    "span_landed": 0,
+    "tail": null
   },
+  "proc_batch.16x64.absent_after_s": 180,
+  "proc_batch.16x64.expected_landed": 0,
+  "proc_batch.16x64.span": {
+    "dropped_events_count": null,
+    "seq_range": null,
+    "span_landed": 1
+  },
+  "proc_batch.256x1": {
+    "call_ok": true,
+    "dbt_wall_s": 3.37,
+    "dropped_events_count": 128,
+    "expected_chars": 1024,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 1024,
+    "landed_rows": 128,
+    "payload_chars": 1024,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "715a5cedc12a495ea7a4b42ea587ad7c",
+    "seconds_to_visible": null,
+    "seq_range": [
+      129,
+      256
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.256x1.expected_landed": 128,
+  "proc_batch.32x64": {
+    "call_ok": true,
+    "dbt_wall_s": 39.75,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "bc59c9b134124995aeab47c29ff6fd9c",
+    "seconds_to_visible": null,
+    "seq_range": null,
+    "span_landed": 0,
+    "tail": null
+  },
+  "proc_batch.32x64.absent_after_s": 180,
+  "proc_batch.32x64.expected_landed": 0,
+  "proc_batch.32x64.span": {
+    "dropped_events_count": null,
+    "seq_range": null,
+    "span_landed": 1
+  },
+  "proc_batch.64x64": {
+    "call_ok": true,
+    "dbt_wall_s": 149.7,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "31a8440b5d934e1ab2007bb8b149f100",
+    "seconds_to_visible": null,
+    "seq_range": null,
+    "span_landed": 0,
+    "tail": null
+  },
+  "proc_batch.64x64.absent_after_s": 180,
+  "proc_batch.64x64.expected_landed": 0,
+  "proc_batch.64x64.span": {
+    "dropped_events_count": null,
+    "seq_range": null,
+    "span_landed": 1
+  },
+  "proc_batch.8x64": {
+    "call_ok": true,
+    "dbt_wall_s": 4.4,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 8,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id",
+      "icecore.seq"
+    ],
+    "run_id": "da7ee907033949119e53b2dfae53d506",
+    "seconds_to_visible": 5.7,
+    "seq_range": [
+      1,
+      8
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_batch.8x64.expected_landed": 8,
+  "proc_event.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 11.26,
+    "dropped_events_count": null,
+    "expected_chars": 1048576,
+    "icecore_warnings": [],
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "86aa0b7887d34533ba8e075fe1d535e5",
+    "seconds_to_visible": null,
+    "seq_range": null,
+    "span_landed": 0,
+    "tail": null
+  },
+  "proc_event.1024.absent_after_s": 180,
+  "proc_event.1024.expected": "dropped",
+  "proc_event.256": {
+    "call_ok": true,
+    "dbt_wall_s": 2.59,
+    "dropped_events_count": null,
+    "expected_chars": 262144,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 262144,
+    "landed_rows": 1,
+    "payload_chars": 262144,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "b26120f51c4d4207b43f466ce326b62f",
+    "seconds_to_visible": 5.5,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_event.256.expected": "intact",
+  "proc_event.64": {
+    "call_ok": true,
+    "dbt_wall_s": 1.84,
+    "dropped_events_count": null,
+    "expected_chars": 65536,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 1,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "71fea65ebcef4ac8b685ec40dd4a0e81",
+    "seconds_to_visible": 5.4,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_event.64.expected": "intact",
+  "proc_event.8": {
+    "call_ok": true,
+    "dbt_wall_s": 1.78,
+    "dropped_events_count": null,
+    "expected_chars": 8192,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 8192,
+    "landed_rows": 1,
+    "payload_chars": 8192,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "55f54face9454346a9c8359d7d7b06bf",
+    "seconds_to_visible": 5.3,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "proc_event.8.expected": "intact",
+  "python_attr.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 4.52,
+    "expected_chars": 1048576,
+    "icecore_warnings": [],
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "6705692fbad74a0f8047e2839ec44f33",
+    "seconds_to_visible": null,
+    "tail": null
+  },
+  "python_attr.1024.absent_after_s": 180,
+  "python_attr.1024.expected": "dropped",
   "python_attr.256": {
     "call_ok": true,
-    "dbt_wall_s": 4.1,
+    "dbt_wall_s": 3.96,
     "expected_chars": 262144,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 262144,
     "landed_rows": 1,
@@ -26,13 +424,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "6606bfa58f4641b1b23b4b7c769d7a2c",
-    "seconds_to_visible": 5.5
+    "run_id": "d2d84a5e74284c53a60c9098344cc173",
+    "seconds_to_visible": 10.6,
+    "tail": "xxxxxxxxxxxx"
   },
+  "python_attr.256.expected": "intact",
   "python_attr.64": {
     "call_ok": true,
-    "dbt_wall_s": 3.79,
+    "dbt_wall_s": 3.96,
     "expected_chars": 65536,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 65536,
     "landed_rows": 1,
@@ -44,13 +445,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "32ee149c8c514a41861ae92a473e283c",
-    "seconds_to_visible": 5.3
+    "run_id": "e159096a37b240ef878b81052890a809",
+    "seconds_to_visible": 10.4,
+    "tail": "xxxxxxxxxxxx"
   },
+  "python_attr.64.expected": "intact",
   "python_attr.8": {
     "call_ok": true,
-    "dbt_wall_s": 3.98,
+    "dbt_wall_s": 3.8,
     "expected_chars": 8192,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 8192,
     "landed_rows": 1,
@@ -62,13 +466,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "57c8c96f3a5c4d73a76abecddb6a2bf6",
-    "seconds_to_visible": 5.4
+    "run_id": "e6554f8e74a2445183ed77cae0400015",
+    "seconds_to_visible": 5.4,
+    "tail": "xxxxxxxxxxxx"
   },
+  "python_attr.8.expected": "intact",
   "python_log.1024": {
     "call_ok": true,
-    "dbt_wall_s": 4.21,
+    "dbt_wall_s": 4.45,
     "expected_chars": 1048576,
+    "icecore_warnings": [],
     "intact": false,
     "landed_len": 524255,
     "landed_rows": 1,
@@ -80,13 +487,16 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "7263aa7ca448441e88dbe8153ab88f54",
-    "seconds_to_visible": 20.8
+    "run_id": "361d75558fd34bce93378419296303df",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxx..."
   },
+  "python_log.1024.expected": "truncated",
   "python_log.256": {
     "call_ok": true,
-    "dbt_wall_s": 4.3,
+    "dbt_wall_s": 4.12,
     "expected_chars": 262144,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 262179,
     "landed_rows": 1,
@@ -98,13 +508,16 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "e030ad6bada9444fb4b33531363476e1",
-    "seconds_to_visible": 5.5
+    "run_id": "0f950c03a6324b89914bd92d801ae32f",
+    "seconds_to_visible": 5.5,
+    "tail": "2d801ae32f 1"
   },
+  "python_log.256.expected": "intact",
   "python_log.64": {
     "call_ok": true,
-    "dbt_wall_s": 4.23,
+    "dbt_wall_s": 4.17,
     "expected_chars": 65536,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 65571,
     "landed_rows": 1,
@@ -116,13 +529,16 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "67d78fa102814383831aad0df2a15eaf",
-    "seconds_to_visible": 5.5
+    "run_id": "9249e6470c624e8caea1b8e8c515c489",
+    "seconds_to_visible": 5.4,
+    "tail": "e8c515c489 1"
   },
+  "python_log.64.expected": "intact",
   "python_log.8": {
     "call_ok": true,
-    "dbt_wall_s": 8.38,
+    "dbt_wall_s": 4.01,
     "expected_chars": 8192,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 8227,
     "landed_rows": 1,
@@ -134,25 +550,32 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "0822f91f38a84c7395e776934f538423",
-    "seconds_to_visible": 5.4
+    "run_id": "7f992d21bc934200808342a228890e7a",
+    "seconds_to_visible": 5.7,
+    "tail": "a228890e7a 1"
   },
+  "python_log.8.expected": "intact",
   "sql_event.1024": {
     "call_ok": true,
-    "dbt_wall_s": 2.11,
+    "dbt_wall_s": 2.48,
     "expected_chars": 1048576,
+    "icecore_warnings": [],
     "intact": null,
     "landed_len": null,
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "3169c8e0e8c84e7aaf0b1a0bdc63da06",
-    "seconds_to_visible": null
+    "run_id": "e50b71fec0434f569fd400cf79adac05",
+    "seconds_to_visible": null,
+    "tail": null
   },
+  "sql_event.1024.absent_after_s": 180,
+  "sql_event.1024.expected": "dropped",
   "sql_event.256": {
     "call_ok": true,
-    "dbt_wall_s": 1.72,
+    "dbt_wall_s": 1.7,
     "expected_chars": 262144,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 262144,
     "landed_rows": 1,
@@ -161,13 +584,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "6d89b6b7b271408d9eea8e740fea1baa",
-    "seconds_to_visible": 5.5
+    "run_id": "bfc7d9dd48b7481fbd7e48472c94bbcd",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "sql_event.256.expected": "intact",
   "sql_event.64": {
     "call_ok": true,
-    "dbt_wall_s": 1.64,
+    "dbt_wall_s": 1.76,
     "expected_chars": 65536,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 65536,
     "landed_rows": 1,
@@ -176,13 +602,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "238c1766a8b64139bc2d7d60be8cafff",
-    "seconds_to_visible": 5.4
+    "run_id": "717d3616b73740d692e60155e3422259",
+    "seconds_to_visible": 5.4,
+    "tail": "xxxxxxxxxxxx"
   },
+  "sql_event.64.expected": "intact",
   "sql_event.8": {
     "call_ok": true,
-    "dbt_wall_s": 1.73,
+    "dbt_wall_s": 1.55,
     "expected_chars": 8192,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 8192,
     "landed_rows": 1,
@@ -191,25 +620,32 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "a79dc2f55a044bf9af100748e81aa3e0",
-    "seconds_to_visible": 5.4
+    "run_id": "4e16ae06ec0449399ea01d3fd65a095d",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "sql_event.8.expected": "intact",
   "sql_log.1024": {
     "call_ok": true,
-    "dbt_wall_s": 1.97,
+    "dbt_wall_s": 1.93,
     "expected_chars": 1048576,
+    "icecore_warnings": [],
     "intact": null,
     "landed_len": null,
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "ce9a0e73cbc04176bedca4b866eba4c9",
-    "seconds_to_visible": null
+    "run_id": "0b00ae9b019d4aca81198e592f075652",
+    "seconds_to_visible": null,
+    "tail": null
   },
+  "sql_log.1024.absent_after_s": 180,
+  "sql_log.1024.expected": "dropped",
   "sql_log.256": {
     "call_ok": true,
     "dbt_wall_s": 1.72,
     "expected_chars": 262144,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 262179,
     "landed_rows": 1,
@@ -217,13 +653,16 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "88759350f9bf4b679dd8963a353f5b6e",
-    "seconds_to_visible": 5.4
+    "run_id": "1be2756c9fbf4cd6a3904ef329485820",
+    "seconds_to_visible": 5.4,
+    "tail": "f329485820 1"
   },
+  "sql_log.256.expected": "intact",
   "sql_log.64": {
     "call_ok": true,
-    "dbt_wall_s": 1.59,
+    "dbt_wall_s": 1.63,
     "expected_chars": 65536,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 65571,
     "landed_rows": 1,
@@ -231,13 +670,16 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "5f6754f32129466298c0a5b5bdb39e11",
-    "seconds_to_visible": 5.3
+    "run_id": "0234c152cda348269088736d8a0e3f64",
+    "seconds_to_visible": 5.3,
+    "tail": "6d8a0e3f64 1"
   },
+  "sql_log.64.expected": "intact",
   "sql_log.8": {
     "call_ok": true,
-    "dbt_wall_s": 2.2,
+    "dbt_wall_s": 2.01,
     "expected_chars": 8192,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 8227,
     "landed_rows": 1,
@@ -245,13 +687,112 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "b4d017197acc435183268110f5ced3cb",
-    "seconds_to_visible": 21.0
+    "run_id": "30f5178cf0754c1c83e6ecf18fa70a41",
+    "seconds_to_visible": 5.4,
+    "tail": "f18fa70a41 1"
   },
+  "sql_log.8.expected": "intact",
+  "threshold.proc_event.384": {
+    "call_ok": true,
+    "dbt_wall_s": 3.43,
+    "dropped_events_count": null,
+    "expected_chars": 393216,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 393216,
+    "landed_rows": 1,
+    "payload_chars": 393216,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "cfd21a83d31a4fefb29b78310263a5cc",
+    "seconds_to_visible": 5.5,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "threshold.proc_event.384.expected": "intact",
+  "threshold.proc_event.512": {
+    "call_ok": true,
+    "dbt_wall_s": 4.72,
+    "dropped_events_count": null,
+    "expected_chars": 524288,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 524288,
+    "landed_rows": 1,
+    "payload_chars": 524288,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "2f8de383d2c54f788534faa0599519db",
+    "seconds_to_visible": 5.5,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "threshold.proc_event.512.expected": "intact",
+  "threshold.proc_event.768": {
+    "call_ok": true,
+    "dbt_wall_s": 7.57,
+    "dropped_events_count": null,
+    "expected_chars": 786432,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 786432,
+    "landed_rows": 1,
+    "payload_chars": 786432,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "426fa824494142778956396eb372d7d6",
+    "seconds_to_visible": 5.6,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "threshold.proc_event.768.expected": "intact",
+  "threshold.proc_event.960": {
+    "call_ok": true,
+    "dbt_wall_s": 10.13,
+    "dropped_events_count": null,
+    "expected_chars": 983040,
+    "icecore_warnings": [],
+    "intact": true,
+    "landed_len": 983040,
+    "landed_rows": 1,
+    "payload_chars": 983040,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "a0d442419f0149bf94ebaddc23c8af38",
+    "seconds_to_visible": 10.5,
+    "seq_range": [
+      0,
+      0
+    ],
+    "span_landed": 1,
+    "tail": "xxxxxxxxxxxx"
+  },
+  "threshold.proc_event.960.expected": "intact",
   "threshold.python_attr.384": {
     "call_ok": true,
-    "dbt_wall_s": 4.42,
+    "dbt_wall_s": 4.05,
     "expected_chars": 393216,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 393216,
     "landed_rows": 1,
@@ -263,13 +804,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "1a91a7d35fba4e87a7f369e226cc5b1a",
-    "seconds_to_visible": 5.5
+    "run_id": "b5f090065ee44e10895197ee9400a330",
+    "seconds_to_visible": 5.6,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.python_attr.384.expected": "intact",
   "threshold.python_attr.512": {
     "call_ok": true,
-    "dbt_wall_s": 4.08,
+    "dbt_wall_s": 4.28,
     "expected_chars": 524288,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 524288,
     "landed_rows": 1,
@@ -281,13 +825,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "934ed35c172f433eab2a85200b8c33a9",
-    "seconds_to_visible": 5.5
+    "run_id": "c164b383a4094c87a567ab23ccd2ff36",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.python_attr.512.expected": "intact",
   "threshold.python_attr.768": {
     "call_ok": true,
-    "dbt_wall_s": 4.21,
+    "dbt_wall_s": 4.2,
     "expected_chars": 786432,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 786432,
     "landed_rows": 1,
@@ -299,13 +846,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "2ae2465af28c4f4499eb12a1a4a06c88",
-    "seconds_to_visible": 5.5
+    "run_id": "7d12ad8e0fed4fb98a57315afd1c1671",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.python_attr.768.expected": "intact",
   "threshold.python_attr.960": {
     "call_ok": true,
-    "dbt_wall_s": 4.45,
+    "dbt_wall_s": 4.35,
     "expected_chars": 983040,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 983040,
     "landed_rows": 1,
@@ -317,13 +867,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "0691503c24ce44458e93cb5521e7043d",
-    "seconds_to_visible": 11.0
+    "run_id": "dd8c40ed728d478aa4b1f4d3cc96cdb3",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.python_attr.960.expected": "intact",
   "threshold.python_log.384": {
     "call_ok": true,
-    "dbt_wall_s": 4.24,
+    "dbt_wall_s": 4.63,
     "expected_chars": 393216,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 393251,
     "landed_rows": 1,
@@ -335,13 +888,16 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "32ec73d2ca39455d922734140fbeb773",
-    "seconds_to_visible": 5.8
+    "run_id": "8ad8340298644720bd96ce26c41b63d7",
+    "seconds_to_visible": 5.5,
+    "tail": "26c41b63d7 1"
   },
+  "threshold.python_log.384.expected": "intact",
   "threshold.python_log.512": {
     "call_ok": true,
-    "dbt_wall_s": 4.17,
+    "dbt_wall_s": 4.21,
     "expected_chars": 524288,
+    "icecore_warnings": [],
     "intact": false,
     "landed_len": 524255,
     "landed_rows": 1,
@@ -353,13 +909,16 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "dbb0b316d1d1493689b883af6e7adb78",
-    "seconds_to_visible": 5.5
+    "run_id": "e5ecb33393f5406ab088cfba5d1bed06",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxx..."
   },
+  "threshold.python_log.512.expected": "truncated",
   "threshold.python_log.768": {
     "call_ok": true,
-    "dbt_wall_s": 4.69,
+    "dbt_wall_s": 4.39,
     "expected_chars": 786432,
+    "icecore_warnings": [],
     "intact": false,
     "landed_len": 524255,
     "landed_rows": 1,
@@ -371,13 +930,37 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "6b478c31107244898b46cf2d2a8db182",
-    "seconds_to_visible": 10.7
+    "run_id": "a4d75e5f9159495a86614f92fb409398",
+    "seconds_to_visible": 5.4,
+    "tail": "xxxxxxxxx..."
   },
+  "threshold.python_log.768.expected": "truncated",
+  "threshold.python_log.960": {
+    "call_ok": true,
+    "dbt_wall_s": 4.24,
+    "expected_chars": 983040,
+    "icecore_warnings": [],
+    "intact": false,
+    "landed_len": 524255,
+    "landed_rows": 1,
+    "payload_chars": 524252,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "06ee5ac7fe7e4787ac0a826b7d955c07",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxx..."
+  },
+  "threshold.python_log.960.expected": "truncated",
   "threshold.sql_event.384": {
     "call_ok": true,
-    "dbt_wall_s": 1.75,
+    "dbt_wall_s": 1.93,
     "expected_chars": 393216,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 393216,
     "landed_rows": 1,
@@ -386,13 +969,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "7fa24c9c0cba468a95055fd332598188",
-    "seconds_to_visible": 5.5
+    "run_id": "1957409dc46f44a6a210062c44458479",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.sql_event.384.expected": "intact",
   "threshold.sql_event.512": {
     "call_ok": true,
-    "dbt_wall_s": 1.97,
+    "dbt_wall_s": 2.01,
     "expected_chars": 524288,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 524288,
     "landed_rows": 1,
@@ -401,13 +987,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "d25ba99be4d74c83b2a11f34ab881a64",
-    "seconds_to_visible": 5.5
+    "run_id": "7de2bc4c1f1a48e3a92a951c20151e59",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.sql_event.512.expected": "intact",
   "threshold.sql_event.768": {
     "call_ok": true,
-    "dbt_wall_s": 1.88,
+    "dbt_wall_s": 1.94,
     "expected_chars": 786432,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 786432,
     "landed_rows": 1,
@@ -416,13 +1005,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "29ac1f8864144bc98652f414a4a8980e",
-    "seconds_to_visible": 5.8
+    "run_id": "4fdd5a4a71db409baccc704fedf8f0e2",
+    "seconds_to_visible": 5.6,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.sql_event.768.expected": "intact",
   "threshold.sql_event.960": {
     "call_ok": true,
-    "dbt_wall_s": 1.93,
+    "dbt_wall_s": 1.96,
     "expected_chars": 983040,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 983040,
     "landed_rows": 1,
@@ -431,13 +1023,16 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "1be3873661344d3791621acbbcb4ee7d",
-    "seconds_to_visible": 5.5
+    "run_id": "abb3236ad9704164b5c34b6274a72352",
+    "seconds_to_visible": 5.5,
+    "tail": "xxxxxxxxxxxx"
   },
+  "threshold.sql_event.960.expected": "intact",
   "threshold.sql_log.384": {
     "call_ok": true,
-    "dbt_wall_s": 2.12,
+    "dbt_wall_s": 2.49,
     "expected_chars": 393216,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 393251,
     "landed_rows": 1,
@@ -445,13 +1040,16 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "24a9b90b69db418da6adecc35281bf9a",
-    "seconds_to_visible": 10.6
+    "run_id": "61c306a7a44f480a90b2c97e381cb4c9",
+    "seconds_to_visible": 26.0,
+    "tail": "7e381cb4c9 1"
   },
+  "threshold.sql_log.384.expected": "intact",
   "threshold.sql_log.512": {
     "call_ok": true,
-    "dbt_wall_s": 1.94,
+    "dbt_wall_s": 2.14,
     "expected_chars": 524288,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 524323,
     "landed_rows": 1,
@@ -459,13 +1057,16 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "a58b64e5b9064c638c53336bdedffd4c",
-    "seconds_to_visible": 5.5
+    "run_id": "cdee6820045b4996bc7fe6816ad0b674",
+    "seconds_to_visible": 5.5,
+    "tail": "816ad0b674 1"
   },
+  "threshold.sql_log.512.expected": "intact",
   "threshold.sql_log.768": {
     "call_ok": true,
-    "dbt_wall_s": 1.78,
+    "dbt_wall_s": 1.96,
     "expected_chars": 786432,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 786467,
     "landed_rows": 1,
@@ -473,13 +1074,16 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "5e607e3a00e742ca9e0daffbf52c3634",
-    "seconds_to_visible": 5.5
+    "run_id": "58f562071d7a4517a01d293d9090c5bc",
+    "seconds_to_visible": 10.6,
+    "tail": "3d9090c5bc 1"
   },
+  "threshold.sql_log.768.expected": "intact",
   "threshold.sql_log.960": {
     "call_ok": true,
-    "dbt_wall_s": 2.07,
+    "dbt_wall_s": 2.18,
     "expected_chars": 983040,
+    "icecore_warnings": [],
     "intact": true,
     "landed_len": 983075,
     "landed_rows": 1,
@@ -487,7 +1091,9 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "8f9dfdbda66c45f69008aba708469896",
-    "seconds_to_visible": 5.6
-  }
+    "run_id": "e5ee81f80584448387f089d754588395",
+    "seconds_to_visible": 5.4,
+    "tail": "d754588395 1"
+  },
+  "threshold.sql_log.960.expected": "intact"
 }

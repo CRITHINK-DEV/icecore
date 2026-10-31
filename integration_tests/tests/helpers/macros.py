@@ -1,21 +1,13 @@
 """Calling a package macro through `dbt run-operation it_call` and reading back its return value."""
 import json
-import os
 from pathlib import Path
 
 from dbt.cli.main import dbtRunner
 
+from helpers.env import placeholder_env
+
 IT_DIR = Path(__file__).resolve().parents[2]
 MARK = "ICECORE_RESULT "
-
-# Offline calls never open a connection (dbt-snowflake connects lazily), but the profile still renders.
-PLACEHOLDER_ENV = {
-    "SNOWFLAKE_ACCOUNT": "placeholder",
-    "SNOWFLAKE_USER": "placeholder",
-    "SNOWFLAKE_PRIVATE_KEY_PATH": "/dev/null",
-    "SNOWFLAKE_ROLE": "placeholder",
-    "SNOWFLAKE_WAREHOUSE": "placeholder",
-}
 
 _deps_done = False
 
@@ -25,9 +17,12 @@ class MacroFailed(Exception):
 
 
 def _invoke(args: list[str], callbacks=None):
-    for key, value in PLACEHOLDER_ENV.items():
-        os.environ.setdefault(key, value)
-    return dbtRunner(callbacks=callbacks or []).invoke(args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)])
+    # Offline calls never open a connection (dbt-snowflake connects lazily), but the profile still renders:
+    # placeholders fill missing SNOWFLAKE_* for this invocation only.
+    with placeholder_env():
+        return dbtRunner(callbacks=callbacks or []).invoke(
+            args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]
+        )
 
 
 def call_macro(name: str, **kwargs):

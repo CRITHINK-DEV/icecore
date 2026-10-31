@@ -54,6 +54,8 @@ models:
 
 Then `dbt deps`, `dbt run-operation icecore.setup` (creates the views in `<target_db>.ICECORE_OBS`) and `dbt build`.
 
+The range `[">=0.1.0", "<1.0.0"]` installs final releases only. To try the hooks on the alpha, use `[">=0.1.0-alpha", "<1.0.0"]`: naming a prerelease lets `dbt deps` install prereleases, including later betas.
+
 ## How it works
 
 icecore has one store, the Snowflake event table, and three paths around it: dbt writes to it, people read views over it, and Snowflake Alerts and tasks watch it.

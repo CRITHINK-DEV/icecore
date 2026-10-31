@@ -21,3 +21,4 @@ vars:
     shadow_engine: none
     payload_cap_kb: 64
     metadata_fallback_kinds: [iceberg]   # table kinds whose metadata row count is not trusted (spike S5)
+    dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

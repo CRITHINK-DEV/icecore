@@ -19,3 +19,18 @@
       'row_delta_sql': icecore._icecore_row_delta_sql(relation, window['since']),
   }), info=True) %}
 {% endmacro %}
+
+
+{#- Change window and dimension metrics, as a monitor would chain them. -#}
+{% macro it_dimension_metrics(rel, dimension_column, since=none, timestamp_column=none, max_values=none) %}
+  {%- set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) -%}
+  {%- set window = icecore.get_change_window(relation, since, timestamp_column) -%}
+  {% do log('icecore_it_result:' ~ tojson({'window': window,
+      'dimensions': icecore.compute_dimension_metrics(relation, dimension_column, window, max_values)}), info=True) %}
+{% endmacro %}
+
+{#- Rendering only (no query). -#}
+{% macro it_dimension_metrics_sql(rel, dimension_column, window, max_values) %}
+  {%- set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) -%}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_dimension_metrics_sql(relation, dimension_column, window, max_values)), info=True) %}
+{% endmacro %}

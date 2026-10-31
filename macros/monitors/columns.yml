@@ -44,6 +44,37 @@ macros:
           `Mixed`) resolves to upper case like an unquoted identifier; any other name is taken as the exact,
           case-preserved column name.
 
+  - name: compute_dimension_metrics
+    description: >
+      Row counts per value of one dimension column (country, segment, ...) over the rows of a change window from
+      `get_change_window`, in one query that selects only that column. With a CHANGES window the rows are the
+      INSERT row versions: new rows and the new values of updated rows. Returns a list of
+      `{value, window_rows, other}` ordered by `window_rows` (rows in the window with that value; named, as in
+      `compute_column_metrics`, so that it never collides with the volume monitor's `row_count` total), highest
+      first: one entry per value for the `max_values`
+      most frequent values (`value` as a string; null is a value of its own), then, when there are more distinct
+      values, one entry `{value: none, window_rows: <sum of the rest>, other: true}`. Returns an empty list when
+      the window has no rows and none when the window is none. When a CHANGES query fails at run time and the
+      window carries a `timestamp_column`, it runs again over that column (see `get_change_window`); when the
+      query still fails (missing column, lost privilege) it returns none with a logged warning. It never fails
+      the run. The cost is that of the window (see
+      `get_change_window`). Computes and returns values only; it emits nothing.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_change_window`.
+      - name: dimension_column
+        type: string
+        description: The column to group by; resolved as `timestamp_column` is in `get_change_window`.
+      - name: window
+        type: dict
+        description: The result of `get_change_window` for the same relation, or none.
+      - name: max_values
+        type: integer
+        description: >
+          Optional. How many distinct values are counted one by one before the rest are grouped as `other`
+          (at least 1). Default `vars: icecore: dimension_max_values`, 20.
+
   - name: compute_column_metrics
     description: >
       Computes metrics for one column over the rows of a change window from `get_change_window`, in one query

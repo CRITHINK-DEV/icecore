@@ -10,7 +10,7 @@ with that venv (it also needs pytest):
 
     cd integration_tests
     python3.13 -m venv elementary_probe/.venv
-    elementary_probe/.venv/bin/pip install 'elementary-data[snowflake]==0.26.1' pytest
+    elementary_probe/.venv/bin/pip install -r requirements-elementary.txt pytest
     source ~/.snowflake/icecore_ci.env
     elementary_probe/.venv/bin/pytest -m sandbox tests/spikes/test_s4_edr_contract.py -v
 
@@ -22,7 +22,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -226,6 +226,11 @@ def capture_edr_contract(sf, session_id: int, known: dict[str, dict[str, str]] |
     return analyze_edr_queries(queries, known)["contract"]
 
 
+def snowflake_now(sf) -> datetime:
+    """Snowflake's current time (timezone-aware), the clock QUERY_HISTORY filters on."""
+    return sf.cursor().execute("select current_timestamp()").fetchone()[0]
+
+
 def tagged_session_ids(sf, query_tag: str, since: datetime) -> list[int]:
     """Sessions of the current user that ran queries with `query_tag` since `since` (other agents share the user)."""
     cur = sf.cursor()
@@ -301,7 +306,9 @@ def test_s4_capture_edr_contract(sf, run_id, probe_schema, tmp_path):
     _run([str(DBT), "run", "--select", "elementary"] + dirs, env)
     _run([str(DBT), "build"] + dirs, env)
 
-    started = datetime.now(timezone.utc)
+    # The window opens on Snowflake's clock, minus a margin: a local clock ahead of Snowflake's (10.7 s on the
+    # first capture machine) would otherwise drop edr's first queries. The per-run query tag keeps others out.
+    started = snowflake_now(sf) - timedelta(seconds=60)
     report = tmp_path / "report.html"
     _run([str(EDR), "report", "--file-path", str(report), "--open-browser", "false",
           "--profiles-dir", str(PROBE_DIR), "--project-dir", str(PROBE_DIR), "--config-dir", str(config_dir),
@@ -342,6 +349,10 @@ def test_s4_capture_edr_contract(sf, run_id, probe_schema, tmp_path):
         "query_types": {t: sum(1 for q in queries if q["query_type"] == t) for t in sorted({q["query_type"] for q in queries})},
         "probe_relations": sorted(known), "captured_at": started.isoformat(),
     })
+
+    # Window check: edr's very first query (DataMonitoring.get_latest_invocation) must be in the capture.
+    assert any(re.search(r"select \* from \S*dbt_invocations\S* order by generated_at desc", q["query_text"] or "", re.I)
+               for q in queries), "capture window missed edr's first query (get_latest_invocation)"
 
     # Drift: the capture must equal the committed one. ICECORE_S4_RECAPTURE=1 records a new baseline instead.
     if committed and os.environ.get("ICECORE_S4_RECAPTURE") != "1":

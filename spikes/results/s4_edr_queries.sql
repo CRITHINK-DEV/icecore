@@ -12,8 +12,24 @@ show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [3] CREATE_TABLE_AS_SELECT
-create or replace temporary table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031113613977733 
+-- [3] SELECT
+select * from "ICECORE_SANDBOX"."<ELEMENTARY_SCHEMA>"."DBT_INVOCATIONS" order by generated_at desc limit 1
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "10d4f09b-68f2-4723-bf91-425ab3550821", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
+
+-- [4] SHOW
+show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
+    limit 10000
+    
+
+/* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
+
+-- [5] SHOW
+show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
+/* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
+
+-- [6] CREATE_TABLE_AS_SELECT
+create or replace temporary table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031121231308337 
         as (
             
         with test_results as (
@@ -181,15 +197,15 @@ create or replace temporary table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_te
         where test_results.invocations_rank_index <= 720
         order by test_results.elementary_unique_id, test_results.invocations_rank_index desc
         )
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "b03dfa47-a6dd-4819-9312-7ff06f46f1b8", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "73d41517-df35-4069-8abd-3c01e4cb75e4", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [4] SELECT
-select * from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031113613977733
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "b03dfa47-a6dd-4819-9312-7ff06f46f1b8", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+-- [7] SELECT
+select * from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031121231308337
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "73d41517-df35-4069-8abd-3c01e4cb75e4", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [5] SELECT
+-- [8] SELECT
 select
     elementary_test_results_id,
     result_row
@@ -204,21 +220,21 @@ select
   
     and elementary_test_results_id in (
         select distinct id
-        from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031113613977733
+        from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.ordered_test_results__tmp_20261031121231308337
         where invocations_rank_index = 1
     )
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "b03dfa47-a6dd-4819-9312-7ff06f46f1b8", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "73d41517-df35-4069-8abd-3c01e4cb75e4", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [6] DESCRIBE
+-- [9] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_source_freshness_results
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [7] DESCRIBE
+-- [10] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_sources
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [8] SELECT
+-- [11] SELECT
 with dbt_source_freshness_results as (
             select
                 *,
@@ -284,10 +300,10 @@ with dbt_source_freshness_results as (
         join dbt_sources sources on freshness.unique_id = sources.unique_id
         where invocations_rank_index <= 720
         order by freshness.unique_id, invocations_rank_index desc
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "f8beb48e-f392-4628-b61f-dd38e5dc7db6", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "3a2c5d17-09e5-4f3c-80d3-eb31fb992b2c", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [9] SELECT
+-- [12] SELECT
 with dbt_artifacts_seeds as (
           select
             name,
@@ -305,21 +321,21 @@ with dbt_artifacts_seeds as (
         )
 
         select * from dbt_artifacts_seeds
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "a7f59b0e-bac7-4de6-8343-77efa542423a", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "e9512a20-a692-4157-bd90-dcf9958e514f", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [10] SHOW
+-- [13] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [11] SHOW
+-- [14] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [12] SELECT
+-- [15] SELECT
 with dbt_artifacts_snapshots as (
                 select 
                   name,
@@ -345,25 +361,25 @@ with dbt_artifacts_snapshots as (
                 from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_snapshots
               )
             select * from dbt_artifacts_snapshots
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "3919a187-302b-407a-850c-0724daa93ae6", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "53a8da8d-9249-4e3e-b113-a20350ab9f4b", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [13] SHOW
+-- [16] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [14] SHOW
+-- [17] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [15] DESCRIBE
+-- [18] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_models
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [16] SELECT
+-- [19] SELECT
 with dbt_artifacts_models as (
                 select
                   name,
@@ -390,21 +406,21 @@ with dbt_artifacts_models as (
               )
 
              select * from dbt_artifacts_models
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "df749ce5-8210-456a-bbb5-569b65ec9269", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "aeb96d13-3706-4b21-9d8b-5ab418cbc478", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [17] SHOW
+-- [20] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [18] SHOW
+-- [21] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [19] SELECT
+-- [22] SELECT
 with dbt_artifacts_sources as (
                 select
                   name,
@@ -423,33 +439,33 @@ with dbt_artifacts_sources as (
               )
 
             select * from dbt_artifacts_sources
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "20bf1e4a-82a7-4dd2-94ca-ba052c5f218e", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "05a42435-be2c-4c92-9836-9e7d047c7d25", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [20] SHOW
+-- [23] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [21] SHOW
+-- [24] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [22] DESCRIBE
+-- [25] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_exposures
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [23] DESCRIBE
+-- [26] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_exposures
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [24] DESCRIBE
+-- [27] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_exposures
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [25] SELECT
+-- [28] SELECT
 with dbt_artifacts_exposures as (
                 select
                   name,
@@ -479,10 +495,10 @@ with dbt_artifacts_exposures as (
               )
 
              select * from dbt_artifacts_exposures
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "d8eac100-ea07-4ec9-8c0e-3e7720775cc7", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "1727b989-c055-4706-8169-d73d48ea59c7", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [26] SELECT
+-- [29] SELECT
 select
           unique_id,
           name,
@@ -491,10 +507,10 @@ select
           tags
         from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_tests
         where type = 'singular'
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "fd05a009-a3d5-4305-803f-2a52cbe017dc", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "6bcd360c-6dbf-44f5-bbd8-38823bbf488d", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [27] SELECT
+-- [30] SELECT
 with model_runs as (
             select
                 *,
@@ -528,21 +544,21 @@ with model_runs as (
           and unique_id not like 'model.elementary.%'
         
         order by generated_at
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "0cee4981-3b6d-4244-96a1-f10499a0f982", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "79d39595-42d6-4a58-8faa-f72c78fdbd25", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [28] SHOW
+-- [31] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [29] SHOW
+-- [32] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [30] SELECT
+-- [33] SELECT
 with dbt_tests as (
                 select
                     parent_model_unique_id,
@@ -566,21 +582,21 @@ with dbt_tests as (
                 )as table_tests
             from dbt_tests
             group by parent_model_unique_id
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "73005c9d-64b3-4d58-962b-af2e19009c95", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "e448577c-4273-4345-9c16-b8862a11cb51", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [31] SHOW
+-- [34] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [32] SHOW
+-- [35] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [33] SELECT
+-- [36] SELECT
 with tests as (
                 select * from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_tests
             ),
@@ -663,21 +679,21 @@ with tests as (
             left join test_results_times on tests.unique_id = test_results_times.test_unique_id
             left join last_test_results on tests.unique_id = last_test_results.test_unique_id
             left join nodes on tests.parent_model_unique_id = nodes.unique_id
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "44d2a195-5fdd-4c6c-8a38-5a8f65f3dd47", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "a70887b7-6da6-491a-abdf-5d9d4565364e", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [34] SHOW
+-- [37] SHOW
 show objects in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
     limit 10000
     
 
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [35] SHOW
+-- [38] SHOW
 show user functions in ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [36] SELECT
+-- [39] SELECT
 select
             unique_id,
             null as depends_on_nodes,
@@ -715,10 +731,10 @@ select
             null as materialization,
             'exposure' as type
         from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_exposures
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "dc49fed3-cc53-4b3c-b267-a3f629888bf2", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "749d3902-1a32-4356-91d3-ab8c8b68f1a5", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [37] SELECT
+-- [40] SELECT
 with ordered_run_results as (
       select
         run_results.unique_id,
@@ -735,22 +751,22 @@ with ordered_run_results as (
     )
 
     select unique_id, invocation_id from latest_run_results
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "9a9e1417-3a51-418b-be8f-7200d87d8af7", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "56ff3d00-c008-407d-a82f-b076c912e467", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [38] DESCRIBE
+-- [41] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_invocations
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [39] DESCRIBE
+-- [42] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_invocations
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [40] DESCRIBE
+-- [43] DESCRIBE
 describe table ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_invocations
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;
 
--- [41] SELECT
+-- [44] SELECT
 with ordered_run_results as (
       select
         run_results.invocation_id,
@@ -778,5 +794,5 @@ with ordered_run_results as (
       invocations.orchestrator
     from ICECORE_SANDBOX.<ELEMENTARY_SCHEMA>.dbt_invocations invocations
     join latest_models_invocations on invocations.invocation_id = latest_models_invocations.invocation_id
-/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "d3a028f8-4679-4ee9-a821-3b62afaf1e08", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
+/* --ELEMENTARY-METADATA-- {"command": "run-operation", "elementary_component": "OSS", "invocation_id": "9b3d2d14-c649-469e-8a54-2d888f535e8a", "package_name": "elementary", "resource_name": "log_macro_results", "resource_type": "macro"} --END-ELEMENTARY-METADATA-- */
 /* {"app": "dbt", "dbt_version": "1.12.5", "profile_name": "elementary", "target_name": "sandbox", "connection_name": "macro_log_macro_results"} */;

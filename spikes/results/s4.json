@@ -19,16 +19,41 @@
       "url"
     ],
     "dbt_invocations": [
+      "account_id",
+      "cause",
+      "cause_category",
       "command",
+      "created_at",
+      "dbt_user",
+      "dbt_version",
+      "elementary_version",
+      "env",
+      "env_id",
       "full_refresh",
+      "generated_at",
+      "git_sha",
       "invocation_id",
+      "invocation_vars",
       "job_id",
       "job_name",
       "job_run_id",
       "job_run_url",
       "job_url",
       "orchestrator",
-      "selected"
+      "project_id",
+      "project_name",
+      "pull_request_id",
+      "run_completed_at",
+      "run_started_at",
+      "selected",
+      "target_adapter_specific_fields",
+      "target_database",
+      "target_name",
+      "target_profile_name",
+      "target_schema",
+      "threads",
+      "vars",
+      "yaml_selector"
     ],
     "dbt_models": [
       "alias",
@@ -188,7 +213,7 @@
     "dbt_sources"
   ],
   "edr_run": {
-    "captured_at": "2026-10-31T11:36:02.198437+00:00",
+    "captured_at": "2026-10-31T05:11:08.507000-07:00",
     "parse_fallbacks": 0,
     "probe_relations": [
       "alerts_anomaly_detection",
@@ -224,14 +249,21 @@
       "snapshot_run_results",
       "test_result_rows"
     ],
-    "queries": 41,
+    "queries": 44,
     "query_types": {
       "CREATE_TABLE_AS_SELECT": 1,
       "DESCRIBE": 9,
-      "SELECT": 15,
-      "SHOW": 16
+      "SELECT": 16,
+      "SHOW": 18
     },
-    "sessions": 14
+    "sessions": 15
+  },
+  "environment_check": {
+    "cause_of_ci_drift": "capture window opened on the local clock, 10.7 s ahead of Snowflake's; edr's first query (get_latest_invocation, select * from dbt_invocations) was dropped locally",
+    "github_actions_run_41198164007": "dbt_invocations columns identical to this file; other 11 relations identical to the previous baseline and to this file",
+    "local_snowflake_clock": "baseline (this file)",
+    "local_snowflake_clock_with_github_env_vars": "identical contract, types, filters, reads",
+    "note": "Written by hand from the runs below (spikes/S4.md, 'Capture window and environments'); not touched by record_finding."
   },
   "filters": {
     "dbt_models": [
@@ -874,94 +906,95 @@
     "dbt_exposures": {
       "filtered": [],
       "unfiltered": [
-        25,
-        36
+        28,
+        39
       ]
     },
     "dbt_invocations": {
       "filtered": [],
       "unfiltered": [
-        41
+        3,
+        44
       ]
     },
     "dbt_models": {
       "filtered": [
-        16,
-        36
+        19,
+        39
       ],
       "unfiltered": [
-        3,
-        33,
-        37,
-        41
+        6,
+        36,
+        40,
+        44
       ]
     },
     "dbt_run_results": {
       "filtered": [
-        3
+        6
       ],
       "unfiltered": [
-        37,
-        41
+        40,
+        44
       ]
     },
     "dbt_seeds": {
       "filtered": [],
       "unfiltered": [
-        9,
-        36
+        12,
+        39
       ]
     },
     "dbt_snapshots": {
       "filtered": [],
       "unfiltered": [
-        12,
-        36
+        15,
+        39
       ]
     },
     "dbt_source_freshness_results": {
       "filtered": [
-        8
+        11
       ],
       "unfiltered": []
     },
     "dbt_sources": {
       "filtered": [],
       "unfiltered": [
-        3,
-        8,
-        19,
-        33,
-        36
+        6,
+        11,
+        22,
+        36,
+        39
       ]
     },
     "dbt_tests": {
       "filtered": [
-        26
+        29
       ],
       "unfiltered": [
-        3,
-        30,
-        33
+        6,
+        33,
+        36
       ]
     },
     "elementary_test_results": {
       "filtered": [
-        3
+        6
       ],
       "unfiltered": [
-        33
+        36
       ]
     },
     "model_run_results": {
       "filtered": [
-        27
+        30
       ],
       "unfiltered": []
     },
     "test_result_rows": {
       "filtered": [
-        5
+        8
       ],
       "unfiltered": []
     }
@@ -1000,16 +1033,41 @@
       "url": "TEXT"
     },
     "dbt_invocations": {
+      "account_id": "TEXT",
+      "cause": "TEXT",
+      "cause_category": "TEXT",
       "command": "TEXT",
+      "created_at": "TIMESTAMP_NTZ",
+      "dbt_user": "TEXT",
+      "dbt_version": "TEXT",
+      "elementary_version": "TEXT",
+      "env": "TEXT",
+      "env_id": "TEXT",
       "full_refresh": "BOOLEAN",
+      "generated_at": "TEXT",
+      "git_sha": "TEXT",
       "invocation_id": "TEXT",
+      "invocation_vars": "TEXT",
       "job_id": "TEXT",
       "job_name": "TEXT",
       "job_run_id": "TEXT",
       "job_run_url": "TEXT",
       "job_url": "TEXT",
       "orchestrator": "TEXT",
-      "selected": "TEXT"
+      "project_id": "TEXT",
+      "project_name": "TEXT",
+      "pull_request_id": "TEXT",
+      "run_completed_at": "TEXT",
+      "run_started_at": "TEXT",
+      "selected": "TEXT",
+      "target_adapter_specific_fields": "TEXT",
+      "target_database": "TEXT",
+      "target_name": "TEXT",
+      "target_profile_name": "TEXT",
+      "target_schema": "TEXT",
+      "threads": "NUMBER",
+      "vars": "TEXT",
+      "yaml_selector": "TEXT"
     },
     "dbt_models": {
       "alias": "TEXT",
@@ -1170,7 +1228,7 @@
   "writes": [
     {
       "query_type": "CREATE_TABLE_AS_SELECT",
-      "relation": "ordered_test_results__tmp_20261031113613977733"
+      "relation": "ordered_test_results__tmp_20261031121231308337"
     }
   ]
 }

@@ -10,7 +10,7 @@ with that venv (it also needs pytest):
 
     cd integration_tests
     python3.13 -m venv elementary_probe/.venv
-    elementary_probe/.venv/bin/pip install 'elementary-data[snowflake]==0.26.1' pytest
+    elementary_probe/.venv/bin/pip install -r requirements-elementary.txt pytest
     source ~/.snowflake/icecore_ci.env
     elementary_probe/.venv/bin/pytest -m sandbox tests/spikes/test_s4_edr_contract.py -v
 

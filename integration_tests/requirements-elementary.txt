@@ -1,0 +1,3 @@
+# Elementary CLI for spike S4 and the Elementary-compatibility checks only (not in the floor/latest
+# requirements). Pinned to macros/compat/ELEMENTARY_VERSION; any CI job that installs elementary-data uses this file.
+elementary-data[snowflake]==0.26.1

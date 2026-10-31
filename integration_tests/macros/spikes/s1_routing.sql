@@ -44,7 +44,7 @@ $$
       {% for s in ev['teardown'] + lg['teardown'] %}{% do run_query(s) %}{% endfor %}
     {% elif variant == 'anon_python_min_packages' %}
       {% do _s1_run(_s1_python_plan(run_id, 1, 1, attrs, 'routing ' ~ variant, 'anonymous', 0, 0,
-                                    ['snowflake-snowpark-python', 'opentelemetry-api'])) %}
+                                    ['snowflake-snowpark-python', 'opentelemetry-api==1.38.0'])) %}
     {% elif variant == 'temp_proc' %}
       {% do s1_sql_event(run_id, 1, attrs, 'temp_procedure') %}
       {% do s1_sql_log(run_id, 1, 'routing ' ~ variant, 'temp_procedure') %}

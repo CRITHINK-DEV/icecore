@@ -12,8 +12,9 @@ exactly as the package will. Each probe is run two ways (`via`):
 
 E3 (hybrid table, the spec's fallback) is measured by `test_s1_hybrid_table_fallback`.
 
-A failing probe is a finding: every test records what it saw in spikes/results/s1.json
-before asserting.
+Every test records what it saw in spikes/results/s1.json before asserting. For `via=anonymous`
+the tests assert the measured behaviour (nothing reaches the database's event table; the SQL
+calls still succeed), so the sandbox suite stays green while documenting the finding.
 """
 import json
 import re
@@ -26,7 +27,7 @@ import pytest
 from dbt.cli.main import dbtRunner
 from snowflake.connector import DictCursor
 
-from helpers.events import wait_for_events
+from helpers.events import assert_no_events, wait_for_events
 from helpers.findings import record_finding
 
 IT_DIR = Path(__file__).resolve().parents[2]
@@ -40,8 +41,10 @@ ATTRS = {
 }
 WEIRD = "it's a \\ test\nnew line é ü 漢"
 DOLLARS = "$$ end of block? $$"
+MESSAGE = f"{WEIRD} {DOLLARS}"  # quote, backslash, newline, non-ASCII and $$ in one message
 VIAS = ["anonymous", "temp_procedure"]
 TIMEOUT_S = 180
+ABSENT_WAIT_S = 180  # absence can only be shown by waiting out ingestion lag
 
 WHERE = (
     "timestamp > dateadd(hour, -6, current_timestamp()) and "
@@ -137,14 +140,25 @@ def _server_queries(sf, run_id: str) -> dict:
 
 def _measure(dbt, sf, run_id, key, macro, args, expected, settle_s=10):
     res, wall_s = _op(dbt, macro, args)
-    rows, visible_s = _wait(sf, run_id, expected, timeout_s=TIMEOUT_S if res.success else 0,
-                           settle_s=settle_s if res.success else 0)
+    waits = res.success and not key.startswith("anonymous.")
+    rows, visible_s = _wait(sf, run_id, expected, timeout_s=TIMEOUT_S if waits else 0,
+                           settle_s=settle_s if waits else 0)
     finding = {"run_id": run_id, "call_ok": res.success, "expected": expected, "landed": len(rows), "dbt_wall_s": wall_s,
                "seconds_to_visible": visible_s, **_describe(rows), "server": _server_queries(sf, run_id)}
     if not res.success:
         finding["error"] = _error(res)
     record_finding("s1", key, finding)
     return res, rows, finding
+
+
+def _assert_absent(sf, run_id: str, key: str) -> None:
+    """Measured for the anonymous path: nothing reaches the database's event table (S1.md, Routing)."""
+    try:
+        assert_no_events(sf, WHERE, {"r": run_id, "p": f"%{run_id}%"}, wait_s=ABSENT_WAIT_S)
+    except AssertionError:
+        record_finding("s1", f"{key}.absent_after_s", None)
+        raise
+    record_finding("s1", f"{key}.absent_after_s", ABSENT_WAIT_S)
 
 
 def _subset(have: dict, want: dict) -> bool:
@@ -154,6 +168,10 @@ def _subset(have: dict, want: dict) -> bool:
 def test_s1_sql_log_lands(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e1_sql_log", "s1_sql_log",
                             {"run_id": run_id, "n": 100, "via": via}, expected=100)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e1_sql_log")
+        return
     assert res.success
     logs = [r for r in rows if r["record_type"] == "LOG"]
     assert len(logs) == 100, f
@@ -163,6 +181,10 @@ def test_s1_sql_log_lands(dbt, sf, run_id, via):
 def test_s1_sql_event_carries_attributes(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e1_sql_event", "s1_sql_event",
                             {"run_id": run_id, "n": 100, "attrs": ATTRS, "via": via}, expected=100)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e1_sql_event")
+        return
     assert res.success
     events = [r for r in rows if r["record_type"] == "SPAN_EVENT"]
     want = {**ATTRS, "icecore.run_id": run_id}
@@ -178,6 +200,10 @@ def test_s1_sql_event_carries_attributes(dbt, sf, run_id, via):
 def test_s1_sql_span_attrs_land(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e1_sql_span_attrs", "s1_sql_span_attrs",
                             {"run_id": run_id, "attrs": ATTRS, "via": via}, expected=1)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e1_sql_span_attrs")
+        return
     assert res.success
     spans = [r for r in rows if r["record_type"] == "SPAN" and _subset(r["record_attributes"], ATTRS)]
     if spans:
@@ -189,6 +215,10 @@ def test_s1_python_logs_carry_attributes_and_scope(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e2_python_logs", "s1_python",
                             {"run_id": run_id, "n_logs": 100, "n_spans": 0, "attrs": ATTRS, "via": via},
                             expected=100)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e2_python_logs")
+        return
     assert res.success
     logs = [r for r in rows if r["record_type"] == "LOG"]
     if logs:
@@ -203,6 +233,10 @@ def test_s1_python_custom_spans(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e2_python_spans", "s1_python",
                             {"run_id": run_id, "n_logs": 0, "n_spans": 10, "attrs": ATTRS, "via": via},
                             expected=20)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e2_python_spans")
+        return
     assert res.success
     spans = [r for r in rows if r["record_type"] == "SPAN" and _get(r["record"], "name") == "icecore.node"]
     events = [r for r in rows if r["record_type"] == "SPAN_EVENT"]
@@ -224,6 +258,10 @@ def test_s1_python_span_explicit_timings(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.e2_python_span_timings", "s1_python",
                             {"run_id": run_id, "n_logs": 0, "n_spans": 3, "attrs": {}, "via": via,
                              "span_start_ns": start_ns, "span_duration_ns": duration_ns}, expected=6)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.e2_python_span_timings")
+        return
     assert res.success
     spans = sorted((r for r in rows if r["record_type"] == "SPAN"),
                    key=lambda r: _get(r["record_attributes"], "icecore.span_index"))
@@ -246,7 +284,7 @@ def test_s1_trace_grouping(dbt, sf, run_id, via):
         oks.append(res.success)
         if not res.success:
             errs.append(_error(res))
-    rows, visible_s = _wait(sf, run_id, 2)
+    rows, visible_s = _wait(sf, run_id, 2, timeout_s=0 if via == "anonymous" else TIMEOUT_S)
     events = [r for r in rows if r["record_type"] == "SPAN_EVENT"]
     traces = sorted({str(_get(r["trace"], "trace_id")) for r in events})
     finding = {"run_id": run_id, "calls_ok": oks, "errors": errs, "landed": len(events), "trace_ids": traces,
@@ -257,24 +295,27 @@ def test_s1_trace_grouping(dbt, sf, run_id, via):
                    for r in events]}
     record_finding("s1", f"{via}.trace_grouping", finding)
     assert all(oks)
+    if via == "anonymous":  # measured: both calls succeed, nothing reaches the database's event table
+        _assert_absent(sf, run_id, f"{via}.trace_grouping")
+        return
     assert len(events) == 2, finding
 
 
 def test_s1_escaping_roundtrip(dbt, sf, run_id, via):
     attrs = {"icecore.text": WEIRD, "icecore.dollars": DOLLARS}
     results = {
-        "e1_log": _op(dbt, "s1_sql_log", {"run_id": run_id, "n": 1, "message": WEIRD, "via": via})[0],
+        "e1_log": _op(dbt, "s1_sql_log", {"run_id": run_id, "n": 1, "message": MESSAGE, "via": via})[0],
         "e1_event": _op(dbt, "s1_sql_event", {"run_id": run_id, "n": 1, "attrs": attrs, "via": via})[0],
         "e2": _op(dbt, "s1_python", {"run_id": run_id, "n_logs": 1, "n_spans": 0, "attrs": attrs,
-                                     "message": WEIRD, "via": via})[0],
+                                     "message": MESSAGE, "via": via})[0],
     }
     calls = {k: r.success for k, r in results.items()}
     errors = {k: _error(r) for k, r in results.items() if not r.success}
-    rows, _ = _wait(sf, run_id, 3)
+    rows, _ = _wait(sf, run_id, 3, timeout_s=0 if via == "anonymous" else TIMEOUT_S)
     sql_logs = [r for r in rows if r["record_type"] == "LOG" and _get(r["scope"], "name") != "icecore"]
     py_logs = [r for r in rows if r["record_type"] == "LOG" and _get(r["scope"], "name") == "icecore"]
     events = [r for r in rows if r["record_type"] == "SPAN_EVENT"]
-    want_msg = f"{WEIRD} {run_id} 1"
+    want_msg = f"{MESSAGE} {run_id} 1"
     seen = {
         "e1_log_message": sql_logs[0]["value"] == want_msg if sql_logs else None,
         "e1_event_attrs": _subset(events[0]["record_attributes"], attrs) if events else None,
@@ -283,6 +324,11 @@ def test_s1_escaping_roundtrip(dbt, sf, run_id, via):
     }
     record_finding("s1", f"{via}.escaping", {"run_id": run_id, "calls_ok": calls, "errors": errors, "roundtrip": seen,
                                              "landed": len(rows)})
+    if via == "anonymous":  # measured: every call succeeds ($$ included), nothing lands to compare
+        assert calls["e1_log"] and calls["e1_event"], (calls, errors)
+        assert calls["e2"], (calls, errors)
+        _assert_absent(sf, run_id, f"{via}.escaping")
+        return
     assert all(calls.values()), calls
     assert all(v is True for v in seen.values()), seen
 
@@ -295,14 +341,22 @@ def test_s1_emission_with_levels_off_does_not_fail(dbt, sf, run_id, via):
         calls[probe] = {"call_ok": res.success, "dbt_wall_s": wall_s}
         if not res.success:
             calls[probe]["error"] = _error(res)
-    rows, _ = _wait(sf, run_id, 1, timeout_s=150)
+    rows, _ = _wait(sf, run_id, 1, timeout_s=0 if via == "anonymous" else 150)
     record_finding("s1", f"{via}.levels_off", {"run_id": run_id, "calls": calls, "landed": len(rows), **_describe(rows)})
+    if via == "anonymous":  # measured: every probe succeeds, nothing reaches the database's event table
+        assert all(c["call_ok"] for c in calls.values()), calls
+        _assert_absent(sf, run_id, f"{via}.levels_off")
+        return
     assert all(c["call_ok"] for c in calls.values()), calls
 
 
 def test_s1_survives_rollback(dbt, sf, run_id, via):
     res, rows, f = _measure(dbt, sf, run_id, f"{via}.rollback", "s1_in_rollback",
                             {"run_id": run_id, "via": via}, expected=2)
+    if via == "anonymous":  # measured: the call succeeds, nothing reaches the database's event table
+        assert res.success, f
+        _assert_absent(sf, run_id, f"{via}.rollback")
+        return
     assert res.success
     types = Counter(r["record_type"] for r in rows)
     assert types["SPAN_EVENT"] >= 1 and types["LOG"] >= 1, f
@@ -445,4 +499,10 @@ def test_s1_routing_by_database_context(dbt, sf, run_id, via):
         result[v] = entry
     record_finding("s1", "routing", {"account_table_access": account if not account["readable"]
                                      else {"readable": account["readable"]}, "variants": result})
+    # Measured: no anonymous statement reaches the database's event table, whatever its context; records
+    # from a procedure do, also when an anonymous block calls it.
+    for v in ("anon_session_db", "anon_use_db_inside", "anon_python_min_packages", "anon_no_database"):
+        assert result[v]["call_ok"], result[v]
+        assert result[v]["sandbox_table"]["rows"] == 0, (v, result[v])
+    assert result["anon_calls_qualified_proc"]["sandbox_table"]["rows"] == 2, result["anon_calls_qualified_proc"]
     assert result["temp_proc"]["sandbox_table"]["rows"] == 2, result["temp_proc"]

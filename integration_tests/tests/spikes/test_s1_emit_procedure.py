@@ -180,3 +180,38 @@ def test_s1_proc_levels_off(dbt, sf, run_id, proc):
     record_finding("s1", "proc.levels_off", {"run_id": run_id, "call_ok": res.success, "landed": len(rows),
                                              **_shape(rows)})
     assert res.success
+
+
+@pytest.fixture
+def run_proc(dbt, sf, run_id):
+    name = f"ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_RUN_{run_id.upper()}"
+    res, _ = _op("s1_emit_run_proc_create", {"run_id": run_id})
+    assert res.success, res.msgs
+    yield name
+    sf.cursor().execute(f"drop procedure if exists {name}(ARRAY)")
+
+
+def test_s1_proc_emit_run_python(dbt, sf, run_id, run_proc):
+    """ICECORE_EMIT_RUN: 100 spans with explicit dbt-style timings (1.5 s each, starting 1 hour ago) in one CALL."""
+    start_ns = (int(time.time()) - 3600) * 1_000_000_000
+    duration_ns = 1_500_000_000
+    res, wall_s = _op("s1_emit_run_batch", {"run_id": run_id, "proc": run_proc, "n": 100, "start_ns": start_ns,
+                                            "duration_ns": duration_ns, "attrs": ATTRS})
+    rows, visible = _wait(sf, run_id, 100) if res.success else ([], None)
+    spans = [r for r in rows if r["record_type"] == "SPAN"]
+
+    def ns(ts):
+        from datetime import timezone
+        return (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).timestamp() * 1e9
+
+    timed = sum(1 for r in spans if abs(ns(r["start_timestamp"]) - (start_ns + (r["record_attributes"]["icecore.seq"] - 1)
+                                                                       * duration_ns)) < 1e6
+                and abs(ns(r["timestamp"]) - (start_ns + r["record_attributes"]["icecore.seq"] * duration_ns)) < 1e6)
+    finding = {"run_id": run_id, "call_ok": res.success, "landed": len(spans), "expected": 100,
+               "exact_attributes": _exact(spans, {**ATTRS, "icecore.run_id": run_id}), "explicit_times_kept": timed,
+               "dbt_wall_s": wall_s, "seconds_to_visible": visible, **_server(sf, run_id), **_shape(spans),
+               "warnings": res.msgs["warn"][:2]}
+    record_finding("s1", "proc.emit_run_python", finding)
+    assert res.success and not res.msgs["warn"], finding
+    assert len(spans) == 100 and finding["exact_attributes"] == 100 and timed == 100, finding
+    assert finding["scope_names"] == ["icecore"] and finding["snow.executable.type"] == ["PROCEDURE"], finding

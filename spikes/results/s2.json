@@ -1,0 +1,493 @@
+{
+  "python_attr.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 4.12,
+    "expected_chars": 1048576,
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "c9b8b7ac6d794a97900fe2ab9139ade9",
+    "seconds_to_visible": null
+  },
+  "python_attr.256": {
+    "call_ok": true,
+    "dbt_wall_s": 4.1,
+    "expected_chars": 262144,
+    "intact": true,
+    "landed_len": 262144,
+    "landed_rows": 1,
+    "payload_chars": 262144,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "6606bfa58f4641b1b23b4b7c769d7a2c",
+    "seconds_to_visible": 5.5
+  },
+  "python_attr.64": {
+    "call_ok": true,
+    "dbt_wall_s": 3.79,
+    "expected_chars": 65536,
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 1,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "32ee149c8c514a41861ae92a473e283c",
+    "seconds_to_visible": 5.3
+  },
+  "python_attr.8": {
+    "call_ok": true,
+    "dbt_wall_s": 3.98,
+    "expected_chars": 8192,
+    "intact": true,
+    "landed_len": 8192,
+    "landed_rows": 1,
+    "payload_chars": 8192,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "57c8c96f3a5c4d73a76abecddb6a2bf6",
+    "seconds_to_visible": 5.4
+  },
+  "python_log.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 4.21,
+    "expected_chars": 1048576,
+    "intact": false,
+    "landed_len": 524255,
+    "landed_rows": 1,
+    "payload_chars": 524252,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "7263aa7ca448441e88dbe8153ab88f54",
+    "seconds_to_visible": 20.8
+  },
+  "python_log.256": {
+    "call_ok": true,
+    "dbt_wall_s": 4.3,
+    "expected_chars": 262144,
+    "intact": true,
+    "landed_len": 262179,
+    "landed_rows": 1,
+    "payload_chars": 262144,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "e030ad6bada9444fb4b33531363476e1",
+    "seconds_to_visible": 5.5
+  },
+  "python_log.64": {
+    "call_ok": true,
+    "dbt_wall_s": 4.23,
+    "expected_chars": 65536,
+    "intact": true,
+    "landed_len": 65571,
+    "landed_rows": 1,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "67d78fa102814383831aad0df2a15eaf",
+    "seconds_to_visible": 5.5
+  },
+  "python_log.8": {
+    "call_ok": true,
+    "dbt_wall_s": 8.38,
+    "expected_chars": 8192,
+    "intact": true,
+    "landed_len": 8227,
+    "landed_rows": 1,
+    "payload_chars": 8192,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "0822f91f38a84c7395e776934f538423",
+    "seconds_to_visible": 5.4
+  },
+  "sql_event.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 2.11,
+    "expected_chars": 1048576,
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "3169c8e0e8c84e7aaf0b1a0bdc63da06",
+    "seconds_to_visible": null
+  },
+  "sql_event.256": {
+    "call_ok": true,
+    "dbt_wall_s": 1.72,
+    "expected_chars": 262144,
+    "intact": true,
+    "landed_len": 262144,
+    "landed_rows": 1,
+    "payload_chars": 262144,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "6d89b6b7b271408d9eea8e740fea1baa",
+    "seconds_to_visible": 5.5
+  },
+  "sql_event.64": {
+    "call_ok": true,
+    "dbt_wall_s": 1.64,
+    "expected_chars": 65536,
+    "intact": true,
+    "landed_len": 65536,
+    "landed_rows": 1,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "238c1766a8b64139bc2d7d60be8cafff",
+    "seconds_to_visible": 5.4
+  },
+  "sql_event.8": {
+    "call_ok": true,
+    "dbt_wall_s": 1.73,
+    "expected_chars": 8192,
+    "intact": true,
+    "landed_len": 8192,
+    "landed_rows": 1,
+    "payload_chars": 8192,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "a79dc2f55a044bf9af100748e81aa3e0",
+    "seconds_to_visible": 5.4
+  },
+  "sql_log.1024": {
+    "call_ok": true,
+    "dbt_wall_s": 1.97,
+    "expected_chars": 1048576,
+    "intact": null,
+    "landed_len": null,
+    "landed_rows": 0,
+    "payload_chars": null,
+    "record_attribute_keys": [],
+    "run_id": "ce9a0e73cbc04176bedca4b866eba4c9",
+    "seconds_to_visible": null
+  },
+  "sql_log.256": {
+    "call_ok": true,
+    "dbt_wall_s": 1.72,
+    "expected_chars": 262144,
+    "intact": true,
+    "landed_len": 262179,
+    "landed_rows": 1,
+    "payload_chars": 262144,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "88759350f9bf4b679dd8963a353f5b6e",
+    "seconds_to_visible": 5.4
+  },
+  "sql_log.64": {
+    "call_ok": true,
+    "dbt_wall_s": 1.59,
+    "expected_chars": 65536,
+    "intact": true,
+    "landed_len": 65571,
+    "landed_rows": 1,
+    "payload_chars": 65536,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "5f6754f32129466298c0a5b5bdb39e11",
+    "seconds_to_visible": 5.3
+  },
+  "sql_log.8": {
+    "call_ok": true,
+    "dbt_wall_s": 2.2,
+    "expected_chars": 8192,
+    "intact": true,
+    "landed_len": 8227,
+    "landed_rows": 1,
+    "payload_chars": 8192,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "b4d017197acc435183268110f5ced3cb",
+    "seconds_to_visible": 21.0
+  },
+  "threshold.python_attr.384": {
+    "call_ok": true,
+    "dbt_wall_s": 4.42,
+    "expected_chars": 393216,
+    "intact": true,
+    "landed_len": 393216,
+    "landed_rows": 1,
+    "payload_chars": 393216,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "1a91a7d35fba4e87a7f369e226cc5b1a",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.python_attr.512": {
+    "call_ok": true,
+    "dbt_wall_s": 4.08,
+    "expected_chars": 524288,
+    "intact": true,
+    "landed_len": 524288,
+    "landed_rows": 1,
+    "payload_chars": 524288,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "934ed35c172f433eab2a85200b8c33a9",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.python_attr.768": {
+    "call_ok": true,
+    "dbt_wall_s": 4.21,
+    "expected_chars": 786432,
+    "intact": true,
+    "landed_len": 786432,
+    "landed_rows": 1,
+    "payload_chars": 786432,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "2ae2465af28c4f4499eb12a1a4a06c88",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.python_attr.960": {
+    "call_ok": true,
+    "dbt_wall_s": 4.45,
+    "expected_chars": 983040,
+    "intact": true,
+    "landed_len": 983040,
+    "landed_rows": 1,
+    "payload_chars": 983040,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "0691503c24ce44458e93cb5521e7043d",
+    "seconds_to_visible": 11.0
+  },
+  "threshold.python_log.384": {
+    "call_ok": true,
+    "dbt_wall_s": 4.24,
+    "expected_chars": 393216,
+    "intact": true,
+    "landed_len": 393251,
+    "landed_rows": 1,
+    "payload_chars": 393216,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "32ec73d2ca39455d922734140fbeb773",
+    "seconds_to_visible": 5.8
+  },
+  "threshold.python_log.512": {
+    "call_ok": true,
+    "dbt_wall_s": 4.17,
+    "expected_chars": 524288,
+    "intact": false,
+    "landed_len": 524255,
+    "landed_rows": 1,
+    "payload_chars": 524252,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "dbb0b316d1d1493689b883af6e7adb78",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.python_log.768": {
+    "call_ok": true,
+    "dbt_wall_s": 4.69,
+    "expected_chars": 786432,
+    "intact": false,
+    "landed_len": 524255,
+    "landed_rows": 1,
+    "payload_chars": 524252,
+    "record_attribute_keys": [
+      "code.filepath",
+      "code.function",
+      "code.lineno",
+      "icecore.payload_kb",
+      "icecore.run_id"
+    ],
+    "run_id": "6b478c31107244898b46cf2d2a8db182",
+    "seconds_to_visible": 10.7
+  },
+  "threshold.sql_event.384": {
+    "call_ok": true,
+    "dbt_wall_s": 1.75,
+    "expected_chars": 393216,
+    "intact": true,
+    "landed_len": 393216,
+    "landed_rows": 1,
+    "payload_chars": 393216,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "7fa24c9c0cba468a95055fd332598188",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.sql_event.512": {
+    "call_ok": true,
+    "dbt_wall_s": 1.97,
+    "expected_chars": 524288,
+    "intact": true,
+    "landed_len": 524288,
+    "landed_rows": 1,
+    "payload_chars": 524288,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "d25ba99be4d74c83b2a11f34ab881a64",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.sql_event.768": {
+    "call_ok": true,
+    "dbt_wall_s": 1.88,
+    "expected_chars": 786432,
+    "intact": true,
+    "landed_len": 786432,
+    "landed_rows": 1,
+    "payload_chars": 786432,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "29ac1f8864144bc98652f414a4a8980e",
+    "seconds_to_visible": 5.8
+  },
+  "threshold.sql_event.960": {
+    "call_ok": true,
+    "dbt_wall_s": 1.93,
+    "expected_chars": 983040,
+    "intact": true,
+    "landed_len": 983040,
+    "landed_rows": 1,
+    "payload_chars": 983040,
+    "record_attribute_keys": [
+      "icecore.payload",
+      "icecore.run_id"
+    ],
+    "run_id": "1be3873661344d3791621acbbcb4ee7d",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.sql_log.384": {
+    "call_ok": true,
+    "dbt_wall_s": 2.12,
+    "expected_chars": 393216,
+    "intact": true,
+    "landed_len": 393251,
+    "landed_rows": 1,
+    "payload_chars": 393216,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "24a9b90b69db418da6adecc35281bf9a",
+    "seconds_to_visible": 10.6
+  },
+  "threshold.sql_log.512": {
+    "call_ok": true,
+    "dbt_wall_s": 1.94,
+    "expected_chars": 524288,
+    "intact": true,
+    "landed_len": 524323,
+    "landed_rows": 1,
+    "payload_chars": 524288,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "a58b64e5b9064c638c53336bdedffd4c",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.sql_log.768": {
+    "call_ok": true,
+    "dbt_wall_s": 1.78,
+    "expected_chars": 786432,
+    "intact": true,
+    "landed_len": 786467,
+    "landed_rows": 1,
+    "payload_chars": 786432,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "5e607e3a00e742ca9e0daffbf52c3634",
+    "seconds_to_visible": 5.5
+  },
+  "threshold.sql_log.960": {
+    "call_ok": true,
+    "dbt_wall_s": 2.07,
+    "expected_chars": 983040,
+    "intact": true,
+    "landed_len": 983075,
+    "landed_rows": 1,
+    "payload_chars": 983040,
+    "record_attribute_keys": [
+      "code.lineno"
+    ],
+    "run_id": "8f9dfdbda66c45f69008aba708469896",
+    "seconds_to_visible": 5.6
+  }
+}

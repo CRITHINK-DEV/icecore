@@ -1,47 +1,44 @@
-"""Run a dbt run-operation offline and read back the JSON a macro logged.
+"""Run dbt from tests, and read back the JSON a wrapper macro logged.
 
-Wrapper macros in integration_tests/macros log one line ``ICECORE_RESULT <json>``;
-this helper captures it through a dbtRunner callback. No Snowflake connection is
-opened as long as the macro runs no query.
+Wrapper macros (integration_tests/macros/test_support/) log one line
+``icecore_it_result:<json>``; run_macro captures it through a dbtRunner callback.
+With offline=True the call runs inside helpers.env.placeholder_env(), so a profile
+can be loaded without SNOWFLAKE_* variables; no connection is opened as long as the
+macro runs no query, and no placeholder outlives the call.
 """
 import json
-import os
+from contextlib import nullcontext
 from pathlib import Path
 
-from dbt.cli.main import dbtRunner
+from dbt.cli.main import dbtRunner, dbtRunnerResult
+
+from helpers.env import placeholder_env
 
 IT_DIR = Path(__file__).resolve().parents[2]
-RESULT_PREFIX = "ICECORE_RESULT "
-
-PLACEHOLDER_ENV = {
-    "SNOWFLAKE_ACCOUNT": "placeholder",
-    "SNOWFLAKE_USER": "placeholder",
-    "SNOWFLAKE_PRIVATE_KEY_PATH": "/dev/null",
-    "SNOWFLAKE_ROLE": "placeholder",
-    "SNOWFLAKE_WAREHOUSE": "placeholder",
-}
+RESULT_PREFIX = "icecore_it_result:"
 
 
-def _invoke(args: list[str], callbacks=None):
-    for key, value in PLACEHOLDER_ENV.items():
-        os.environ.setdefault(key, value)
-    runner = dbtRunner(callbacks=callbacks or [])
-    return runner.invoke(args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)])
+def invoke(args: list[str], callbacks=None, offline: bool = False) -> dbtRunnerResult:
+    with placeholder_env() if offline else nullcontext():
+        return dbtRunner(callbacks=callbacks or []).invoke(
+            args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)]
+        )
 
 
-def install_deps() -> None:
-    assert _invoke(["deps"]).success
+def install_deps(offline: bool = False) -> None:
+    assert invoke(["deps"], offline=offline).success
 
 
-def run_operation_json(macro: str, args: dict):
-    """Run ``macro`` with ``args`` and return the decoded ``ICECORE_RESULT`` payload."""
-    lines: list[str] = []
+def run_macro(macro: str, args: dict, offline: bool = False):
+    """Run ``macro`` through dbt run-operation and return the last value it logged with RESULT_PREFIX."""
+    seen = []
 
     def capture(event) -> None:
-        if event.info.name == "JinjaLogInfo" and event.data.msg.startswith(RESULT_PREFIX):
-            lines.append(event.data.msg[len(RESULT_PREFIX):])
+        msg = getattr(event.data, "msg", "")
+        if event.info.name == "JinjaLogInfo" and msg.startswith(RESULT_PREFIX):
+            seen.append(json.loads(msg[len(RESULT_PREFIX):]))
 
-    res = _invoke(["run-operation", macro, "--args", json.dumps(args)], callbacks=[capture])
-    assert res.success, res.exception
-    assert len(lines) == 1, f"expected one {RESULT_PREFIX.strip()} line, got {lines}"
-    return json.loads(lines[0])
+    res = invoke(["run-operation", macro, "--args", json.dumps(args)], callbacks=[capture], offline=offline)
+    detail = res.exception or [getattr(r, "message", r) for r in getattr(res.result, "results", [])]
+    assert res.success, f"{macro} failed: {detail}"
+    return seen[-1] if seen else None

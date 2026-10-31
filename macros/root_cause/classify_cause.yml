@@ -14,12 +14,13 @@ macros:
         type: dict | string
         description: A dbt graph node (any mapping with `unique_id`) or the unique_id itself. Required.
       - name: run_results
-        type: list
+        type: list | dict
         description: >
           This run's results. Either dbt's on-run-end `results` (objects with `.node.unique_id`
           and `.status`) or mappings `{"unique_id": ..., "status": ...}` /
-          `{"node": {"unique_id": ...}, "status": ...}`. Statuses `error`, `fail` and
-          `runtime error` count as a failure. Default `[]`.
+          `{"node": {"unique_id": ...}, "status": ...}`, or a prepared `{unique_id: status}`
+          mapping (what `walk_upstream` passes, built once per walk). Statuses `error`, `fail`
+          and `runtime error` count as a failure. Default `[]`.
       - name: signals
         type: dict
         description: >

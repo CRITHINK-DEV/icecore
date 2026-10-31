@@ -1,16 +1,31 @@
 version: 2
 
-# Synthetic graph for the walk_upstream tests: rc_raw.orders -> rc_a -> rc_b -> rc_c -> not_null test.
-# Models are ephemeral so a build creates nothing in the sandbox; the tests only need the graph.
+# Synthetic graph for the walk_upstream tests (parse-only fixtures):
+#   source rc_raw.orders -> rc_a -> rc_b -> rc_c -> not_null test;  rc_a -> rc_e;
+#   rc_d <- rc_b, rc_e, rc_snap (snapshot) <- rc_seed (seed).
+# rc_raw.orders does not exist. Every node is tagged root_cause_fixture, which the default
+# selector in selectors.yml excludes, so a plain dbt build or dbt test never touches them.
+# Models are ephemeral besides, so even an explicit build creates no table or view.
 sources:
   - name: rc_raw
     schema: rc_raw
+    tags: ["root_cause_fixture"]
     tables:
       - name: orders
 
 models:
+  - name: rc_a
+    config: {tags: ["root_cause_fixture"]}
+  - name: rc_b
+    config: {tags: ["root_cause_fixture"]}
+  - name: rc_d
+    config: {tags: ["root_cause_fixture"]}
+  - name: rc_e
+    config: {tags: ["root_cause_fixture"]}
   - name: rc_c
+    config: {tags: ["root_cause_fixture"]}
     columns:
       - name: id
         data_tests:
-          - not_null
+          - not_null:
+              config: {tags: ["root_cause_fixture"]}

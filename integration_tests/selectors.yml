@@ -1,0 +1,12 @@
+selectors:
+  # Used by any dbt command run without --select / --selector. Leaves out the parse-only
+  # root-cause fixtures (models/root_cause, seeds/root_cause, snapshots/root_cause).
+  - name: default
+    default: true
+    definition:
+      union:
+        - method: fqn
+          value: "*"
+        - exclude:
+            - method: tag
+              value: root_cause_fixture

@@ -54,3 +54,9 @@ def test_schema_change_wins_over_staleness():
 def test_node_given_as_unique_id_and_nested_result_shape():
     results = [{"node": {"unique_id": STG["unique_id"]}, "status": "error"}]
     assert classify(STG["unique_id"], results) == "upstream_failure"
+
+
+def test_prepared_status_map_is_accepted():
+    """walk_upstream builds {unique_id: status} once and passes it to every classify_cause call."""
+    assert classify(STG, {STG["unique_id"]: "error"}) == "upstream_failure"
+    assert classify(STG, {STG["unique_id"]: "success"}) == "none"

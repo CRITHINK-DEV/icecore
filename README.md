@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/icecore-banner.png" alt="icecore — dbt telemetry, built on Snowflake Event Tables" width="100%">
+  <img src="docs/assets/icecore-banner.jpg" alt="icecore — dbt telemetry, built on Snowflake Event Tables" width="100%">
 </p>
 
 <h1 align="center">icecore</h1>

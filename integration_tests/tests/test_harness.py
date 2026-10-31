@@ -24,3 +24,30 @@ def test_record_finding_merges(tmp_path, monkeypatch):
     record_finding("s0", "a", 1)
     record_finding("s0", "b", 2)
     assert json.load(open(tmp_path / "s0.json")) == {"a": 1, "b": 2}
+
+
+@pytest.mark.sandbox
+def test_wait_for_events_round_trip(sf, run_id):
+    # Anonymous blocks write to the account-level event table (measured 31 Oct, see spike S1), so the
+    # round trip uses a procedure in ICECORE_SANDBOX: objects in the database are routed to its event table.
+    import datetime as dt
+    from helpers.events import wait_for_events
+
+    proc = f"ICECORE_SANDBOX.SPIKES.HARNESS_PROBE_{run_id.upper()}"
+    since = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(minutes=1)
+    cur = sf.cursor()
+    try:
+        cur.execute(f"""create procedure {proc}() returns string language sql as
+            $$ begin
+                 system$log_info('harness-roundtrip {run_id}');
+                 system$add_event('icecore.harness_probe', {{'icecore.run_id': '{run_id}'}});
+                 return 'ok';
+               end $$""")
+        assert cur.execute(f"call {proc}()").fetchone()[0] == "ok"
+        rows = wait_for_events(
+            sf, "value::string ilike %(p)s or record_attributes:\"icecore.run_id\"::string = %(r)s",
+            {"p": f"%{run_id}%", "r": run_id}, min_rows=2, since=since)
+        assert {r["record_type"] for r in rows} >= {"LOG", "SPAN_EVENT"}
+    finally:
+        cur.execute(f"drop procedure if exists {proc}()")
+        cur.close()

@@ -1,6 +1,6 @@
 # Scope & Architecture — Snowflake-native dbt Observability Package
 
-Oct 27, 2026 · updated Oct 30, 2026 · @anouar · Draft for review
+Oct 27, 2026 · updated Oct 31, 2026 (Gate 1) · @anouar · Draft for review
 
 ## 1. Vision and positioning
 
@@ -59,7 +59,14 @@ Decided on 30 Oct 2026:
 | Capabilities | Recorded in-band, as Elementary does with `dbt_invocations`: `setup` and `doctor` emit a capabilities `LOG`, every invocation span carries the package version, dbt version and engine settings, and a `capabilities` view exposes both to the app. |
 | Acknowledgements | An acknowledged `incident_key` stops notifying: `alerts_feed` marks it acknowledged and `dedup_window` drops it. A recurrence with a new `incident_key` alerts again. |
 
-Open questions: none left at this level. The remaining unknowns are the spikes in section 8 (S1, S3 and S4 can change the design).
+Decided on 31 Oct 2026, at Gate 1 (`spikes/GATE1.md`):
+
+| Topic | Decision |
+| --- | --- |
+| Write path | **Option B**: two persisted procedures, `ICECORE_EMIT` (SQL) and `ICECORE_EMIT_RUN` (Python), that `setup` creates in `<target_db>.ICECORE_OBS` (`EXECUTE AS OWNER`) and that hooks and tests `CALL` through `run_query`. Option A (anonymous blocks, session levels, the shared account table) is rejected: S1 measured that anonymous blocks land nothing in the database's event table. Storage is unchanged: event table only, no package-owned tables; the hybrid table stays the documented last resort (it loses records on rollback, S1). |
+| Payload | 64 KB per record by default, overrides clamped at 256 KB; batches chunked per `CALL` (section 4, S2). |
+
+Open questions: none left at this level. S1, S2, S4 and S5 have run and Gate 1 is decided; S3 is still to run (section 8).
 
 ## 3. Architecture overview
 
@@ -69,34 +76,51 @@ The package has one store (the event table) and three paths around it: a write p
 
 dbt runs outside Snowflake emit telemetry through package macros; native dbt Projects runs are emitted by Snowflake itself; both land in the same event table with the same attribute names, and views, alerts and tasks read it from there.
 
-**Write path.** Package macros run in three places: an `on-run-start` hook (invocation span opens), node-level hooks and test macros (metrics, results, samples), and an `on-run-end` hook (per-node results, root-cause pass, invocation span closes). Every emission is an anonymous Snowflake Scripting block calling `SYSTEM$LOG_*` / `SYSTEM$ADD_EVENT`, executed through the adapter's normal `run_query`. There is no INSERT anywhere in the package.
+**Write path.** Package macros run in three places: an `on-run-start` hook (the run starts), node-level hooks and test macros (metrics, results, samples), and an `on-run-end` hook (per-node results, root-cause pass, invocation and node spans). Every emission is a `CALL` to one of two procedures that `setup` creates in `<target_db>.ICECORE_OBS` (Gate 1, `spikes/GATE1.md`), executed through the adapter's normal `run_query`:
 
-**Read path.** A `setup` macro creates views over the active event table in a schema the user chooses. Views are the only public interface; the Streamlit app and any external BI tool read views, never the raw table. A second set of views reproduces Elementary's table names and columns so existing dashboards and, if spike S4 passes, the `edr` report keep working.
+- `ICECORE_EMIT(events ARRAY)`, SQL: one span event per element through `SYSTEM$ADD_EVENT`. It takes the frequent small writes made during the run, such as test metrics, batched per `CALL`.
+- `ICECORE_EMIT_RUN(spans ARRAY)`, Python: custom spans with explicit start and end times, and LOG records with attributes. `on-run-end` calls it once per run for the invocation and node spans, which Snowsight shows as a trace.
+
+Both are persisted and `EXECUTE AS OWNER`, because dbt threads use separate sessions. Records go to the event table of the procedures' database (its own on Enterprise, the account's otherwise) and inherit that database's `LOG_LEVEL` / `TRACE_LEVEL`; the package changes no session setting. Each `CALL` sits in a guard block that turns any error into a dbt warning. There is no INSERT anywhere in the package.
+
+**Read path.** A `setup` macro creates, in a schema the user chooses (default `<target_db>.ICECORE_OBS`), views plus the two emitter procedures, and no tables. The views read the event table that receives the procedures' records: the one active for the procedures' database. Views are the only public interface; the Streamlit app and any external BI tool read views, never the raw table. A second set of views reproduces Elementary's table names and columns so existing dashboards keep working, and the `edr` report too once Phase 6 adds the views spike S4 found missing (`spikes/S4.md`).
 
 **Control path.** Snowflake Alerts run on a schedule against the views and push through a notification integration (email, Slack/Teams via webhook). A scheduled task implements silence detection by comparing declared SLAs to the last successful invocation per model. An optional task refreshes Cortex anomaly models from metric history.
 
-**What the package does not own**: no tables, no stages, no external compute, no secrets (webhooks live in Snowflake notification integrations / secrets objects).
+**What the package does not own**: no tables, no stages, no external compute, no secrets (webhooks live in Snowflake notification integrations / secrets objects). Its only code objects are the two emitter procedures.
+
+**Grants** (`spikes/GATE1.md`)
+
+| Role | Needs |
+| --- | --- |
+| The role that runs `setup` (owns the procedures and the views; the procedures write with its rights) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE and CREATE VIEW on `ICECORE_OBS`; read access to the event table the views read (on the account table, through `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`) |
+| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures. No session-level setting and no `EVENTS_VIEWER` |
+| People, the app, BI tools | SELECT on the views; the app also needs USAGE on `ICECORE_EMIT` for acknowledgements |
+
+A missing grant never fails a run (the guard), but the telemetry is lost, so `doctor` makes a test `CALL` of both procedures. Records are captured only when the database's levels allow them (S1 ran with `LOG_LEVEL = INFO`, `TRACE_LEVEL = ALWAYS`); `setup` reports the effective levels and prints the statement for an admin when its role cannot set them.
 
 ## 4. Event-table conventions
 
-All package emissions are identified by one `SCOPE` name and one attribute prefix, and they reuse Snowflake's own attribute names wherever Snowflake already defines one. The event table has a fixed schema (`TIMESTAMP`, `START_TIMESTAMP`, `OBSERVED_TIMESTAMP`, `TRACE`, `RESOURCE`, `RESOURCE_ATTRIBUTES`, `SCOPE`, `SCOPE_ATTRIBUTES`, `RECORD_TYPE`, `RECORD`, `RECORD_ATTRIBUTES`, `VALUE`, `EXEMPLARS`), so all package data lives in `RECORD_ATTRIBUTES` and `VALUE` (VARIANT).
+All package emissions are identified by the procedure that wrote them, the package identity (`SCOPE` or record-name prefix) and one attribute prefix, and they reuse Snowflake's own attribute names wherever Snowflake already defines one. The event table has a fixed schema (`TIMESTAMP`, `START_TIMESTAMP`, `OBSERVED_TIMESTAMP`, `TRACE`, `RESOURCE`, `RESOURCE_ATTRIBUTES`, `SCOPE`, `SCOPE_ATTRIBUTES`, `RECORD_TYPE`, `RECORD`, `RECORD_ATTRIBUTES`, `VALUE`, `EXEMPLARS`), so all package data lives in `RECORD_ATTRIBUTES` and `VALUE` (VARIANT).
 
-**Record types used**
+**Record types used** (Gate 1, `spikes/GATE1.md`): what `on-run-end` sends once per run goes through `ICECORE_EMIT_RUN`; every other emission (test macros, node hooks, `setup` / `doctor`, the silence task, the app) goes through `ICECORE_EMIT`.
 
-| Record type | Used for | One row per |
-| --- | --- | --- |
-| `SPAN` | Invocation (root span), node execution (child span) | Invocation, node |
-| `SPAN_EVENT` | Query executed by a node, with its `query_id` | Query |
-| `LOG` (INFO / WARN / ERROR) | Node result, test result, schema diff, root-cause attribution, silence-detector verdict, lineage edges, capabilities snapshot (from `setup` / `doctor`), alert acknowledgement (from the app) | Event |
-| `METRIC` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores | Metric per table/column per run |
-| `LOG` (DEBUG) | Failed-row samples (payload capped, see S2) | Test failure |
+| Record type | Written by | Used for | One row per |
+| --- | --- | --- | --- |
+| `SPAN` | `ICECORE_EMIT_RUN` | Invocation (root span), node execution (child span), with dbt's own start and end times | Invocation, node |
+| `SPAN_EVENT` | `ICECORE_EMIT_RUN` | Query executed by a node, with its `query_id`, as an event on the node's span | Query |
+| `LOG` (INFO / WARN / ERROR) | `ICECORE_EMIT_RUN` | Node result, test result, root-cause attribution, lineage edges | Event |
+| `LOG` (DEBUG) | `ICECORE_EMIT_RUN` | Failed-row samples (payload capped, see S2) | Test failure |
+| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`), alert acknowledgement (from the app) | Metric per table/column per run, or event |
+
+There are no `METRIC` records: SQL cannot write them (S1). Where other sections say "METRIC record" or "LOG", they name the record's role; this table gives its type.
 
 **Attribute namespace** (`RECORD_ATTRIBUTES` keys: `dbt.` for facts about the dbt run, `icecore.` for the package's own, Snowflake's own keys reused as-is)
 
 | Key | Example | Note |
 | --- | --- | --- |
 | `snow.executable.type` | `DBT_PROJECT` | Reused from Snowflake's native dbt telemetry so one filter covers both sources |
-| `snow.query.id` | `01c5a039-...` | Set by Snowflake on native runs; we set it from the adapter response on external runs |
+| `snow.query.id` | `01c5a039-...` | Set by Snowflake on native runs; we set it from the adapter response on external runs. The `RESOURCE_ATTRIBUTES` key of the same name holds the query id of the emitting `CALL` (S1) |
 | `dbt.invocation_id` | `a1b2-...` | From `invocation_id` |
 | `dbt.runtime` | `core` / `cloud` / `fusion` / `snowflake_native` | Where dbt ran |
 | `dbt.command`, `dbt.target`, `dbt.project` | `build`, `prod`, `finance_dw` |  |
@@ -104,7 +128,7 @@ All package emissions are identified by one `SCOPE` name and one attribute prefi
 | `dbt.node.relation` | `DB.SCHEMA.FCT_ORDERS` | Fully qualified, for joins to metadata views |
 | `dbt.result.status`, `dbt.result.rows_affected`, `dbt.result.execution_time_s`, `dbt.result.message` | `success`, `1200`, `4.2`, `...` |  |
 | `dbt.test.name`, `dbt.test.type`, `dbt.test.column`, `dbt.test.severity`, `dbt.test.failures` | `volume_anomaly`, `warn`, `3` |  |
-| `dbt.metric.name`, `dbt.metric.column`, `dbt.metric.dimension` | `row_count`, `null_rate`, `country=FR` | For `METRIC` records |
+| `dbt.metric.name`, `dbt.metric.column`, `dbt.metric.dimension`, `dbt.metric.value` | `row_count`, `null_rate`, `country=FR`, `1200` | On metric span events; the value is an attribute because span events have no `VALUE` (S1) |
 | `dbt.anomaly.engine`, `dbt.anomaly.expected`, `dbt.anomaly.lower`, `dbt.anomaly.upper`, `dbt.anomaly.score`, `dbt.anomaly.is_anomaly` | `native`, ... | Same keys whatever engine scored it |
 | `dbt.cost.credits`, `dbt.cost.warehouse` | `0.021`, `TRANSFORM_WH` | Joined post-run from `QUERY_ATTRIBUTION_HISTORY` by `snow.query.id` |
 | `dbt.root_cause.unique_id`, `dbt.root_cause.kind` | `model.x.stg_orders`, `upstream_failure` / `stale_source` / `schema_change` | Set by the on-run-end DAG walk |
@@ -115,11 +139,13 @@ All package emissions are identified by one `SCOPE` name and one attribute prefi
 
 **Rules**
 
-- One `SCOPE` name for the package (`icecore`), set on every emission; views filter on it, so other telemetry in a shared event table is never read.
-- `VALUE` carries the human-readable message for logs and the numeric value for metrics; everything structured goes in attributes, never parsed out of the message.
-- Payloads are capped at a configurable size (default 64 KB, see spike S2); samples are truncated row-wise with a `dbt.sample.truncated = true` flag rather than failing the hook.
-- Timestamps come from the dbt result (`START_TIMESTAMP` from the node's timing), not from the ingestion time, so lag never shifts the analytics.
-- Every emission is wrapped in `try / except` inside the macro: a telemetry failure logs a dbt warning and never fails the run.
+- Package identity on every emission: `SCOPE` `icecore` on `ICECORE_EMIT_RUN` records; SQL cannot set `SCOPE`, so `ICECORE_EMIT` records have `SCOPE` `global` and a record name starting with `icecore.` (S1). Views filter first on the emitting procedure (`snow.executable.name` starting with `ICECORE_EMIT`) and on that identity, so other telemetry in a shared event table is never read.
+- Each `CALL` is its own trace (S1), so `dbt.invocation_id` is an attribute on every record.
+- `VALUE` carries the human-readable message for logs; everything structured goes in attributes, metric values included, never parsed out of the message. Large values go in attributes, not in log messages: Python truncates a message to 524,252 characters plus `...`, with no flag (S2).
+- Payloads are capped per record at `payload_cap_kb` (default 64 KB); an override is clamped at 256 KB, well under the roughly 1 MB at which Snowflake silently drops a record (S2). A value icecore cuts is flagged; samples are truncated row-wise with a `dbt.sample.truncated = true` flag rather than failing the hook.
+- Batches are chunked: at most 100 events and 512 KB per `ICECORE_EMIT` `CALL`, which keeps only its last 128 events and drops all of them at about 1 MB; at most 512 KB per `ICECORE_EMIT_RUN` `CALL`, for dbt time (S2). Never one `CALL` per event: 100 events cost 78 s of server time that way, 0.73 s in one `CALL` (S1).
+- Timestamps come from the dbt result, not from the ingestion time, so lag never shifts the analytics. `ICECORE_EMIT_RUN` writes each span with the node's own start and end times, kept to the millisecond (S1); `ICECORE_EMIT` span events carry the `CALL`'s time, so dbt timings travel as attributes. Spans are written after the fact, so incremental reads window on more than `TIMESTAMP`.
+- Every `CALL` is wrapped in a guard block (`EXCEPTION WHEN OTHER`) and the macro turns the error into a dbt warning: a missing procedure or grant never fails the run. A bare `CALL` to a missing procedure fails it (S1).
 
 ## 5. Functional modules and macro inventory
 
@@ -127,7 +153,7 @@ Eight modules, each independently switchable with a var, so a customer can adopt
 
 | Module | Entry points (user-facing) | Internal macros | Reads | Emits |
 | --- | --- | --- | --- | --- |
-| **Setup** | `run-operation icecore.setup`, `icecore.doctor` | `detect_capabilities` (edition, Cortex, event table), `create_views`, `create_alerts`, `create_tasks`, `set_telemetry_levels` | `SHOW PARAMETERS`, `SHOW FUNCTIONS` | A capabilities `LOG` (edition, active event table, Cortex, telemetry levels); also prints the flags for `dbt_project.yml` and any statement that needs `ACCOUNTADMIN` |
+| **Setup** | `run-operation icecore.setup`, `icecore.doctor` | `detect_capabilities` (edition, Cortex, event table), `create_emit_procedures` (Gate 1), `create_views`, `create_alerts`, `create_tasks`, `set_telemetry_levels` | `SHOW PARAMETERS`, `SHOW FUNCTIONS` | A capabilities `LOG` (edition, active event table, Cortex, telemetry levels); also prints the flags for `dbt_project.yml` and any statement that needs `ACCOUNTADMIN` |
 | **Run telemetry** | `on-run-start: icecore.start_run()`, `on-run-end: icecore.end_run(results)` | `emit`, `open_span`, `close_span`, `emit_node_result`, `emit_query_event`, `collect_query_ids`, `emit_sample`, `emit_lineage` | dbt `results`, `graph`, adapter responses | Invocation span (with package version, dbt version and engine settings), node spans, node results, query events, failed-row samples, lineage edges |
 | **Metadata monitors (zero-scan)** | Tests `icecore.freshness`, `icecore.volume`, `icecore.schema_changes` | `get_last_change_time`, `get_row_count_metadata`, `get_columns_signature`, `diff_schema` | `INFORMATION_SCHEMA.TABLES`, `SYSTEM$LAST_CHANGE_COMMIT_TIME`, `SHOW COLUMNS` | METRIC rows + a LOG on breach |
 | **Column monitors (incremental scan)** | Tests `icecore.column_anomaly`, `icecore.dimension_anomaly`, `icecore.all_columns_anomaly` | `get_change_window`, `compute_column_metrics`, `compute_dimension_metrics` | Target table via `CHANGES` since last run (fallback: timestamp column) | METRIC rows |
@@ -165,7 +191,7 @@ models:
 - [x] Volume / freshness / schema / column / dimension anomalies
 - [x] Lineage
 - [x] Slack alerts
-- [ ] Elementary's HTML report (replaced by the Streamlit app; compatible views keep `edr` working if S4 passes)
+- [ ] Elementary's HTML report (replaced by the Streamlit app; `edr report` needs the node-metadata and samples views planned for Phase 6, see S4)
 - [ ] Source freshness results (dbt `source freshness` runs the on-run-end hook too; to confirm in S3)
 
 ## 6. Anomaly engine contract
@@ -212,7 +238,7 @@ One contract, two engines: every engine takes the same metric history and return
 
 ## 7. Read layer and Streamlit app
 
-Views are the public interface; the raw event table is an implementation detail. `setup` creates them in a schema the user picks (default `<target_db>.ICECORE_OBS`), all filtered on the package `SCOPE` and typed from `RECORD_ATTRIBUTES`.
+Views are the public interface; the raw event table is an implementation detail. `setup` creates them in a schema the user picks (default `<target_db>.ICECORE_OBS`), next to the two emitter procedures, all filtered on the package identity (section 4) and typed from `RECORD_ATTRIBUTES`. They read the event table of the procedures' database (`SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE <target_db>`): the database's own on Enterprise, otherwise the account's, read through `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` (Gate 1, `spikes/GATE1.md`).
 
 **Core views** (package-native names)
 
@@ -228,9 +254,9 @@ Views are the public interface; the raw event table is an implementation detail.
 | `alerts_feed` | One row per alertable event, deduped | Union of failed tests, anomalies, schema changes, silence, cost regressions; `incident_key` for grouping; `acknowledged_at` / `acknowledged_by` from ack records |
 | `capabilities` | One row per detection, latest first | `detected_at`, `edition`, `event_table`, `cortex_available`, `log_level`, `trace_level`, plus `icecore_version` and `dbt_version` from recent invocations |
 
-**Elementary-compatible views** (opt-in via `setup(compat='elementary')`): `dbt_invocations`, `dbt_run_results`, `elementary_test_results`, `dbt_models`, `dbt_tests`, `dbt_sources`, `data_monitoring_metrics`, `schema_columns_snapshot` with Elementary's column names and types. Purpose: existing dashboards keep working, and (spike S4) `edr report` may render against them unchanged.
+**Elementary-compatible views** (opt-in via `setup(compat='elementary')`): `dbt_invocations`, `dbt_run_results`, `elementary_test_results`, `dbt_models`, `dbt_tests`, `dbt_sources`, `data_monitoring_metrics`, `schema_columns_snapshot` with Elementary's column names and types. Purpose: existing dashboards keep working. Spike S4 (`spikes/S4.md`) found that `edr report` reads 12 relations and that only some map to core views, so the report renders only once Phase 6 adds a node-metadata view and a samples view; `dbt_invocations` must then expose every column of Elementary's table, with real `project_name` and `elementary_version` values. `edr report` also creates a temporary table in the schema it reads (USAGE is documented as enough, not measured).
 
-**Performance**: views carry `RECORD_TYPE` and `SCOPE` predicates first so pruning on the event table works; `setup` recommends a clustering key on the custom event table (`TIMESTAMP::date, RECORD_TYPE`) when the account creates one; for large estates, `setup` can optionally materialize `metrics` as a dynamic table (the only Snowflake object besides views the package may create, and only on request).
+**Performance**: views carry `RECORD_TYPE` and identity predicates first so pruning on the event table works; `setup` recommends a clustering key on the custom event table (`TIMESTAMP::date, RECORD_TYPE`) when the account creates one; for large estates, `setup` can optionally materialize `metrics` as a dynamic table (besides views, the two emitter procedures, alerts and tasks, the only object the package may create, and only on request).
 
 **Streamlit in Snowflake app** (reads the core views; deployed by `setup(app=true)` or manually)
 
@@ -243,21 +269,23 @@ Views are the public interface; the raw event table is an implementation detail.
 | SLAs | Declared schedules vs actual, silence events | Which contracts are breached |
 | Settings | Detected capabilities (from the `capabilities` view), package and dbt versions per run, engine selection, alert channels, retention | Is the package configured right |
 
-The app has no write path except acknowledging alerts, which is a comment-style `LOG` emission through the same event-table pipeline (an `ack` record keyed by `incident_key`), so the package still owns no tables. `alerts_feed` reads those records and `dedup_window` stops notifying for an acknowledged `incident_key`; a recurrence with a new key alerts again. A Native App wrapper of the same app is a packaging task, not a redesign.
+The app has no write path except acknowledging alerts, which is a comment-style emission through the same pipeline, a `CALL` to `ICECORE_EMIT` (an `ack` record keyed by `incident_key`), so the package still owns no tables. `alerts_feed` reads those records and `dedup_window` stops notifying for an acknowledged `incident_key`; a recurrence with a new key alerts again. A Native App wrapper of the same app is a packaging task, not a redesign.
 
 ## 8. Technical spikes before building
 
 Five checks, about two days in total, run on a sandbox account with a custom event table. S1 is the premise of the whole package; if it fails, the write path switches to hybrid tables and sections 3 and 4 are revised before any module is written.
 
-| # | Question | How to test | Pass | Fail → fallback |
-| --- | --- | --- | --- | --- |
-| S1 | Do `SYSTEM$LOG` / `SYSTEM$ADD_EVENT` calls from an **anonymous** Snowflake Scripting block (sent through dbt's `run_query`) land in the event table with usable `RESOURCE_ATTRIBUTES` (`snow.query.id`, session, user, role, warehouse)? | Emit 100 logs and 10 spans from an anonymous block via dbt-snowflake; query the event table | Rows present, `snow.query.id` matches the block's query, attributes queryable | Write path uses a hybrid table (row locks); views unchanged |
-| S2 | What is the maximum payload per log message and per attribute map, and what happens above it? | Emit messages of 8 KB, 64 KB, 256 KB, 1 MB; check truncation or error | Documented limit; truncation flagged, never a failed hook | Samples chunked across several LOG records with a `dbt.sample.part` index |
-| S3 | Ingestion lag under load, and whether the on-run-end hook fires for `dbt source freshness` and `dbt test` alone | 20 concurrent `dbt build` runs each emitting \~500 records; measure `OBSERVED_TIMESTAMP - TIMESTAMP` p50/p95; run each command type | p95 lag under 60 s; hook fires for all commands used | Anomaly history read with a configurable delay; silence task grace raised |
-| S4 | Do Elementary-compatible views satisfy `edr report`? | Install `elementary-data`, point its profile at the compat views, run `edr report` | Report renders with runs, tests, lineage | Compat views stay for dashboards; the report is Streamlit-only |
-| S5 | Zero-scan metrics are reliable: does `INFORMATION_SCHEMA.TABLES.ROW_COUNT` and `SYSTEM$LAST_CHANGE_COMMIT_TIME` reflect writes within seconds, including for dynamic tables and Iceberg tables? | Write to each table kind, read metadata immediately and after 60 s | Row count and change time correct within 60 s for standard tables; behaviour for dynamic / Iceberg documented | Per-kind fallback to a `COUNT(*)` over `CHANGES` |
+Status on 31 Oct 2026: S1, S2, S4 and S5 have run, and Gate 1 is decided (`spikes/GATE1.md`). S1 failed as framed, but not in a way that called for the hybrid fallback: procedures land what anonymous blocks do not, so sections 3 and 4 now describe two emitter procedures. S3 is still to run.
 
-All five produce a short note in the repo (`spikes/S1.md` ...) with the SQL used and the numbers found, so the limits in section 4 are measured, not assumed.
+| # | Question | How to test | Pass | Fail → fallback | Result |
+| --- | --- | --- | --- | --- | --- |
+| S1 | Do `SYSTEM$LOG` / `SYSTEM$ADD_EVENT` calls from an **anonymous** Snowflake Scripting block (sent through dbt's `run_query`) land in the event table with usable `RESOURCE_ATTRIBUTES` (`snow.query.id`, session, user, role, warehouse)? | Emit 100 logs and 10 spans from an anonymous block via dbt-snowflake; query the event table | Rows present, `snow.query.id` matches the block's query, attributes queryable | Write path uses a hybrid table (row locks); views unchanged | Anonymous blocks land nothing in the database's event table, whatever the session's levels or database; records from a procedure land there with `snow.query.id`. Gate 1 chose two persisted procedures (option B), not the hybrid table. `spikes/S1.md` |
+| S2 | What is the maximum payload per log message and per attribute map, and what happens above it? | Emit messages of 8 KB, 64 KB, 256 KB, 1 MB; check truncation or error | Documented limit; truncation flagged, never a failed hook | Samples chunked across several LOG records with a `dbt.sample.part` index | Per record: whole up to 960 KB, silently dropped at 1 MB; Python log messages truncated to 524,252 characters plus `...`. Per `ICECORE_EMIT` `CALL`: last 128 events kept, all dropped at about 1 MB. Cap 64 KB, clamp 256 KB, chunks of 100 events and 512 KB. `spikes/S2.md` |
+| S3 | Ingestion lag under load, and whether the on-run-end hook fires for `dbt source freshness` and `dbt test` alone | 20 concurrent `dbt build` runs each emitting \~500 records; measure `OBSERVED_TIMESTAMP - TIMESTAMP` p50/p95; run each command type | p95 lag under 60 s; hook fires for all commands used | Anomaly history read with a configurable delay; silence task grace raised | Not run yet. Until it runs, the SLA default grace is a 10-minute placeholder. `spikes/S3.md` (to come) |
+| S4 | Do Elementary-compatible views satisfy `edr report`? | Install `elementary-data`, point its profile at the compat views, run `edr report` | Report renders with runs, tests, lineage | Compat views stay for dashboards; the report is Streamlit-only | Fail: `edr report` reads 12 relations and only some map to core views. Compat views serve dashboards; the report needs a node-metadata view and a samples view (Phase 6). `spikes/S4.md` |
+| S5 | Zero-scan metrics are reliable: does `INFORMATION_SCHEMA.TABLES.ROW_COUNT` and `SYSTEM$LAST_CHANGE_COMMIT_TIME` reflect writes within seconds, including for dynamic tables and Iceberg tables? | Write to each table kind, read metadata immediately and after 60 s | Row count and change time correct within 60 s for standard tables; behaviour for dynamic / Iceberg documented | Per-kind fallback to a `COUNT(*)` over `CHANGES` | Pass for standard, transient and dynamic tables (correct at the first read, about 2 s). Iceberg unmeasured, so it uses the `CHANGES` fallback, which is cheap only for insert-only windows. `spikes/S5.md` |
+
+All five produce a short note in the repo (`spikes/S1.md` ...) with the SQL used and the numbers found, so the limits in section 4 are measured, not assumed. The Gate 1 decision and what it rests on are in `spikes/GATE1.md`.
 
 ## 9. Delivery plan
 
@@ -274,7 +302,8 @@ icecore/
   dbt_project.yml
   macros/
     setup/            setup, doctor, detect_capabilities, set_telemetry_levels,
-                      create_views, create_alerts, create_tasks, deploy_app
+                      create_emit_procedures, create_views, create_alerts,
+                      create_tasks, deploy_app
     telemetry/        start_run, end_run, emit, attributes, spans, node results,
                       query events, samples, lineage
     monitors/         metadata (zero-scan), columns (CHANGES), schema, emit_metric
@@ -301,13 +330,15 @@ icecore/
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Anonymous-block logging does not carry the attributes we need (S1) | The whole write path | Hybrid-table write path as designed fallback; views unchanged, so nothing above the write layer moves |
-| Ingestion lag higher than expected (S3) | Alerts late; anomaly history missing the last run; silence detector false positives | Lag-aware views (`observed_at` vs `TIMESTAMP`), configurable history delay, grace period on SLAs defaulting to 2x measured p95 |
-| Shared event table is noisy or restricted | Views slow; security teams refuse read access to a table that also holds other apps' logs | `SCOPE` filter first in every view; on Enterprise, recommend a dedicated database-level event table with its own grants; on Standard, read through `EVENTS_VIEW` with the `EVENTS_VIEWER` role (row access policies on it are Enterprise-only); both patterns documented |
-| Telemetry cost surprises | Serverless ingestion credits on large estates | `setup` prints an estimate from node count and run frequency; payload caps; sample emission off by default on `warn` tests |
+| Emitter procedures missing, not granted, or their Python packages stop resolving (Gate 1) | Telemetry silently lost; the run itself stays green | Every `CALL` guarded, errors become dbt warnings; `doctor` makes a test `CALL` of both procedures; `ICECORE_EMIT_RUN` pins `opentelemetry-api==1.38.0` (S1: unpinned it resolved to 1.45.1 and failed to import, and `snowflake-telemetry-python` broke the import). Hybrid table stays the last resort; views unchanged, so nothing above the write layer moves |
+| Snowflake drops oversize records and batches silently (S2) | Lost records with no error | Payload cap 64 KB, clamp 256 KB; `ICECORE_EMIT` chunks of 100 events and 512 KB; truncation flagged by icecore; the only trace of a count drop is `dropped_events_count` on the procedure's span |
+| Unmeasured parts of the write path (Gate 1 open items) | Routing or rollback behaviour differs from what the design assumes | Measure before relying on them: SPAN and SPAN_EVENT routing to the account table (only LOG was measured there), rollback through `ICECORE_EMIT_RUN` (measured for `ICECORE_EMIT` only) |
+| Ingestion lag higher than expected (S3) | Alerts late; anomaly history missing the last run; silence detector false positives | Lag-aware views (`observed_at` vs `TIMESTAMP`), configurable history delay, grace period on SLAs defaulting to 2x measured p95. S3 has not run: the default grace is a 10-minute placeholder until it does |
+| Shared event table is noisy or restricted | Views slow; security teams refuse read access to a table that also holds other apps' logs | Identity filter first in every view; records land in the event table of the procedures' database. On Enterprise, recommend a dedicated database-level event table for it, with its own grants, so icecore records never reach the shared table; on Standard they land in the account table, which the view owner reads through `EVENTS_VIEW` with the `EVENTS_VIEWER` role (row access policies on it are Enterprise-only); the dbt role never needs it; both patterns documented |
+| Telemetry cost surprises | Serverless ingestion credits on large estates | `setup` prints an estimate from node count and run frequency; payload caps; batched `CALL`s (S1: 0.73 s of server time for 100 events in one `CALL`, 78 s for one `CALL` per event); sample emission off by default on `warn` tests |
 | Cortex not allowed or not in region | No ML engine | `native` is the default and the guaranteed baseline; Cortex is additive and detected, never assumed |
-| Zero-scan metadata lags or differs by table kind (S5) | Wrong freshness/volume verdicts | Per-kind fallback to a `CHANGES`-based count; documented matrix of table kinds |
-| Elementary-compat views drift from Elementary's schema | Broken dashboards for migrating teams | Compat views are versioned against a named Elementary release; integration test runs `edr report` in CI |
+| Zero-scan metadata lags or differs by table kind (S5) | Wrong freshness/volume verdicts | Per-kind fallback to a `CHANGES`-based count; documented matrix of table kinds. S5: standard, transient and dynamic tables are correct at once; Iceberg is unmeasured and uses the fallback, which is cheap only for insert-only windows (about 1.8 to 1.9 times a full scan after DELETE or MERGE), so it stays opt-in |
+| Elementary-compat views drift from Elementary's schema | Broken dashboards for migrating teams | Compat views are versioned against a named Elementary release (the S4 contract, Elementary 0.26.1); integration test runs `edr report` in CI |
 | dbt Fusion or dbt Projects on Snowflake change hook behaviour | Hooks not firing, results shape changing | Integration tests on Core 1.8 and the latest Core, Fusion 2.x and `EXECUTE DBT PROJECT`; the native path needs no hooks, which is the point of the unified namespace |
 | Scope creep toward a product before the core is solid | Delay | Gates in section 9; nothing beyond the current phase is started before the gate |
 | Open-source maintenance load | Issues and PRs without a team | Narrow platform (Snowflake only) keeps the surface small; CI against a sandbox account; a clear `CONTRIBUTING.md` and a public roadmap |

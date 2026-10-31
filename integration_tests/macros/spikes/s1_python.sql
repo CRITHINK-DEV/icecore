@@ -3,6 +3,10 @@
   'anonymous'       WITH S1_PY AS PROCEDURE(...) ... CALL S1_PY(...)
   'temp_procedure'  CREATE TEMPORARY PROCEDURE <target db>.<target schema>.S1_PY_<run_id>(...), CALL, DROP
   The handler is static; values are passed as call arguments through s1_sql_literal.
+  PACKAGES are snowflake-snowpark-python + opentelemetry-api only: adding snowflake-telemetry-python
+  made the anonymous procedure fail with "No module named 'snowflake.snowpark'", and an unpinned
+  opentelemetry-api resolves to 1.45.1, whose import fails against the runtime's SDK
+  ("cannot import name '_ExtendedAttributes'"); 1.38.0 is the version snowpark brings (S1.md).
 -#}
 
 {% macro _s1_python_handler() -%}
@@ -36,7 +40,7 @@ def run(session, run_id, n_logs, n_spans, attrs_json, message, span_start_ns, sp
 
 
 {% macro _s1_python_plan(run_id, n_logs, n_spans, attrs, message, via, span_start_ns=0, span_duration_ns=0,
-    packages=['snowflake-snowpark-python', 'snowflake-telemetry-python', 'opentelemetry-api']) %}
+    packages=['snowflake-snowpark-python', 'opentelemetry-api==1.38.0']) %}
   {% set sig = 'run_id STRING, n_logs INTEGER, n_spans INTEGER, attrs_json STRING, message STRING, span_start_ns NUMBER(38, 0), span_duration_ns NUMBER(38, 0)' %}
   {% set types = 'STRING, INTEGER, INTEGER, STRING, STRING, NUMBER, NUMBER' %}
   {% set args = [s1_sql_literal(run_id), n_logs | int, n_spans | int,

@@ -112,3 +112,54 @@ $$
     {% do s1_emit_call(proc, _s1_emit_events(run_id, 1, {'icecore.levels': 'off'})) %}
   {% endif %}
 {% endmacro %}
+
+
+{#-
+  Gate 1 option B, second procedure: ICECORE_EMIT_RUN, a persisted Python procedure
+  (EXECUTE AS OWNER, PACKAGES snowpark + opentelemetry-api pinned to 1.38.0) that writes a whole run's spans in one
+  CALL, each with explicit start/end times and attributes (SCOPE icecore). Persisted rather than
+  temporary because dbt threads use separate sessions. Probe: ICECORE_EMIT_RUN_<run_id>.
+  spans: [{name, start_ns, end_ns, attrs, events: [{name, ts_ns, attrs}]}]
+-#}
+{% macro s1_emit_run_proc_create(run_id) %}
+  {% if execute %}
+    {% set sql %}
+CREATE OR REPLACE PROCEDURE {{ target.database }}.{{ target.schema }}.ICECORE_EMIT_RUN_{{ run_id | upper }}(spans ARRAY)
+RETURNS STRING
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python', 'opentelemetry-api==1.38.0')
+HANDLER = 'run'
+EXECUTE AS OWNER
+AS $$
+from opentelemetry import trace
+
+
+def run(session, spans):
+    tracer = trace.get_tracer("icecore")
+    for s in spans:
+        span = tracer.start_span(s["name"], start_time=int(s["start_ns"]), attributes=s.get("attrs") or {})
+        for e in s.get("events") or []:
+            span.add_event(e["name"], e.get("attrs") or {}, timestamp=int(e.get("ts_ns") or s["start_ns"]))
+        span.end(end_time=int(s["end_ns"]))
+    return "ok " + str(len(spans))
+$$
+    {% endset %}
+    {% do run_query(sql) %}
+  {% endif %}
+{% endmacro %}
+
+
+{#- n spans of duration_ns each, back to back from start_ns, with attrs (+ run_id, seq), in one guarded CALL. -#}
+{% macro s1_emit_run_batch(run_id, proc, n, start_ns, duration_ns, attrs={}, event_kb=0) %}
+  {% set spans = [] %}
+  {% for i in range(1, (n | int) + 1) %}
+    {% set a = {} %}
+    {% do a.update(attrs or {}) %}
+    {% do a.update({'icecore.run_id': run_id, 'icecore.seq': i}) %}
+    {% if event_kb | int > 0 %}{% do a.update({'icecore.payload': 'x' * ((event_kb | int) * 1024)}) %}{% endif %}
+    {% set s0 = (start_ns | int) + (i - 1) * (duration_ns | int) %}
+    {% do spans.append({'name': 'icecore.node', 'start_ns': s0, 'end_ns': s0 + (duration_ns | int), 'attrs': a}) %}
+  {% endfor %}
+  {% do s1_emit_call(proc, spans) %}
+{% endmacro %}

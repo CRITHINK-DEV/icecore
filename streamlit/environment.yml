@@ -1,0 +1,9 @@
+# Packages for Streamlit in Snowflake: only the Snowflake Anaconda channel is allowed.
+# Checked on 30 Oct 2026 against https://repo.anaconda.com/pkgs/snowflake (linux-64):
+# streamlit 1.50.0 (builds for Python 3.9 to 3.13), snowflake-snowpark-python (latest 1.55.0).
+name: icecore
+channels:
+  - snowflake
+dependencies:
+  - streamlit=1.50.0
+  - snowflake-snowpark-python

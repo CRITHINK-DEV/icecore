@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 import snowflake.connector
-from dbt.cli.main import dbtRunner, dbtRunnerResult
 
 from helpers.env import require_env as _require_env
+from helpers.macros import invoke
 
 IT_DIR = Path(__file__).resolve().parents[1]
 
@@ -31,10 +31,6 @@ def sf():
 @pytest.fixture(scope="session")
 def dbt():
     _require_env()
-
-    def invoke(args: list[str]) -> dbtRunnerResult:
-        return dbtRunner().invoke(args + ["--project-dir", str(IT_DIR), "--profiles-dir", str(IT_DIR)])
-
     assert invoke(["deps"]).success
     return invoke
 

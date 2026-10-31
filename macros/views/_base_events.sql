@@ -147,7 +147,8 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
 {% endmacro %}
 
 
-{#- An identifier for SQL text: plain identifiers as they are, others double-quoted. -#}
+{#- The one plain-identifier helper of the package (setup, levels and views use it): an identifier for SQL text,
+    a plain identifier as it is (Snowflake resolves it upper case), anything else double-quoted. -#}
 {% macro _icecore_identifier(name) %}
   {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', name | string) -%}{{ return(name | string) }}{%- endif -%}
   {{ return('"' ~ (name | string | replace('"', '""')) ~ '"') }}

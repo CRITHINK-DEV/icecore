@@ -3,8 +3,9 @@ version: 2
 macros:
   - name: create_emit_procedures
     description: >
-      Create (CREATE OR REPLACE, EXECUTE AS OWNER) the two procedures every icecore record is written through,
-      in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). Called by `setup`; the schema must exist,
+      Create (CREATE OR REPLACE ... COPY GRANTS, EXECUTE AS OWNER) the two procedures every icecore record is
+      written through, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
+      made on them when setup runs again. Called by `setup`; the schema must exist,
       and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
       dbt needs USAGE on the database, the schema and both procedures.
       `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
@@ -18,15 +19,24 @@ macros:
       `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
       Records land in the event table of the procedures' database, at that database's levels. Returns the two
       qualified procedure names (empty at parse time).
-    arguments: []
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema to create them in. Default the `obs_schema` var (see `obs_schema_name`).
 
   - name: obs_schema_name
     description: >
       The name of icecore's schema in the target database, upper-cased as Snowflake resolves an unquoted
-      identifier: `var('icecore').obs_schema`, default `ICECORE_OBS`. The procedures and views live there, and
-      the views filter `snow.schema.name` on it.
-    arguments: []
+      identifier: the `schema` argument when given (setup's and doctor's), else `var('icecore').obs_schema`, default
+      `ICECORE_OBS`. The procedures and views live there, and the views filter `snow.schema.name` on it.
+    arguments:
+      - name: schema
+        type: string
+        description: Overrides the var. Default none.
 
   - name: obs_schema
     description: The obs schema fully qualified and quoted, `"<TARGET_DATABASE>"."<OBS_SCHEMA>"` (both parts upper-cased).
-    arguments: []
+    arguments:
+      - name: schema
+        type: string
+        description: Overrides the `obs_schema` var, as in `obs_schema_name`. Default none.

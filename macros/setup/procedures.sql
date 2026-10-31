@@ -10,20 +10,22 @@
                                   events: [{name, ts_ns, attrs}]} written with their explicit times, or logs
                                   {type: 'log', level, message, attrs}. SCOPE `icecore`.
 
-  create_emit_procedures() is called by setup; the obs schema must exist. The DDL is rendered by
+  create_emit_procedures(schema) is called by setup; the obs schema must exist. CREATE OR REPLACE ... COPY GRANTS,
+  so a second setup keeps the grants an admin made on the procedures. The DDL is rendered by
   _icecore_emit_procedures_ddl() so it can be checked without a connection. Measured in S1/S2
   (integration_tests/macros/spikes/s1_emit_proc.sql, s1_python.sql, s2_payload.sql).
 -#}
 
-{#- The obs schema's name, as Snowflake resolves an unquoted identifier (upper case). -#}
-{% macro obs_schema_name() %}
-  {{ return(var('icecore', {}).get('obs_schema', 'ICECORE_OBS') | string | upper) }}
+{#- The obs schema's name, as Snowflake resolves an unquoted identifier (upper case): `schema` when given (setup's
+    and doctor's argument), else the obs_schema var. -#}
+{% macro obs_schema_name(schema=none) %}
+  {{ return((schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper) }}
 {% endmacro %}
 
 
 {#- The obs schema, fully qualified and quoted: "<TARGET_DB>"."<OBS_SCHEMA>". -#}
-{% macro obs_schema() %}
-  {%- set parts = [target.database | string | upper, icecore.obs_schema_name()] -%}
+{% macro obs_schema(schema=none) %}
+  {%- set parts = [target.database | string | upper, icecore.obs_schema_name(schema)] -%}
   {%- set quoted = [] -%}
   {%- for part in parts -%}
     {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
@@ -33,19 +35,19 @@
 
 
 {#- A procedure of the obs schema, fully qualified (name only, no signature). -#}
-{% macro _icecore_procedure(name) %}
-  {{ return(icecore.obs_schema() ~ '."' ~ name ~ '"') }}
+{% macro _icecore_procedure(name, schema=none) %}
+  {{ return(icecore.obs_schema(schema) ~ '."' ~ name ~ '"') }}
 {% endmacro %}
 
 
-{% macro create_emit_procedures() %}
+{% macro create_emit_procedures(schema=none) %}
   {%- set created = [] -%}
   {%- if execute -%}
-    {%- for ddl in icecore._icecore_emit_procedures_ddl() -%}
+    {%- for ddl in icecore._icecore_emit_procedures_ddl(schema) -%}
       {%- do run_query(ddl) -%}
     {%- endfor -%}
     {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
-      {%- do created.append(icecore._icecore_procedure(name)) -%}
+      {%- do created.append(icecore._icecore_procedure(name, schema)) -%}
     {%- endfor -%}
     {%- do log('icecore: created ' ~ (created | join(' and ')), info=True) -%}
   {%- endif -%}
@@ -53,9 +55,10 @@
 {% endmacro %}
 
 
-{% macro _icecore_emit_procedures_ddl() %}
+{% macro _icecore_emit_procedures_ddl(schema=none) %}
   {%- set emit -%}
-CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_EMIT') }}(events ARRAY)
+CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_EMIT', schema) }}(events ARRAY)
+COPY GRANTS
 RETURNS STRING
 LANGUAGE SQL
 COMMENT = 'icecore: writes icecore.<kind> span events (Gate 1 option B)'
@@ -86,7 +89,8 @@ END;
 $$
   {%- endset -%}
   {%- set emit_run -%}
-CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_EMIT_RUN') }}(spans ARRAY)
+CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_EMIT_RUN', schema) }}(spans ARRAY)
+COPY GRANTS
 RETURNS STRING
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'

@@ -1,0 +1,26 @@
+version: 2
+
+macros:
+  - name: collect_sla_config
+    description: >
+      Reads the SLA and alert settings that users declare in model YAML, next to the model:
+      `meta: {sla: {expected_every: 1h, grace: 15m}, alerts: {channel: data-platform, severity: warn}}`
+      (top-level `meta` or `config.meta`; the top level wins). Returns one entry per node that
+      declares `meta.sla` or `meta.alerts`, sorted by `unique_id`:
+      `{unique_id, name, resource_type, expected_every_minutes, grace_minutes, grace_defaulted,
+      channel, severity}`. Without `meta.sla` the three schedule fields are `none`, `none`,
+      `false`; without `meta.alerts` the channel is `none` and the severity `warn`.
+      Durations are whole numbers with a unit `m`, `h`, `d` or `w`, combinable (`15m`, `1h`,
+      `1h30m`, `1d`), and are returned in minutes. When `grace` is omitted the default grace
+      applies, flagged by `grace_defaulted`. The default is meant to be twice the p95 ingestion
+      lag measured by spike S3; until S3 lands it is a fixed placeholder of 10 minutes.
+      Any invalid value (bad duration, missing `expected_every`, unknown `meta.sla` key,
+      severity other than `warn` / `error`, non-mapping `sla` / `alerts`) raises a compile
+      error that names the node. Returns values only: runs no query and renders no SQL;
+      `render_alert_sql` and `render_silence_task_sql` consume the result.
+    arguments:
+      - name: nodes
+        type: list[dict] | none
+        description: >
+          Graph nodes to read (mappings with `unique_id`, `name`, `resource_type`, `meta`,
+          `config.meta`). Default `none`: every node of `graph.nodes`. Returns `[]` at parse time.

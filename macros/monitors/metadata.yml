@@ -4,10 +4,10 @@ macros:
   - name: get_last_change_time
     description: >
       Zero-scan freshness reader. Returns the time of the last committed change to the relation, read from
-      SYSTEM$LAST_CHANGE_COMMIT_TIME, as an ISO 8601 UTC string (`YYYY-MM-DDTHH:MI:SS.ffffffZ`).
-      Returns none when the table was never written (token 0), and none with a logged warning when the
-      relation is missing or not readable; it never fails the run. For a dynamic table this is the time of
-      its last refresh, not of its sources (spike S5).
+      SYSTEM$LAST_CHANGE_COMMIT_TIME, as an ISO 8601 UTC string (`YYYY-MM-DDTHH:MI:SS.ffffffZ`, millisecond
+      precision; the token's last digits are not significant). Returns none when the table was never written
+      (token 0), and none with a logged warning when the relation is missing or not readable; it never fails
+      the run. For a dynamic table this is the time of its last refresh, not of its sources (spike S5).
     arguments:
       - name: relation
         type: Relation
@@ -17,30 +17,29 @@ macros:
 
   - name: get_row_count_metadata
     description: >
-      Zero-scan volume reader. For kinds whose metadata spike S5 found reliable (standard, transient,
-      dynamic), returns INFORMATION_SCHEMA.TABLES.ROW_COUNT as an integer: the total row count, no data scan.
-      For fallback kinds (see `get_row_count_source`), returns the net number of rows added since `since`
-      (inserts minus deletes), counted over CHANGES, which needs change tracking on the table; without
-      `since` it returns none and logs why. Returns none with a logged warning when the relation is missing
-      or not readable; it never fails the run.
+      Zero-scan volume reader: the relation's total row count from INFORMATION_SCHEMA.TABLES.ROW_COUNT, as an
+      integer, with no data scan. Always a total, never a delta. Returns none, with one log line saying why,
+      when: the relation is missing or not readable; it is a view or an external table (no ROW_COUNT in
+      metadata, so zero-scan volume is not supported); or its kind is in
+      `vars: icecore: metadata_fallback_kinds` (default `[iceberg]`, from spike S5), in which case use
+      `get_row_count_changes`. It never fails the run. The volume test emits this value as the metric
+      `row_count`, distinct from `rows_added`.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_last_change_time`.
+
+  - name: get_row_count_changes
+    description: >
+      Net number of rows added since `since` (inserts minus deletes), counted over CHANGES. It scans only the
+      micro-partitions written since then (spike S5: 1 partition and 4 KB against 11 partitions and 35 MB for a
+      full scan). Needs change tracking on the table, or on the view and its base tables; without it, or for a
+      `since` outside the tracked window, it returns none and logs Snowflake's error. It never fails the run.
+      The volume test emits this value as the metric `rows_added`, never mixed with `row_count`.
     arguments:
       - name: relation
         type: Relation
         description: The relation to read, as for `get_last_change_time`.
       - name: since
         type: string
-        description: >
-          Optional, default none. ISO 8601 timestamp (for example the previous observation); used only by the
-          CHANGES fallback.
-
-  - name: get_row_count_source
-    description: >
-      Which reader `get_row_count_metadata` uses for the relation: `metadata` (total row count from
-      INFORMATION_SCHEMA) or `changes` (row delta over CHANGES). `changes` is chosen when the table kind is in
-      `vars: icecore: metadata_fallback_kinds` (default `['iceberg']`, from spike S5) or when ROW_COUNT is
-      NULL (views, external tables). Kinds: standard, transient, temporary, dynamic, iceberg, view,
-      materialized_view, external. Returns none when the relation is not found.
-    arguments:
-      - name: relation
-        type: Relation
-        description: The relation to classify, as for `get_last_change_time`.
+        description: ISO 8601 timestamp of the previous observation, for example `2026-10-31T08:00:00.000000Z`. Required.

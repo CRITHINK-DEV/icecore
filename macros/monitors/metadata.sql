@@ -3,7 +3,9 @@
     Every read runs inside a Snowflake Scripting block that catches errors, so a missing table or a
     missing privilege returns none and logs a warning instead of failing the user's run.
     Spike S5 (spikes/S5.md) found ROW_COUNT and SYSTEM$LAST_CHANGE_COMMIT_TIME correct within seconds for
-    standard, transient and dynamic tables; Iceberg is unmeasured and falls back to CHANGES by default. -#}
+    standard, transient and dynamic tables. Iceberg is unmeasured, so its metadata total is not trusted by default.
+    The total (get_row_count_metadata) and the delta over CHANGES (get_row_count_changes) are distinct values:
+    the volume test emits them as distinct metrics, row_count and rows_added, never mixed in one history. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -19,35 +21,38 @@
 {% endmacro %}
 
 
-{% macro get_row_count_source(relation) %}
+{% macro get_row_count_metadata(relation) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set info = icecore._icecore_table_info(relation) -%}
   {%- if info is none -%}{{ return(none) }}{%- endif -%}
-  {%- if info['kind'] in icecore._icecore_metadata_fallback_kinds() or info.get('row_count') is none -%}
-    {{ return('changes') }}
+  {%- set name = icecore._icecore_quoted_name(relation) -%}
+  {%- if info.get('row_count') is none -%}
+    {% do log('icecore: warning: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ': zero-scan volume is not supported for views and external tables (no ROW_COUNT in metadata)', info=True) %}
+    {{ return(none) }}
   {%- endif -%}
-  {{ return('metadata') }}
+  {%- if info.get('kind') in icecore._icecore_metadata_fallback_kinds() -%}
+    {% do log('icecore: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ' table: its metadata row count is not trusted (spike S5); use get_row_count_changes for rows added', info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return(info['row_count'] | int) }}
 {% endmacro %}
 
 
-{% macro get_row_count_metadata(relation, since=none) %}
+{% macro get_row_count_changes(relation, since) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
-  {%- set source = icecore.get_row_count_source(relation) -%}
-  {%- if source == 'metadata' -%}
-    {{ return(icecore._icecore_table_info(relation)['row_count'] | int) }}
-  {%- elif source == 'changes' and since is none -%}
-    {% do log('icecore: ' ~ icecore._icecore_quoted_name(relation) ~ ' needs the CHANGES fallback for its row count; pass since to read it', info=True) %}
+  {%- if since is none -%}
+    {% do log('icecore: warning: get_row_count_changes needs since (the previous observation time)', info=True) %}
     {{ return(none) }}
-  {%- elif source == 'changes' -%}
-    {{ return(icecore._icecore_row_delta_from_changes(relation, since)) }}
   {%- endif -%}
-  {{ return(none) }}
+  {{ return(icecore._icecore_row_delta_from_changes(relation, since)) }}
 {% endmacro %}
 
 
 {#- Private --------------------------------------------------------------------------------------- -#}
 
-{#- Kinds whose metadata row count is not trusted (S5); overridable with vars: icecore: metadata_fallback_kinds. -#}
+{#- Kinds whose metadata row count is not trusted (S5). The default lives in dbt_project.yml
+    (vars: icecore: metadata_fallback_kinds). A project that overrides the icecore var replaces the whole dict,
+    so the same default is applied when the key is absent, until a shared config accessor merges defaults. -#}
 {% macro _icecore_metadata_fallback_kinds() %}
   {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg'])) }}
 {% endmacro %}
@@ -124,7 +129,8 @@ end;
     {% do log('icecore: warning: ' ~ icecore._icecore_quoted_name(relation) ~ ' is not in INFORMATION_SCHEMA.TABLES (missing or not visible to this role)', info=True) %}
     {{ return(none) }}
   {%- endif -%}
-  {{ return(fromjson(info) if info is string else info) }}
+  {%- set parsed = fromjson(info) if info is string else info -%}
+  {{ return(parsed if parsed is mapping else none) }}
 {% endmacro %}
 
 

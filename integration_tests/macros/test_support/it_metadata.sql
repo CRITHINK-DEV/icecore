@@ -17,9 +17,9 @@
   {%- for r in relations -%}
     {%- set relation = it_relation(r['database'], r['schema'], r['identifier'], r.get('quoted', false)) -%}
     {%- do out.update({r['identifier']: {
-        'row_count': icecore.get_row_count_metadata(relation, since),
+        'row_count': icecore.get_row_count_metadata(relation),
+        'rows_added': none if since is none else icecore.get_row_count_changes(relation, since),
         'last_change': icecore.get_last_change_time(relation),
-        'source': icecore.get_row_count_source(relation),
     }}) -%}
   {%- endfor -%}
   {% do log('icecore_it_result:' ~ tojson(out), info=True) %}

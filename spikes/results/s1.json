@@ -1,0 +1,2163 @@
+{
+  "anonymous.e1_sql_event": {
+    "call_ok": true,
+    "dbt_wall_s": 1.26,
+    "executable_types": [],
+    "expected": 100,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "a0009eccb7884b1abef38d3abc6217f6",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 295,
+      "statements": [
+        {
+          "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
+          "ms": 295,
+          "query_id": "01c8189c-0000-b533-0001-19a20118f8f2",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e1_sql_event.absent_after_s": 180,
+  "anonymous.e1_sql_log": {
+    "call_ok": true,
+    "dbt_wall_s": 1.49,
+    "executable_types": [],
+    "expected": 100,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "e8ea8b678a3e42899e0369ea5aa423c1",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 315,
+      "statements": [
+        {
+          "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
+          "ms": 315,
+          "query_id": "01c81899-0000-b511-0001-19a20118defa",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e1_sql_log.absent_after_s": 180,
+  "anonymous.e1_sql_span_attrs": {
+    "call_ok": true,
+    "dbt_wall_s": 1.23,
+    "executable_types": [],
+    "expected": 1,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "be28d3940f3c402fab400e2247528973",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 205,
+      "statements": [
+        {
+          "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
+          "ms": 205,
+          "query_id": "01c818a0-0000-b533-0001-19a20118fa16",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e1_sql_span_attrs.absent_after_s": 180,
+  "anonymous.e2_python_logs": {
+    "call_ok": true,
+    "dbt_wall_s": 70.51,
+    "executable_types": [],
+    "expected": 100,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "08c0965e3655466d984e8f0148278fb1",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 69393,
+      "statements": [
+        {
+          "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
+          "ms": 69393,
+          "query_id": "01c818a3-0000-b533-0001-19a20118fb6e",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e2_python_logs.absent_after_s": 180,
+  "anonymous.e2_python_span_timings": {
+    "call_ok": true,
+    "dbt_wall_s": 3.85,
+    "executable_types": [],
+    "expected": 6,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "3c80d61bc9c54fb896a40968cf79f16c",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 2717,
+      "statements": [
+        {
+          "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
+          "ms": 2717,
+          "query_id": "01c818ac-0000-b511-0001-19a201191d0e",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e2_python_span_timings.absent_after_s": 180,
+  "anonymous.e2_python_spans": {
+    "call_ok": true,
+    "dbt_wall_s": 3.57,
+    "executable_types": [],
+    "expected": 20,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "774ac1a97c274c498b35efc69cf1733c",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 2505,
+      "statements": [
+        {
+          "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
+          "ms": 2505,
+          "query_id": "01c818a8-0000-b533-0001-19a201193452",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.e2_python_spans.absent_after_s": 180,
+  "anonymous.escaping": {
+    "calls_ok": {
+      "e1_event": true,
+      "e1_log": true,
+      "e2": true
+    },
+    "errors": {},
+    "landed": 0,
+    "roundtrip": {
+      "e1_event_attrs": null,
+      "e1_log_message": null,
+      "e2_log_attrs": null,
+      "e2_log_message": null
+    },
+    "run_id": "6272b580cb294fc39f94bca47bb77364"
+  },
+  "anonymous.escaping.absent_after_s": 180,
+  "anonymous.levels_off": {
+    "calls": {
+      "python": {
+        "call_ok": true,
+        "dbt_wall_s": 3.44
+      },
+      "sql_event": {
+        "call_ok": true,
+        "dbt_wall_s": 1.36
+      },
+      "sql_log": {
+        "call_ok": true,
+        "dbt_wall_s": 1.37
+      },
+      "sql_span_attrs": {
+        "call_ok": true,
+        "dbt_wall_s": 1.22
+      }
+    },
+    "executable_types": [],
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "5e7c06e057e343f6a91a5007c3010c75",
+    "scope_names": [],
+    "sdk_languages": [],
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.levels_off.absent_after_s": 180,
+  "anonymous.rollback": {
+    "call_ok": true,
+    "dbt_wall_s": 2.02,
+    "executable_types": [],
+    "expected": 2,
+    "first_timestamp": null,
+    "has_snow_query_id": false,
+    "landed": 0,
+    "last_timestamp": null,
+    "record_names": [],
+    "record_types": {},
+    "resource_attribute_keys": [],
+    "rows": 0,
+    "run_id": "f15d0f01b8d04c63bfbb97aeedc873c2",
+    "scope_names": [],
+    "sdk_languages": [],
+    "seconds_to_visible": null,
+    "server": {
+      "emit_ms": 584,
+      "statements": [
+        {
+          "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
+          "ms": 302,
+          "query_id": "01c818b9-0000-b511-0001-19a201194d12",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
+          "ms": 282,
+          "query_id": "01c818b9-0000-b511-0001-19a201194d16",
+          "status": "SUCCESS",
+          "type": "CALL"
+        }
+      ]
+    },
+    "snow_query_ids": [],
+    "span_ids": 0,
+    "trace_ids": []
+  },
+  "anonymous.rollback.absent_after_s": 180,
+  "anonymous.trace_grouping": {
+    "calls_ok": [
+      true,
+      true
+    ],
+    "errors": [],
+    "landed": 0,
+    "query_ids": [],
+    "run_id": "1db2440b14104cbcb7253855349fefe4",
+    "shared_trace": false,
+    "trace_id_prefix_matches_query_id": [],
+    "trace_ids": []
+  },
+  "anonymous.trace_grouping.absent_after_s": 180,
+  "e3_hybrid_table": {
+    "call_ok": true,
+    "dbt_wall_s": 2.85,
+    "rows_by_kind": {
+      "committed": 100
+    },
+    "run_id": "a43d3d6bdca14741b63fdbe0c049899e",
+    "server": {
+      "emit_ms": 1284,
+      "statements": [
+        {
+          "head": "CREATE HYBRID TABLE ICECORE_SANDBOX.SPIKES.S1_H_",
+          "ms": 735,
+          "query_id": "01c818bd-0000-b511-0001-19a20119541e",
+          "status": "SUCCESS",
+          "type": "CREATE_TABLE"
+        },
+        {
+          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_A43D3D6B",
+          "ms": 427,
+          "query_id": "01c818bd-0000-b511-0001-19a201195426",
+          "status": "SUCCESS",
+          "type": "INSERT"
+        },
+        {
+          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_A43D3D6B",
+          "ms": 122,
+          "query_id": "01c818bd-0000-b511-0001-19a20119542e",
+          "status": "SUCCESS",
+          "type": "INSERT"
+        }
+      ]
+    }
+  },
+  "proc.batch": {
+    "call_ok": true,
+    "dbt_wall_s": 1.71,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "5866e4b5290e4bbbbf5fe2e2071a6015",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.5,
+    "server_ms": 726,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_5866E4B5290E4BBBBF5FE2E2071A6015(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 1,
+    "status": {
+      "SUCCESS": 1
+    },
+    "trace_ids": 1
+  },
+  "proc.batch_unguarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.58,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "c346f95bf25e44fc8ca36b0f82c74617",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.6,
+    "server_ms": 633,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_C346F95BF25E44FC8CA36B0F82C74617(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 1,
+    "status": {
+      "SUCCESS": 1
+    },
+    "trace_ids": 1
+  },
+  "proc.emit_run_python": {
+    "call_ok": true,
+    "dbt_wall_s": 3.93,
+    "exact_attributes": 100,
+    "expected": 100,
+    "explicit_times_kept": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.node"
+    ],
+    "record_types": {
+      "SPAN": 100
+    },
+    "run_id": "d1cd8ec4a9ba4ca69a5f7b466ad4170e",
+    "scope_names": [
+      "icecore"
+    ],
+    "seconds_to_visible": 10.7,
+    "server_ms": 2818,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_RUN_D1CD8EC4A9BA4CA69A5F7B466AD4170E(SPANS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 1,
+    "status": {
+      "SUCCESS": 1
+    },
+    "trace_ids": 1,
+    "warnings": []
+  },
+  "proc.escaping": {
+    "byte_identical": true,
+    "call_ok": true,
+    "landed": 1,
+    "landed_text": "it's a \\ test\nnew line \u00e9 \u00fc \u6f22",
+    "run_id": "35f21a86d801475089d2cd63c56cee86"
+  },
+  "proc.levels_off": {
+    "call_ok": true,
+    "has_snow_query_id": true,
+    "landed": 1,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 1
+    },
+    "run_id": "d905e7d1b22347629d10f515611c985f",
+    "scope_names": [
+      "global"
+    ],
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_D905E7D1B22347629D10F515611C985F(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "trace_ids": 1
+  },
+  "proc.missing_guarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.18,
+    "errors": [],
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF",
+    "run_id": "7c3fbeced2c6436a891bd237868564bf",
+    "warnings": [
+      "icecore: telemetry not written (ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF): icecore-error 2141: SQL compilation error:\nUnknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF."
+    ]
+  },
+  "proc.missing_unguarded": {
+    "call_ok": false,
+    "dbt_wall_s": 1.02,
+    "errors": [
+      "Encountered an error while running operation: Database Error\n  002141 (42601): SQL compilation error:\n  Unknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_F9FD8104B57C4315A47124CBD4B098E0."
+    ],
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_F9FD8104B57C4315A47124CBD4B098E0",
+    "run_id": "f9fd8104b57c4315a47124cbd4b098e0",
+    "warnings": []
+  },
+  "proc.no_usage_guarded": {
+    "call_ok": true,
+    "dbt_wall_s": 1.45,
+    "errors": [],
+    "proc": "SNOWFLAKE.TELEMETRY.ICECORE_EMIT",
+    "run_id": "aac58be01bd9464aae4a0b97cd2f5c79",
+    "warnings": [
+      "icecore: telemetry not written (SNOWFLAKE.TELEMETRY.ICECORE_EMIT): icecore-error 2141: SQL compilation error:\nUnknown user-defined function SNOWFLAKE.TELEMETRY.ICECORE_EMIT."
+    ]
+  },
+  "proc.per_event": {
+    "call_ok": true,
+    "dbt_wall_s": 88.19,
+    "exact_attributes": 100,
+    "expected": 100,
+    "has_snow_query_id": true,
+    "landed": 100,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "run_id": "5d55feb774b5457ab3a9b8c4b3d27c07",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.9,
+    "server_ms": 78317,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_5D55FEB774B5457AB3A9B8C4B3D27C07(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "statements": 100,
+    "status": {
+      "SUCCESS": 100
+    },
+    "trace_ids": 100
+  },
+  "proc.rollback": {
+    "call_ok": true,
+    "expected": 2,
+    "has_snow_query_id": true,
+    "landed": 2,
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 2
+    },
+    "run_id": "2f21fd2249ee4fe789a4411142643ebc",
+    "scope_names": [
+      "global"
+    ],
+    "seconds_to_visible": 5.5,
+    "snow.database.name": [
+      "ICECORE_SANDBOX"
+    ],
+    "snow.executable.name": [
+      "ICECORE_EMIT_2F21FD2249EE4FE789A4411142643EBC(EVENTS ARRAY):VARCHAR"
+    ],
+    "snow.executable.type": [
+      "PROCEDURE"
+    ],
+    "trace_ids": 2
+  },
+  "routing": {
+    "account_table_access": {
+      "errors": {
+        "SNOWFLAKE.TELEMETRY.EVENTS": "Schema 'SNOWFLAKE.TELEMETRY' does not exist or not authorized. Your primary role ICECORE_CI or one of your secondary roles must have USAGE or any other privilege granted on SCHEMA SNOWFLAKE.TELEMETRY.",
+        "SNOWFLAKE.TELEMETRY.EVENTS_VIEW": "Schema 'SNOWFLAKE.TELEMETRY' does not exist or not authorized. Your primary role ICECORE_CI or one of your secondary roles must have USAGE or any other privilege granted on SCHEMA SNOWFLAKE.TELEMETRY."
+      },
+      "readable": false
+    },
+    "variants": {
+      "anon_calls_qualified_proc": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 2.77,
+        "sandbox_table": {
+          "record_types": {
+            "LOG": 1,
+            "SPAN_EVENT": 1
+          },
+          "rows": 2,
+          "snow.database.name": [
+            "ICECORE_SANDBOX"
+          ],
+          "snow.executable.type": [
+            "PROCEDURE"
+          ]
+        },
+        "server": {
+          "emit_ms": 1461,
+          "statements": [
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 68,
+              "query_id": "01c818bd-0000-b511-0001-19a20119546e",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 70,
+              "query_id": "01c818bd-0000-b511-0001-19a201195472",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "EXECUTE IMMEDIATE $$ BEGIN CALL ICECORE_SANDBOX.",
+              "ms": 1323,
+              "query_id": "01c818bd-0000-b511-0001-19a201195476",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 62,
+              "query_id": "01c818bd-0000-b511-0001-19a201195482",
+              "status": "SUCCESS",
+              "type": "DROP"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 60,
+              "query_id": "01c818bd-0000-b511-0001-19a201195486",
+              "status": "SUCCESS",
+              "type": "DROP"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r2"
+      },
+      "anon_no_database": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "current_database": null,
+        "query_id": "01c818bd-0000-b511-0001-19a2011954ce",
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 345,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; BEGIN a :",
+              "ms": 345,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954ce",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r5"
+      },
+      "anon_python_min_packages": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 3.93,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 2759,
+          "statements": [
+            {
+              "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
+              "ms": 2759,
+              "query_id": "01c818bd-0000-b511-0001-19a201195492",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r3"
+      },
+      "anon_session_db": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 2.57,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 1178,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
+              "ms": 618,
+              "query_id": "01c818bd-0000-b511-0001-19a201195452",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
+              "ms": 560,
+              "query_id": "01c818bd-0000-b511-0001-19a201195456",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r0"
+      },
+      "anon_use_db_inside": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 1.88,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 801,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; m STRING ",
+              "ms": 801,
+              "query_id": "01c818bd-0000-b511-0001-19a201195462",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r1"
+      },
+      "temp_proc": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 2.44,
+        "sandbox_table": {
+          "record_types": {
+            "LOG": 1,
+            "SPAN_EVENT": 1
+          },
+          "rows": 2,
+          "snow.database.name": [
+            "ICECORE_SANDBOX"
+          ],
+          "snow.executable.type": [
+            "PROCEDURE"
+          ]
+        },
+        "server": {
+          "emit_ms": 1067,
+          "statements": [
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 84,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954aa",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_E9A5785AA4C",
+              "ms": 466,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954ae",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 79,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954b6",
+              "status": "SUCCESS",
+              "type": "DROP"
+            },
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 89,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954ba",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_E9A5785AA4C74",
+              "ms": 428,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954be",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 62,
+              "query_id": "01c818bd-0000-b511-0001-19a2011954c2",
+              "status": "SUCCESS",
+              "type": "DROP"
+            }
+          ]
+        },
+        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r4"
+      }
+    }
+  },
+  "routing_account_table": {
+    "note": "The lead's query matched on value::string, which drops every row whose VALUE is NULL (all SPAN and SPAN_EVENT rows), so only the LOG rows here are reliable; SPAN/SPAN_EVENT presence or absence in either table is unverified until a re-run with coalesce(value::string, '') as ACCOUNTADMIN. 'ctrl temp proc e1 event' was not found for the same reason; it landed in the sandbox table per temp_procedure.e1_sql_event.",
+    "rows": [
+      {
+        "probe": "E1 anon 100 logs (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon 100 span events (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon SET_SPAN_ATTRIBUTES (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon in rollback (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 1",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 2",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 3",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "ctrl temp proc e1 event",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "ctrl temp proc e1 log",
+        "record_type": "LOG",
+        "rows": 100,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "ctrl temp proc python logs",
+        "record_type": "LOG",
+        "rows": 100,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r0 anon, USE DATABASE in session",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r0 anon, USE DATABASE in session",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r1 anon, USE DATABASE inside block",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r1 anon, USE DATABASE inside block",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "SPAN",
+        "rows": 2,
+        "snow.database.name": null,
+        "snow.executable.type": "QUERY",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "SPAN",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "SPAN",
+        "rows": 2,
+        "snow.database.name": null,
+        "snow.executable.type": "QUERY",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r5 anon, no current database",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r5 anon, no current database",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      }
+    ],
+    "source": "Lead, ACCOUNTADMIN, 31 Oct 2026: both tables read, matched on run_id in VALUE, RECORD or RECORD_ATTRIBUTES. ICECORE_CI cannot read SNOWFLAKE.TELEMETRY.EVENTS."
+  },
+  "routing_checked_by_lead": {
+    "account_table_access": {
+      "errors": {
+        "SNOWFLAKE.TELEMETRY.EVENTS": "Schema 'SNOWFLAKE.TELEMETRY' does not exist or not authorized. Your primary role ICECORE_CI or one of your secondary roles must have USAGE or any other privilege granted on SCHEMA SNOWFLAKE.TELEMETRY.",
+        "SNOWFLAKE.TELEMETRY.EVENTS_VIEW": "Schema 'SNOWFLAKE.TELEMETRY' does not exist or not authorized. Your primary role ICECORE_CI or one of your secondary roles must have USAGE or any other privilege granted on SCHEMA SNOWFLAKE.TELEMETRY."
+      },
+      "readable": false
+    },
+    "note": "The 31 Oct routing run (tags 4e8d1a59...r0-r5) whose account-table side the lead read as ACCOUNTADMIN; 'routing' holds the latest run.",
+    "variants": {
+      "anon_calls_qualified_proc": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 2.62,
+        "sandbox_table": {
+          "record_types": {
+            "LOG": 1,
+            "SPAN_EVENT": 1
+          },
+          "rows": 2,
+          "snow.database.name": [
+            "ICECORE_SANDBOX"
+          ],
+          "snow.executable.type": [
+            "PROCEDURE"
+          ]
+        },
+        "server": {
+          "emit_ms": 1296,
+          "statements": [
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 78,
+              "query_id": "01c8184d-0000-b511-0001-19a201187356",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 67,
+              "query_id": "01c8184d-0000-b533-0001-19a20118868a",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "EXECUTE IMMEDIATE $$ BEGIN CALL ICECORE_SANDBOX.",
+              "ms": 1151,
+              "query_id": "01c8184d-0000-b533-0001-19a20118868e",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 59,
+              "query_id": "01c8184d-0000-b511-0001-19a20118736e",
+              "status": "SUCCESS",
+              "type": "DROP"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 51,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886a2",
+              "status": "SUCCESS",
+              "type": "DROP"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r2"
+      },
+      "anon_no_database": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "current_database": null,
+        "query_id": "01c8184d-0000-b511-0001-19a201187396",
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 478,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; BEGIN a :",
+              "ms": 478,
+              "query_id": "01c8184d-0000-b511-0001-19a201187396",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r5"
+      },
+      "anon_python_min_packages": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 6.06,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 4989,
+          "statements": [
+            {
+              "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
+              "ms": 4989,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886aa",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r3"
+      },
+      "anon_session_db": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 3.16,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 1446,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
+              "ms": 567,
+              "query_id": "01c8184d-0000-b533-0001-19a201188666",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
+              "ms": 879,
+              "query_id": "01c8184d-0000-b511-0001-19a201187342",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r0"
+      },
+      "anon_use_db_inside": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 3.18,
+        "sandbox_table": {
+          "record_types": {},
+          "rows": 0,
+          "snow.database.name": [],
+          "snow.executable.type": []
+        },
+        "server": {
+          "emit_ms": 1985,
+          "statements": [
+            {
+              "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; m STRING ",
+              "ms": 1985,
+              "query_id": "01c8184d-0000-b533-0001-19a20118867a",
+              "status": "SUCCESS",
+              "type": "CALL"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r1"
+      },
+      "temp_proc": {
+        "account_table": "not readable by ICECORE_CI",
+        "call_ok": true,
+        "dbt_wall_s": 2.46,
+        "sandbox_table": {
+          "record_types": {
+            "LOG": 1,
+            "SPAN_EVENT": 1
+          },
+          "rows": 2,
+          "snow.database.name": [
+            "ICECORE_SANDBOX"
+          ],
+          "snow.executable.type": [
+            "PROCEDURE"
+          ]
+        },
+        "server": {
+          "emit_ms": 1043,
+          "statements": [
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 65,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886c6",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_4E8D1A59B35",
+              "ms": 386,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886ca",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 59,
+              "query_id": "01c8184d-0000-b511-0001-19a20118738a",
+              "status": "SUCCESS",
+              "type": "DROP"
+            },
+            {
+              "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+              "ms": 66,
+              "query_id": "01c8184d-0000-b511-0001-19a20118738e",
+              "status": "SUCCESS",
+              "type": "CREATE"
+            },
+            {
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_4E8D1A59B3524",
+              "ms": 526,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886ce",
+              "status": "SUCCESS",
+              "type": "CALL"
+            },
+            {
+              "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+              "ms": 58,
+              "query_id": "01c8184d-0000-b533-0001-19a2011886d2",
+              "status": "SUCCESS",
+              "type": "DROP"
+            }
+          ]
+        },
+        "tag": "4e8d1a59b35242468f5f59ae116823f3r4"
+      }
+    }
+  },
+  "run_ids": {
+    "anonymous.e1_sql_event": {
+      "first_start": "2026-10-31 01:55:09.315000-07:00",
+      "run_ids": [
+        "a7d2e22882164997994c0150d750aedc"
+      ]
+    },
+    "anonymous.e1_sql_log": {
+      "first_start": "2026-10-31 01:51:29.999000-07:00",
+      "run_ids": [
+        "18964ee6d7584e0fa709ec3c523fc5c2"
+      ]
+    },
+    "anonymous.e1_sql_span_attrs": {
+      "first_start": "2026-10-31 01:58:42.964000-07:00",
+      "run_ids": [
+        "858c690bae99454aac03b8e199ff544e"
+      ]
+    },
+    "anonymous.e2_python_logs": {
+      "first_start": "2026-10-31 02:19:30.320000-07:00",
+      "run_ids": [
+        "09f2f8d55b31482886222a27726222b6"
+      ]
+    },
+    "anonymous.e2_python_span_timings": {
+      "first_start": "2026-10-31 02:20:36.491000-07:00",
+      "run_ids": [
+        "5303d552a721462884be8a5205b33d80"
+      ]
+    },
+    "anonymous.e2_python_spans": {
+      "first_start": "2026-10-31 02:20:11.352000-07:00",
+      "run_ids": [
+        "385e5a7544b44d93a21967b432fa4856"
+      ]
+    },
+    "anonymous.rollback": {
+      "first_start": "2026-10-31 02:13:22.190000-07:00",
+      "run_ids": [
+        "76a9df52f8b649ce854476998e5f591a"
+      ]
+    },
+    "e3_hybrid_table": {
+      "first_start": "2026-10-31 02:17:10.791000-07:00",
+      "run_ids": [
+        "fcfef8e9c5fa45c0902676c004a5c2a0"
+      ]
+    },
+    "note": "Recovered after the run from INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER (the run 2 findings predate per-finding run_id); sent to the lead for the account-table check.",
+    "routing.anon_calls_qualified_proc": {
+      "first_start": "2026-10-31 02:17:21.681000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3",
+        "4e8d1a59b35242468f5f59ae116823f3r2"
+      ]
+    },
+    "routing.anon_no_database": {
+      "first_start": "2026-10-31 02:17:32.792000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3r5"
+      ]
+    },
+    "routing.anon_python_min_packages": {
+      "first_start": "2026-10-31 02:17:24.275000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3r3"
+      ]
+    },
+    "routing.anon_session_db": {
+      "first_start": "2026-10-31 02:17:15.826000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3r0"
+      ]
+    },
+    "routing.anon_use_db_inside": {
+      "first_start": "2026-10-31 02:17:18.498000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3r1"
+      ]
+    },
+    "routing.temp_proc": {
+      "first_start": "2026-10-31 02:17:30.375000-07:00",
+      "run_ids": [
+        "4e8d1a59b35242468f5f59ae116823f3",
+        "4e8d1a59b35242468f5f59ae116823f3r4"
+      ]
+    },
+    "temp_procedure.e1_sql_event": {
+      "first_start": "2026-10-31 01:58:23.303000-07:00",
+      "run_ids": [
+        "abeaef7e4973447d977fc9b333148f8f"
+      ]
+    },
+    "temp_procedure.e1_sql_log": {
+      "first_start": "2026-10-31 01:54:48.680000-07:00",
+      "run_ids": [
+        "2ece23eaaf3c4c0588ac3c9d9a0295e0"
+      ]
+    },
+    "temp_procedure.e1_sql_span_attrs": {
+      "first_start": "2026-10-31 02:01:57.085000-07:00",
+      "run_ids": [
+        "952373748da64ac6bdaf5d2304960528"
+      ]
+    },
+    "temp_procedure.e2_python_logs": {
+      "first_start": "2026-10-31 02:19:34.478000-07:00",
+      "run_ids": [
+        "6ca7668f327e446ba7d3a4ac36defa19"
+      ]
+    },
+    "temp_procedure.e2_python_span_timings": {
+      "first_start": "2026-10-31 02:27:51.908000-07:00",
+      "run_ids": [
+        "efc4123c308343d6b48546a6e7882d69"
+      ]
+    },
+    "temp_procedure.e2_python_spans": {
+      "first_start": "2026-10-31 02:20:15.566000-07:00",
+      "run_ids": [
+        "2cf3a903d6e243ce806deea1e4ccc657"
+      ]
+    },
+    "temp_procedure.rollback": {
+      "first_start": "2026-10-31 02:16:35.955000-07:00",
+      "run_ids": [
+        "6f81e3f20f6c4307bc5b846d0261708d"
+      ]
+    }
+  },
+  "temp_procedure.e1_sql_event": {
+    "call_ok": true,
+    "dbt_wall_s": 1.66,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 100,
+    "first_timestamp": "2026-10-31 10:39:41.364289",
+    "has_snow_query_id": true,
+    "landed": 100,
+    "last_timestamp": "2026-10-31 10:39:41.374913",
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN_EVENT": 100
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "telemetry.sdk.language"
+    ],
+    "rows": 100,
+    "run_id": "5bd16fdf0d084e61953583817472a6a4",
+    "scope_names": [
+      "global"
+    ],
+    "sdk_languages": [
+      "sql"
+    ],
+    "seconds_to_visible": 5.5,
+    "server": {
+      "emit_ms": 467,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 72,
+          "query_id": "01c8189f-0000-b511-0001-19a2011912a2",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_5BD16FDF0D0",
+          "ms": 395,
+          "query_id": "01c8189f-0000-b533-0001-19a20118f9ee",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 45,
+          "query_id": "01c8189f-0000-b533-0001-19a20118f9f2",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c8189f-0000-b533-0001-19a20118f9ee"
+    ],
+    "span_ids": 1,
+    "trace_ids": [
+      "01c8189f080557247b906f2c41b7acc8"
+    ]
+  },
+  "temp_procedure.e1_sql_event.attribute_types": {
+    "dbt.node.unique_id": "str",
+    "dbt.result.execution_time_s": "float",
+    "dbt.result.rows_affected": "int",
+    "dbt.test.failures": "int",
+    "icecore.flag": "bool",
+    "icecore.run_id": "str"
+  },
+  "temp_procedure.e1_sql_log": {
+    "call_ok": true,
+    "dbt_wall_s": 1.58,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 100,
+    "first_timestamp": "2026-10-31 10:36:16.925000",
+    "has_snow_query_id": true,
+    "landed": 100,
+    "last_timestamp": "2026-10-31 10:36:16.943000",
+    "record_names": [],
+    "record_types": {
+      "LOG": 100
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "telemetry.sdk.language"
+    ],
+    "rows": 100,
+    "run_id": "2036eba311ea4f07aa3fa12bc6754847",
+    "scope_names": [
+      "None"
+    ],
+    "sdk_languages": [
+      "sql"
+    ],
+    "seconds_to_visible": 5.5,
+    "server": {
+      "emit_ms": 485,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 88,
+          "query_id": "01c8189c-0000-b533-0001-19a20118f8de",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_2036EBA311EA4",
+          "ms": 397,
+          "query_id": "01c8189c-0000-b533-0001-19a20118f8e2",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 60,
+          "query_id": "01c8189c-0000-b511-0001-19a2011911ae",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c8189c-0000-b533-0001-19a20118f8e2"
+    ],
+    "span_ids": 1,
+    "trace_ids": [
+      "01c8189c3213263c8a2d6727c7dc031d"
+    ]
+  },
+  "temp_procedure.e1_sql_span_attrs": {
+    "call_ok": true,
+    "dbt_wall_s": 1.52,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 1,
+    "first_timestamp": "2026-10-31 10:43:06.963834",
+    "has_snow_query_id": true,
+    "landed": 1,
+    "last_timestamp": "2026-10-31 10:43:06.963834",
+    "record_names": [
+      "snow.auto_instrumented"
+    ],
+    "record_types": {
+      "SPAN": 1
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "telemetry.sdk.language"
+    ],
+    "rows": 1,
+    "run_id": "6443ff9a0f014554b619bf3e1058b56c",
+    "scope_names": [
+      "global"
+    ],
+    "sdk_languages": [
+      "sql"
+    ],
+    "seconds_to_visible": 5.3,
+    "server": {
+      "emit_ms": 390,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 68,
+          "query_id": "01c818a3-0000-b533-0001-19a20118fb52",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_SPAN_6443FF9A0F01",
+          "ms": 322,
+          "query_id": "01c818a3-0000-b511-0001-19a2011913fa",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 54,
+          "query_id": "01c818a3-0000-b511-0001-19a2011913fe",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c818a3-0000-b511-0001-19a2011913fa"
+    ],
+    "span_ids": 1,
+    "trace_ids": [
+      "01c818a3ec5e92602cc65976efa7dda8"
+    ]
+  },
+  "temp_procedure.e1_sql_span_attrs.span_name": "snow.auto_instrumented",
+  "temp_procedure.e2_python_logs": {
+    "call_ok": true,
+    "dbt_wall_s": 3.86,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 100,
+    "first_timestamp": "2026-10-31 10:47:42.692104",
+    "has_snow_query_id": true,
+    "landed": 100,
+    "last_timestamp": "2026-10-31 10:47:42.705421",
+    "record_names": [],
+    "record_types": {
+      "LOG": 100
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.runtime.version",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "telemetry.sdk.language"
+    ],
+    "rows": 100,
+    "run_id": "01c7b6a44bd941238bedd4f2bb470449",
+    "scope_names": [
+      "icecore"
+    ],
+    "sdk_languages": [
+      "python"
+    ],
+    "seconds_to_visible": 21.1,
+    "server": {
+      "emit_ms": 2708,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 216,
+          "query_id": "01c818a7-0000-b533-0001-19a2011933f6",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_01C7B6A44BD941",
+          "ms": 2492,
+          "query_id": "01c818a7-0000-b533-0001-19a2011933fa",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 52,
+          "query_id": "01c818a7-0000-b533-0001-19a20119340e",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c818a7-0000-b533-0001-19a2011933fa"
+    ],
+    "span_ids": 1,
+    "trace_ids": [
+      "01c818a7b206111726baedf88d661b77"
+    ]
+  },
+  "temp_procedure.e2_python_logs.sample_record_attributes": {
+    "code.filepath": "_udf_code.py",
+    "code.function": "run",
+    "code.lineno": 12,
+    "dbt.node.unique_id": "model.p.fct_orders",
+    "dbt.result.execution_time_s": 4.2,
+    "dbt.result.rows_affected": 1200,
+    "dbt.test.failures": 0,
+    "icecore.flag": true,
+    "icecore.run_id": "01c7b6a44bd941238bedd4f2bb470449"
+  },
+  "temp_procedure.e2_python_span_timings": {
+    "call_ok": true,
+    "dbt_wall_s": 3.87,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 6,
+    "first_timestamp": "2026-10-31 08:55:22",
+    "has_snow_query_id": true,
+    "landed": 6,
+    "last_timestamp": "2026-10-31 08:55:34.600000",
+    "record_names": [
+      "icecore.node",
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN": 3,
+      "SPAN_EVENT": 3
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.runtime.version",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "snow.worker.id",
+      "telemetry.sdk.language"
+    ],
+    "rows": 6,
+    "run_id": "442cb712ef3a4ad9bcbd7c040f468efd",
+    "scope_names": [
+      "icecore"
+    ],
+    "sdk_languages": [
+      "python"
+    ],
+    "seconds_to_visible": 5.4,
+    "server": {
+      "emit_ms": 2749,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 195,
+          "query_id": "01c818af-0000-b533-0001-19a201193836",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_442CB712EF3A4A",
+          "ms": 2554,
+          "query_id": "01c818af-0000-b511-0001-19a201191ed6",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 51,
+          "query_id": "01c818af-0000-b511-0001-19a201191efe",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c818af-0000-b511-0001-19a201191ed6"
+    ],
+    "span_ids": 3,
+    "trace_ids": [
+      "01c818af535c016a0d846d55ef62dfa2"
+    ]
+  },
+  "temp_procedure.e2_python_span_timings.check": {
+    "spans": [
+      {
+        "end": "2026-10-31 08:55:26.200000",
+        "start": "2026-10-31 08:55:22"
+      },
+      {
+        "end": "2026-10-31 08:55:30.400000",
+        "start": "2026-10-31 08:55:26.200000"
+      },
+      {
+        "end": "2026-10-31 08:55:34.600000",
+        "start": "2026-10-31 08:55:30.400000"
+      }
+    ],
+    "timings_kept": true
+  },
+  "temp_procedure.e2_python_spans": {
+    "call_ok": true,
+    "dbt_wall_s": 4.58,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 20,
+    "first_timestamp": "2026-10-31 10:51:28.983357",
+    "has_snow_query_id": true,
+    "landed": 20,
+    "last_timestamp": "2026-10-31 10:51:28.986395",
+    "record_names": [
+      "icecore.node",
+      "icecore.probe"
+    ],
+    "record_types": {
+      "SPAN": 10,
+      "SPAN_EVENT": 10
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.runtime.version",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "snow.worker.id",
+      "telemetry.sdk.language"
+    ],
+    "rows": 20,
+    "run_id": "47e6ad3888a94c3e81db15f80bf062cf",
+    "scope_names": [
+      "icecore"
+    ],
+    "sdk_languages": [
+      "python"
+    ],
+    "seconds_to_visible": 21.2,
+    "server": {
+      "emit_ms": 3502,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 221,
+          "query_id": "01c818ab-0000-b533-0001-19a20119357a",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_47E6AD3888A94C",
+          "ms": 3281,
+          "query_id": "01c818ab-0000-b533-0001-19a20119357e",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 66,
+          "query_id": "01c818ab-0000-b511-0001-19a201191c66",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c818ab-0000-b533-0001-19a20119357e"
+    ],
+    "span_ids": 10,
+    "trace_ids": [
+      "01c818ab117f7db79e17c6d16bf56129"
+    ]
+  },
+  "temp_procedure.e2_python_spans.sample_span": {
+    "record": {
+      "flags": 256,
+      "kind": "SPAN_KIND_INTERNAL",
+      "name": "icecore.node",
+      "parent_span_id": "89095c3cd0056116",
+      "status": {
+        "code": "STATUS_CODE_UNSET"
+      }
+    },
+    "record_attributes": {
+      "dbt.node.unique_id": "model.p.fct_orders",
+      "dbt.result.execution_time_s": 4.2,
+      "dbt.result.rows_affected": 1200,
+      "dbt.test.failures": 0,
+      "icecore.flag": true,
+      "icecore.run_id": "47e6ad3888a94c3e81db15f80bf062cf",
+      "icecore.span_index": 1
+    },
+    "start_timestamp": "2026-10-31 10:51:28.983270",
+    "timestamp": "2026-10-31 10:51:28.983372"
+  },
+  "temp_procedure.escaping": {
+    "calls_ok": {
+      "e1_event": true,
+      "e1_log": true,
+      "e2": true
+    },
+    "errors": {},
+    "landed": 3,
+    "roundtrip": {
+      "e1_event_attrs": true,
+      "e1_log_message": true,
+      "e2_log_attrs": true,
+      "e2_log_message": true
+    },
+    "run_id": "ec10662b3a754c4786ac57d52e663df3"
+  },
+  "temp_procedure.levels_off": {
+    "calls": {
+      "python": {
+        "call_ok": true,
+        "dbt_wall_s": 4.19
+      },
+      "sql_event": {
+        "call_ok": true,
+        "dbt_wall_s": 1.77
+      },
+      "sql_log": {
+        "call_ok": true,
+        "dbt_wall_s": 1.85
+      },
+      "sql_span_attrs": {
+        "call_ok": true,
+        "dbt_wall_s": 1.66
+      }
+    },
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "first_timestamp": "2026-10-31 11:05:28.604000",
+    "has_snow_query_id": true,
+    "landed": 6,
+    "last_timestamp": "2026-10-31 11:05:36.140204",
+    "record_names": [
+      "icecore.node",
+      "icecore.probe",
+      "snow.auto_instrumented"
+    ],
+    "record_types": {
+      "LOG": 2,
+      "SPAN": 2,
+      "SPAN_EVENT": 2
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.runtime.version",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "snow.worker.id",
+      "telemetry.sdk.language"
+    ],
+    "rows": 6,
+    "run_id": "384f4ac9f9984d188385b6f5ec57bb0a",
+    "scope_names": [
+      "None",
+      "global",
+      "icecore"
+    ],
+    "sdk_languages": [
+      "python",
+      "sql"
+    ],
+    "snow_query_ids": [
+      "01c818b9-0000-b511-0001-19a201194c92",
+      "01c818b9-0000-b511-0001-19a201194caa",
+      "01c818b9-0000-b511-0001-19a201194cba",
+      "01c818b9-0000-b511-0001-19a201194cce"
+    ],
+    "span_ids": 5,
+    "trace_ids": [
+      "01c818b9645e728e37356d1652fe5ef7",
+      "01c818b9666d36a929cf41df6c339401",
+      "01c818b9772a0e451d4d7becf203c667",
+      "01c818b9b39e584c440936d5710aa57d"
+    ]
+  },
+  "temp_procedure.rollback": {
+    "call_ok": true,
+    "dbt_wall_s": 3.82,
+    "executable_types": [
+      "PROCEDURE"
+    ],
+    "expected": 2,
+    "first_timestamp": "2026-10-31 11:09:01.340749",
+    "has_snow_query_id": true,
+    "landed": 2,
+    "last_timestamp": "2026-10-31 11:09:02.072000",
+    "record_names": [
+      "icecore.probe"
+    ],
+    "record_types": {
+      "LOG": 1,
+      "SPAN_EVENT": 1
+    },
+    "resource_attribute_keys": [
+      "db.user",
+      "snow.database.id",
+      "snow.database.name",
+      "snow.executable.id",
+      "snow.executable.name",
+      "snow.executable.type",
+      "snow.owner.id",
+      "snow.owner.name",
+      "snow.query.id",
+      "snow.schema.id",
+      "snow.schema.name",
+      "snow.session.id",
+      "snow.session.role.primary.id",
+      "snow.session.role.primary.name",
+      "snow.user.id",
+      "snow.warehouse.id",
+      "snow.warehouse.name",
+      "telemetry.sdk.language"
+    ],
+    "rows": 2,
+    "run_id": "625ee98b97384d749d574d44fc7f4211",
+    "scope_names": [
+      "None",
+      "global"
+    ],
+    "sdk_languages": [
+      "sql"
+    ],
+    "seconds_to_visible": 5.4,
+    "server": {
+      "emit_ms": 1561,
+      "statements": [
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 91,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953d6",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
+          "ms": 97,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953da",
+          "status": "SUCCESS",
+          "type": "CREATE"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_625EE98B973",
+          "ms": 671,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953e6",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_625EE98B97384",
+          "ms": 702,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953ea",
+          "status": "SUCCESS",
+          "type": "CALL"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 65,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953f6",
+          "status": "SUCCESS",
+          "type": "DROP"
+        },
+        {
+          "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
+          "ms": 71,
+          "query_id": "01c818bd-0000-b511-0001-19a2011953fa",
+          "status": "SUCCESS",
+          "type": "DROP"
+        }
+      ]
+    },
+    "snow_query_ids": [
+      "01c818bd-0000-b511-0001-19a2011953e6",
+      "01c818bd-0000-b511-0001-19a2011953ea"
+    ],
+    "span_ids": 2,
+    "trace_ids": [
+      "01c818bd981c72b34a1b07beb7a3b0f9",
+      "01c818bdc07bc3d21e7f7e290c0827ac"
+    ]
+  },
+  "temp_procedure.trace_grouping": {
+    "calls_ok": [
+      true,
+      true
+    ],
+    "errors": [],
+    "landed": 2,
+    "query_ids": [
+      "01c818b2-0000-b511-0001-19a20119411e",
+      "01c818b2-0000-b533-0001-19a201193996"
+    ],
+    "run_id": "62fef72cf7c84dc381b07394f3b7403e",
+    "shared_trace": false,
+    "trace_id_prefix_matches_query_id": [
+      true,
+      true
+    ],
+    "trace_ids": [
+      "01c818b25c53c78f3b1049788c20c4d3",
+      "01c818b2d9e9c1a226e613c33c09b4d9"
+    ]
+  }
+}

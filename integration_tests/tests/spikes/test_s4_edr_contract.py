@@ -47,86 +47,145 @@ RELATION_RE = re.compile(
 # --- capture -----------------------------------------------------------------------------------------
 
 def edr_queries(sf, session_id: int) -> list[dict]:
-    """Every query of one session, oldest first: {query_id, query_type, query_text}."""
+    """Every query of one session, oldest first: {query_id, query_type, start_time, query_text}."""
     cur = sf.cursor()
     cur.execute(
-        "select query_id, query_type, query_text from table(information_schema.query_history_by_session("
+        "select query_id, query_type, start_time, query_text from table(information_schema.query_history_by_session("
         "session_id => %s, result_limit => 10000)) order by start_time",
         (int(session_id),),
     )
-    return [{"query_id": q, "query_type": t, "query_text": s} for q, t, s in cur.fetchall()]
+    return [{"query_id": q, "query_type": t, "start_time": st, "query_text": s} for q, t, st, s in cur.fetchall()]
 
 
-def relation_columns(sf, schema: str) -> dict[str, list[str]]:
-    """Columns of every table and view in the probe schema, lowercased, in ordinal order."""
+def relation_columns(sf, schema: str) -> dict[str, dict[str, str]]:
+    """{relation: {column: data_type}} for every table and view of the probe schema, lowercased, in column order."""
     cur = sf.cursor()
     cur.execute(
-        f"select lower(table_name), lower(column_name) from {DATABASE}.information_schema.columns "
+        f"select lower(table_name), lower(column_name), data_type from {DATABASE}.information_schema.columns "
         "where table_schema = %s order by table_name, ordinal_position",
         (schema.upper(),),
     )
-    out: dict[str, list[str]] = {}
-    for table, column in cur.fetchall():
-        out.setdefault(table, []).append(column)
+    out: dict[str, dict[str, str]] = {}
+    for table, column, data_type in cur.fetchall():
+        out.setdefault(table, {})[column] = data_type
     return out
 
 
-def _columns_sqlglot(sql: str, schema: str, known: dict[str, list[str]]) -> dict[str, set[str]] | None:
-    """Exact columns per probe relation via sqlglot's qualifier (stars expanded); None when it cannot parse."""
+def relation_kinds(sf, schema: str) -> dict[str, str]:
+    """{relation: 'BASE TABLE' | 'VIEW' | ...} in the probe schema."""
+    cur = sf.cursor()
+    cur.execute(
+        f"select lower(table_name), table_type from {DATABASE}.information_schema.tables where table_schema = %s",
+        (schema.upper(),),
+    )
+    return dict(cur.fetchall())
+
+
+def _is_probe(table) -> bool:
+    return table.db.upper().startswith(SCHEMA_PREFIX)
+
+
+def _analyze_sqlglot(sql: str, schema: str, known: dict[str, dict[str, str]]) -> dict | None:
+    """Columns each probe relation must supply, and the WHERE filters applied directly on it.
+
+    Stars are expanded from `known`, then projections nobody uses are pruned (pushdown_projections), so
+    `select * from t` inside a CTE counts only the columns the query goes on to use. None when sqlglot
+    is missing or cannot handle the query.
+    """
     try:
         import sqlglot
         from sqlglot import exp
+        from sqlglot.optimizer.pushdown_projections import pushdown_projections
         from sqlglot.optimizer.qualify import qualify
         from sqlglot.optimizer.scope import traverse_scope
     except ImportError:
         return None
-    mapping = {DATABASE.lower(): {schema.lower(): {t: {c: "VARCHAR" for c in cols} for t, cols in known.items()}}}
+    mapping = {DATABASE.lower(): {schema.lower(): {t: dict(cols) for t, cols in known.items()}}}
     try:
         tree = sqlglot.parse_one(sql, read="snowflake")
+        if isinstance(tree, exp.Create):
+            tree = tree.expression.this if isinstance(tree.expression, exp.Subquery) else tree.expression
         tree = qualify(tree, schema=mapping, dialect="snowflake", validate_qualify_columns=False,
                        quote_identifiers=False, identify=False)
-        found: dict[str, set[str]] = {}
+        tree = pushdown_projections(tree)
+        columns: dict[str, set[str]] = {}
+        filters: dict[str, set[str]] = {}
         for scope in traverse_scope(tree):
+            probe = {alias: src for alias, src in scope.sources.items() if isinstance(src, exp.Table) and _is_probe(src)}
+            for src in probe.values():
+                columns.setdefault(src.name.lower(), set())
             for column in scope.columns:
-                source = scope.sources.get(column.table)
-                if isinstance(source, exp.Table) and source.db.upper().startswith(SCHEMA_PREFIX):
-                    found.setdefault(source.name.lower(), set()).add(column.name.lower())
-            for source in scope.sources.values():
-                if isinstance(source, exp.Table) and source.db.upper().startswith(SCHEMA_PREFIX):
-                    found.setdefault(source.name.lower(), set())
-        return found
+                if column.table in probe:
+                    columns[probe[column.table].name.lower()].add(column.name.lower())
+            where = scope.expression.args.get("where") if isinstance(scope.expression, exp.Select) else None
+            if where is not None and probe:
+                text = re.sub(schema, SCHEMA_PLACEHOLDER, where.this.sql(dialect="snowflake"), flags=re.IGNORECASE)
+                text = re.sub(r"(__TMP_)[0-9]+", r"\1<ts>", text, flags=re.IGNORECASE)
+                for src in probe.values():
+                    filters.setdefault(src.name.lower(), set()).add(text)
+        return {"columns": columns, "filters": filters, "outputs": list(tree.named_selects)}
     except Exception:
         return None
 
 
-def _columns_tokens(sql: str, relations: set[str], known: dict[str, list[str]]) -> dict[str, set[str]]:
+def _columns_tokens(sql: str, relations: set[str], known: dict[str, dict[str, str]]) -> dict[str, set[str]]:
     """Fallback: a relation's known columns that appear as words in the query (an upper bound)."""
     words = {w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_$]*", sql)}
     star = re.search(r"select\s+(?:distinct\s+)?\*", sql, re.IGNORECASE) is not None
-    return {rel: set(known.get(rel, [])) if star else {c for c in known.get(rel, []) if c in words} for rel in relations}
+    return {rel: set(known.get(rel, {})) if star else {c for c in known.get(rel, {}) if c in words} for rel in relations}
 
 
-def capture_edr_contract(sf, session_id: int, known: dict[str, list[str]] | None = None) -> dict[str, list[str]]:
-    """{relation: [column, ...]} for every relation of an ELEMENTARY_PROBE_* schema that the session selected from.
+def analyze_edr_queries(queries: list[dict], known: dict[str, dict[str, str]]) -> dict:
+    """What a list of edr queries reads and writes in the probe schema.
 
-    `known` (relation -> columns in the probe schema) lets star selects be expanded and token matches be
-    checked; it is read from INFORMATION_SCHEMA when not given.
+    Returns {"contract": {relation: [column]}, "types": {relation: {column: type}},
+    "filters": {relation: [where]}, "writes": [{"query_type", "relation"}], "parse_fallbacks": int}.
+    Relations edr creates itself (its temporary tables) are writes, not part of the contract.
     """
     contract: dict[str, set[str]] = {}
-    for query in edr_queries(sf, session_id):
-        sql = query["query_text"] or ""
+    filters: dict[str, set[str]] = {}
+    writes, fallbacks = [], 0
+    visible = dict(known)  # plus edr's temporary tables, with the columns of the query that created them
+    for query in queries:
+        sql = re.sub(r"/\*.*?\*/", " ", query["query_text"] or "", flags=re.S)  # dbt and Elementary query comments
+        qtype = query["query_type"]
         hits = RELATION_RE.findall(sql)
-        if not hits or query["query_type"] not in ("SELECT", "UNKNOWN"):
+        if not hits or qtype in ("SHOW", "DESCRIBE", "DROP"):
             continue
         schema = hits[0][0]
-        known = known if known is not None else relation_columns(sf, schema)
-        relations = {table.lower() for _, table in hits}
-        columns = _columns_sqlglot(sql, schema, known)
-        if columns is None:
-            columns = _columns_tokens(sql, relations, known)
-        for relation in relations:
-            contract.setdefault(relation, set()).update(columns.get(relation, set()))
-    return {rel: sorted(cols) for rel, cols in sorted(contract.items())}
+        created = set()
+        if qtype.startswith("CREATE"):
+            created = {hits[0][1].lower()}
+            writes.append({"query_type": qtype, "relation": hits[0][1].lower()})
+        relations = {t.lower() for _, t in hits} - created
+        relations = {r for r in relations if r in known}  # edr's own temporary tables are not in the contract
+        if not relations:
+            continue
+        found = _analyze_sqlglot(sql, schema, visible)
+        if found is not None and created:
+            visible[next(iter(created))] = {c.lower(): "UNKNOWN" for c in found["outputs"]}
+        if found is None:
+            fallbacks += 1
+            found = {"columns": _columns_tokens(sql, relations, known), "filters": {}}
+        for rel in relations:
+            contract.setdefault(rel, set()).update(found["columns"].get(rel, set()))
+            filters.setdefault(rel, set()).update(found["filters"].get(rel, set()))
+    return {
+        "contract": {rel: sorted(cols) for rel, cols in sorted(contract.items())},
+        "types": {rel: {c: known[rel][c] for c in sorted(cols)} for rel, cols in sorted(contract.items())},
+        "filters": {rel: sorted(f) for rel, f in sorted(filters.items()) if f},
+        "writes": writes,
+        "parse_fallbacks": fallbacks,
+    }
+
+
+def capture_edr_contract(sf, session_id: int, known: dict[str, dict[str, str]] | None = None) -> dict[str, list[str]]:
+    """{relation: [column, ...]} for every relation of an ELEMENTARY_PROBE_* schema that the session read."""
+    queries = edr_queries(sf, session_id)
+    if known is None:
+        schemas = {m[0] for q in queries for m in RELATION_RE.findall(q["query_text"] or "")}
+        known = {k: v for schema in schemas for k, v in relation_columns(sf, schema).items()}
+    return analyze_edr_queries(queries, known)["contract"]
 
 
 def tagged_session_ids(sf, query_tag: str, since: datetime) -> list[int]:
@@ -220,20 +279,37 @@ def test_s4_capture_edr_contract(sf, run_id, probe_schema, tmp_path):
         time.sleep(10)
     assert sessions, f"no session ran with query tag {edr_tag}"
 
-    contract: dict[str, set[str]] = {}
-    for session_id in sessions:
-        for relation, columns in capture_edr_contract(sf, session_id, known).items():
-            contract.setdefault(relation, set()).update(columns)
-    contract = {rel: sorted(cols) for rel, cols in sorted(contract.items())}
+    queries.sort(key=lambda q: q["start_time"])
+    result = analyze_edr_queries(queries, known)
+    contract = result["contract"]
+    kinds = relation_kinds(sf, probe_schema)
 
     _write_queries(queries, probe_schema)
     record_finding("s4", "contract", contract)
+    record_finding("s4", "types", result["types"])
+    record_finding("s4", "filters", result["filters"])
+    record_finding("s4", "writes", result["writes"])
+    record_finding("s4", "relation_kinds", {rel: kinds.get(rel) for rel in contract})
+    described = sorted({t.lower() for q in queries if q["query_type"] == "DESCRIBE"
+                        for _, t in RELATION_RE.findall(q["query_text"] or "")})
+    record_finding("s4", "described", described)  # edr runs DESCRIBE TABLE on these before selecting
     record_finding("s4", "versions", _versions(env))
-    record_finding("s4", "edr_run", {"sessions": len(sessions), "queries": len(queries),
-                                     "probe_relations": sorted(known), "captured_at": started.isoformat()})
+    record_finding("s4", "edr_run", {
+        "sessions": len(sessions), "queries": len(queries), "parse_fallbacks": result["parse_fallbacks"],
+        "query_types": {t: sum(1 for q in queries if q["query_type"] == t) for t in sorted({q["query_type"] for q in queries})},
+        "probe_relations": sorted(known), "captured_at": started.isoformat(),
+    })
 
-    assert "dbt_invocations" in contract and "elementary_test_results" in contract
-    assert contract["dbt_invocations"] and contract["elementary_test_results"], "columns captured for both"
+    # Measured behaviour of edr report 0.26.1 (spikes/S4.md).
+    assert result["parse_fallbacks"] == 0, "every edr query parsed, so the columns are exact, not an upper bound"
+    assert {"dbt_invocations", "elementary_test_results", "dbt_run_results", "dbt_tests", "dbt_models",
+            "dbt_sources", "model_run_results"} <= set(contract)
+    assert {"invocation_id", "command"} <= set(contract["dbt_invocations"])
+    assert {"test_unique_id", "status", "detected_at"} <= set(contract["elementary_test_results"])
+    assert any("detected_at" in f.lower() for f in result["filters"]["elementary_test_results"]), "7-day window on detected_at"
+    temp_writes = [w for w in result["writes"] if w["query_type"] == "CREATE_TABLE_AS_SELECT"]
+    assert temp_writes and all(w["relation"].startswith("ordered_test_results__tmp") for w in temp_writes), \
+        "edr report creates a temporary table in the Elementary schema"
 
 
 # --- offline checks of the parser ---------------------------------------------------------------------
@@ -245,6 +321,20 @@ def test_relation_regex_finds_quoted_and_bare_names():
 
 
 def test_token_fallback_is_bounded_by_known_columns():
-    known = {"dbt_invocations": ["invocation_id", "run_started_at", "job_id"]}
+    known = {"dbt_invocations": {"invocation_id": "TEXT", "run_started_at": "TEXT", "job_id": "TEXT"}}
     cols = _columns_tokens("select invocation_id, run_started_at from x", {"dbt_invocations"}, known)
     assert cols == {"dbt_invocations": {"invocation_id", "run_started_at"}}
+
+
+def test_analyzer_skips_metadata_queries_and_records_writes():
+    known = {"dbt_invocations": {"invocation_id": "TEXT", "command": "TEXT", "job_id": "TEXT"}}
+    queries = [
+        {"query_type": "SHOW", "query_text": "show objects in ICECORE_SANDBOX.ELEMENTARY_PROBE_AB"},
+        {"query_type": "CREATE_TABLE_AS_SELECT", "query_text":
+            "create temporary table ICECORE_SANDBOX.ELEMENTARY_PROBE_AB.tmp_x as (select invocation_id "
+            "from ICECORE_SANDBOX.ELEMENTARY_PROBE_AB.dbt_invocations where command = 'build')"},
+    ]
+    result = analyze_edr_queries(queries, known)
+    assert result["writes"] == [{"query_type": "CREATE_TABLE_AS_SELECT", "relation": "tmp_x"}]
+    assert set(result["contract"]) == {"dbt_invocations"}
+    assert "invocation_id" in result["contract"]["dbt_invocations"]

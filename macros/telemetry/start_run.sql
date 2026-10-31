@@ -20,8 +20,17 @@
   {{ return({
       'kind': 'run_start',
       'message': 'dbt ' ~ flags.WHICH ~ ' started',
-      'attributes': icecore._icecore_run_attributes(),
+      'attributes': icecore._icecore_run_start_attributes(),
   }) }}
+{% endmacro %}
+
+
+{#- The run settings plus dbt's own start time (an ICECORE_EMIT span event is stamped with the CALL's time, so
+    dbt timings travel as attributes). -#}
+{% macro _icecore_run_start_attributes() %}
+  {%- set attrs = icecore._icecore_run_attributes() -%}
+  {%- do attrs.update({'dbt.invocation.started_at': icecore._icecore_iso(run_started_at)}) -%}
+  {{ return(attrs) }}
 {% endmacro %}
 
 

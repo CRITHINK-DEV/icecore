@@ -28,6 +28,7 @@
   {% do _it_result({
       'records': records, 'chunk_sizes': sizes, 'chunk_bytes': bytes,
       'sql': icecore._icecore_guarded_call_sql(icecore._icecore_procedure('ICECORE_EMIT_RUN'), chunks[0]),
+      'run_started_at_ns': icecore._icecore_epoch_ns(run_started_at),
   }) %}
 {% endmacro %}
 

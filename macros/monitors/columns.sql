@@ -44,7 +44,22 @@
 {% macro compute_column_metrics(relation, column_name, window, metrics=none) %}
   {%- if not execute or window is none -%}{{ return(none) }}{%- endif -%}
   {%- set names = icecore._icecore_column_metric_names(metrics) -%}
-  {%- if names | length == 0 -%}{{ return(none) }}{%- endif -%}
+  {%- set numeric = icecore._icecore_numeric_metric_names() -%}
+  {%- set asked_numeric = [] -%}
+  {%- set others = [] -%}
+  {%- for metric in names -%}
+    {%- do (asked_numeric if metric in numeric else others).append(metric) -%}
+  {%- endfor -%}
+  {%- if asked_numeric -%}
+    {%- set col_type = icecore._icecore_column_type(relation, column_name) -%}
+    {%- if col_type not in icecore._icecore_numeric_types() -%}
+      {% do log('icecore: warning: compute_column_metrics: ' ~ (asked_numeric | join(', ')) ~ ' skipped for column ' ~ column_name
+          ~ ' of ' ~ icecore._icecore_quoted_name(relation) ~ ': '
+          ~ ('column not found' if col_type is none else col_type ~ ' is not numeric'), info=True) %}
+      {%- set names = others -%}
+    {%- endif -%}
+  {%- endif -%}
+  {%- if names | length == 0 -%}{{ return({}) }}{%- endif -%}
   {%- set value = icecore._icecore_safe_scalar(
       icecore._icecore_column_metrics_sql(relation, column_name, window, names), 'compute_column_metrics', relation) -%}
   {%- if value is none -%}{{ return(none) }}{%- endif -%}
@@ -63,12 +78,28 @@
 {#- Metric name -> aggregate over the window rows, where `c` is the quoted column.
     row_count: rows in the window (inserted or updated row versions). It is not the metadata total of the volume
     monitor (`row_count` from get_row_count_metadata) nor the net delta (`rows_added` from get_row_count_changes).
-    null_rate: share of those rows where the column is null; null when the window is empty. -#}
+    null_rate: share of those rows where the column is null; null when the window is empty.
+    avg, min, max: over the non-null values of a numeric column, as FLOAT; null when there are none. -#}
 {% macro _icecore_column_metric_exprs(c) %}
   {{ return({
       'row_count': 'count(*)',
       'null_rate': 'count_if(' ~ c ~ ' is null)::float / nullif(count(*), 0)',
+      'avg': 'avg(' ~ c ~ ')::float',
+      'min': 'min(' ~ c ~ ')::float',
+      'max': 'max(' ~ c ~ ')::float',
   }) }}
+{% endmacro %}
+
+
+{#- Metrics that need a numeric column; requested on another type they are skipped with a warning. -#}
+{% macro _icecore_numeric_metric_names() %}
+  {{ return(['avg', 'min', 'max']) }}
+{% endmacro %}
+
+
+{#- INFORMATION_SCHEMA.COLUMNS.DATA_TYPE of numeric columns (NUMBER covers DECIMAL and INT, FLOAT covers DOUBLE and REAL). -#}
+{% macro _icecore_numeric_types() %}
+  {{ return(['NUMBER', 'FLOAT']) }}
 {% endmacro %}
 
 

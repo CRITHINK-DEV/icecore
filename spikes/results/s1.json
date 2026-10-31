@@ -570,6 +570,212 @@
       }
     }
   },
+  "routing_account_table": {
+    "note": "'ctrl temp proc e1 event' was not found by text match (tag only inside a nested attribute); it landed in the sandbox table per temp_procedure.e1_sql_event.",
+    "rows": [
+      {
+        "probe": "E1 anon 100 logs (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon 100 span events (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon SET_SPAN_ATTRIBUTES (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E1 anon in rollback (levels OFF)",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 1",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 2",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "E2 anon python (failed) 3",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "ctrl temp proc e1 event",
+        "record_type": null,
+        "rows": 0,
+        "snow.database.name": null,
+        "snow.executable.type": null,
+        "table": null
+      },
+      {
+        "probe": "ctrl temp proc e1 log",
+        "record_type": "LOG",
+        "rows": 100,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "ctrl temp proc python logs",
+        "record_type": "LOG",
+        "rows": 100,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r0 anon, USE DATABASE in session",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r0 anon, USE DATABASE in session",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r1 anon, USE DATABASE inside block",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r1 anon, USE DATABASE inside block",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "SPAN",
+        "rows": 2,
+        "snow.database.name": null,
+        "snow.executable.type": "QUERY",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r2 anon CALLing temp proc",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "SPAN",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r3 anon python proc (snowpark+otel)",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "SPAN",
+        "rows": 2,
+        "snow.database.name": null,
+        "snow.executable.type": "QUERY",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r4 temp proc direct",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": "ICECORE_SANDBOX",
+        "snow.executable.type": "PROCEDURE",
+        "table": "ICECORE_SANDBOX.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r5 anon, no current database",
+        "record_type": "LOG",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      },
+      {
+        "probe": "r5 anon, no current database",
+        "record_type": "SPAN_EVENT",
+        "rows": 1,
+        "snow.database.name": null,
+        "snow.executable.type": "STATEMENT",
+        "table": "ACCOUNT SNOWFLAKE.TELEMETRY.EVENTS"
+      }
+    ],
+    "source": "Lead, ACCOUNTADMIN, 31 Oct 2026: both tables read, matched on run_id in VALUE, RECORD or RECORD_ATTRIBUTES. ICECORE_CI cannot read SNOWFLAKE.TELEMETRY.EVENTS."
+  },
   "run_ids": {
     "anonymous.e1_sql_event": {
       "first_start": "2026-10-31 01:55:09.315000-07:00",

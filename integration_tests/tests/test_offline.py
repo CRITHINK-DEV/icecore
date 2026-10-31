@@ -4,21 +4,13 @@ import os
 import pytest
 import yaml
 
-from helpers.env import PLACEHOLDER_ENV
-from helpers.operations import IT_DIR, invoke as run_dbt
+from helpers.macros import IT_DIR, invoke as run_dbt
 
 REPO = IT_DIR.parent
 
 
-@pytest.fixture
-def placeholder_env(monkeypatch):
-    # only for this test's duration: real SNOWFLAKE_* values win, placeholders never outlive the test
-    for key, value in PLACEHOLDER_ENV.items():
-        if not os.environ.get(key):
-            monkeypatch.setenv(key, value)
-
-
-def test_dbt_parse_succeeds_without_a_connection(placeholder_env):
+def test_dbt_parse_succeeds_without_a_connection():
+    # run_dbt fills missing SNOWFLAKE_* with placeholders for each call only (helpers.env.placeholder_env)
     assert run_dbt(["deps"]).success
     assert run_dbt(["parse"]).success
 

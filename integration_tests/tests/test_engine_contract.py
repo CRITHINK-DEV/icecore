@@ -13,7 +13,7 @@ import os
 import yaml
 
 from helpers.env import PLACEHOLDER_ENV, placeholder_env
-from helpers.macros import MacroFailed, _invoke, call_macro
+from helpers.macros import MacroFailed, call_macro, invoke
 
 REPO = Path(__file__).resolve().parents[2]
 CONTRACT_FIELDS = {"engine", "expected", "lower", "upper", "score", "is_anomaly", "fallback_reason"}
@@ -118,7 +118,7 @@ def test_package_declares_the_anomaly_var_defaults():
 
 def test_a_model_calling_score_parses():
     """models/engines/probe_engine_score.sql calls icecore.score; parse renders it with execute false."""
-    assert _invoke(["parse", "--no-partial-parse"]).success
+    assert invoke(["parse", "--no-partial-parse"]).success
 
 
 def test_engine_macros_never_call_cortex_or_write():

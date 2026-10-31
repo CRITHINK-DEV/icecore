@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from helpers.operations import install_deps, run_macro
+from helpers.macros import install_deps, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES")
@@ -28,11 +28,11 @@ def col(name: str, data_type: str) -> dict:
 
 @pytest.fixture(scope="module")
 def offline_dbt():
-    install_deps(offline=True)
+    install_deps()
 
 
 def diff(previous, current):
-    return run_macro("it_diff_schema", {"previous": previous, "current": current}, offline=True)
+    return run_macro("it_diff_schema", {"previous": previous, "current": current})
 
 
 def test_diff_lists_an_added_column(offline_dbt):

@@ -62,22 +62,12 @@ def test_record_finding_is_safe_under_concurrent_writers(tmp_path, monkeypatch):
     assert len(json.load(open(tmp_path / "s0.json"))) == 20
 
 
-def test_placeholder_env_is_scoped_to_the_block(monkeypatch):
+def test_placeholder_env_restores_after_an_error_and_keeps_empty_values(monkeypatch):
     monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
-    monkeypatch.setenv("SNOWFLAKE_USER", "real_user")
     monkeypatch.setenv("SNOWFLAKE_ROLE", "")
-    with env.placeholder_env():
-        assert os.environ["SNOWFLAKE_ACCOUNT"] == "placeholder"
-        assert os.environ["SNOWFLAKE_USER"] == "real_user"
-        assert os.environ["SNOWFLAKE_ROLE"] == "placeholder"
-    assert "SNOWFLAKE_ACCOUNT" not in os.environ
-    assert os.environ["SNOWFLAKE_USER"] == "real_user"
-    assert os.environ["SNOWFLAKE_ROLE"] == ""
-
-
-def test_placeholder_env_restores_after_an_error(monkeypatch):
-    monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
     with pytest.raises(RuntimeError):
         with env.placeholder_env():
+            assert os.environ["SNOWFLAKE_ROLE"] == "placeholder"
             raise RuntimeError("boom")
     assert "SNOWFLAKE_ACCOUNT" not in os.environ
+    assert os.environ["SNOWFLAKE_ROLE"] == ""

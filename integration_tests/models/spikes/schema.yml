@@ -1,0 +1,31 @@
+version: 2
+
+# Spike S3 resources (tests/spikes/test_s3_lag_and_hooks.py). Every relation is named with var('run_id')
+# and dropped by the test. Tagged s3_spike, which the default selector leaves out (selectors.yml), so a
+# plain dbt build in another suite never touches them.
+
+models:
+  - name: s3_model
+    columns:
+      - name: id
+        data_tests:
+          - not_null:
+              config: {tags: ["s3_spike"]}
+
+seeds:
+  - name: s3_seed
+    config:
+      alias: "s3_seed_{{ var('run_id', 'none') }}"
+      tags: ["s3_spike"]
+      column_types: {id: integer, loaded_at: timestamp_ntz}
+
+sources:
+  - name: s3_spike
+    schema: "{{ target.schema }}"
+    tags: ["s3_spike"]
+    tables:
+      - name: s3_seed
+        identifier: "s3_seed_{{ var('run_id', 'none') }}"
+        loaded_at_field: loaded_at
+        freshness:
+          warn_after: {count: 1, period: day}

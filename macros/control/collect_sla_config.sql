@@ -35,13 +35,12 @@
 
 {#-
   Default grace, in minutes, when meta.sla has no `grace`.
-  Rule (spec section 10): twice the p95 ingestion lag measured by spike S3.
-  S3 has not landed yet, so this is a FIXED PLACEHOLDER of 10 minutes, deliberately generous
-  (S3's pass bar is p95 < 60 s, i.e. a 2-minute default) to avoid false silence alerts.
-  Replace it with 2 x the measured p95 when spikes/S3.md is merged.
+  Rule (spec section 10): twice the p95 ingestion lag measured by spike S3, rounded up to a whole minute.
+  spikes/S3.md: p95 7.73 s (dbt 1.8.10) and 6.12 s (dbt 1.12.6) over two 10,000-record bursts, so
+  2 x 7.73 s = 15.5 s, rounded up to 1 minute. Re-measure and change it here if S3 is re-run.
 -#}
 {% macro _sla_default_grace_minutes() %}
-  {{ return(10) }}
+  {{ return(1) }}
 {% endmacro %}
 
 

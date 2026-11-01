@@ -32,7 +32,11 @@
     {{ return(none) }}
   {%- endif -%}
   {%- if info.get('kind') in icecore._icecore_metadata_fallback_kinds() -%}
-    {% do log('icecore: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ' table: its metadata row count is not trusted (spike S5); use get_row_count_changes for rows added', info=True) %}
+    {%- if info.get('kind') == 'materialized_view' -%}
+      {% do log('icecore: ' ~ name ~ ' is a materialized_view table: its metadata row count is not trusted (it lags the data: the old total was still there 60 s after an insert) and CHANGES is not supported on materialized views, so no total is read; count the rows with a query if you need one', info=True) %}
+    {%- else -%}
+      {% do log('icecore: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ' table: its metadata row count is not trusted (spike S5); use get_row_count_changes for rows added', info=True) %}
+    {%- endif -%}
     {{ return(none) }}
   {%- endif -%}
   {{ return(info['row_count'] | int) }}

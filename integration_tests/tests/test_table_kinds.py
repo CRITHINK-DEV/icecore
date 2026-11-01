@@ -199,7 +199,10 @@ def test_flagged_kind_skips_the_metadata_total_and_keeps_the_delta(dbt, kinds, k
     switch = ["--vars", json.dumps({"icecore": {"metadata_fallback_kinds": [label]}})]
     got, logs = run_macro_with_logs("it_metadata", {"relations": [rel(ident, k["quoted"])], "since": kinds["since"]}, switch)
     assert got[ident]["row_count"] is None, got
-    assert any(f"is a {label} table" in m and "use get_row_count_changes" in m for m in logs), logs
+    advice = "CHANGES is not supported" if label == "materialized_view" else "use get_row_count_changes"
+    assert any(f"is a {label} table" in m and advice in m for m in logs), logs
+    if label == "materialized_view":
+        assert not any("use get_row_count_changes" in m for m in logs), logs  # that advice is wrong for this kind
     if kind != "materialized_view":
         assert got[ident]["rows_added"] == ADDED, got
 

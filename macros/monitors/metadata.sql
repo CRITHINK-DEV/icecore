@@ -32,7 +32,11 @@
     {{ return(none) }}
   {%- endif -%}
   {%- if info.get('kind') in icecore._icecore_metadata_fallback_kinds() -%}
-    {% do log('icecore: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ' table: its metadata row count is not trusted (spike S5); use get_row_count_changes for rows added', info=True) %}
+    {%- if info.get('kind') == 'materialized_view' -%}
+      {% do log('icecore: ' ~ name ~ ' is a materialized_view table: its metadata row count is not trusted (it lags the data: the old total was still there 60 s after an insert) and CHANGES is not supported on materialized views, so no total is read; count the rows with a query if you need one', info=True) %}
+    {%- else -%}
+      {% do log('icecore: ' ~ name ~ ' is a ' ~ info.get('kind') ~ ' table: its metadata row count is not trusted (spike S5); use get_row_count_changes for rows added', info=True) %}
+    {%- endif -%}
     {{ return(none) }}
   {%- endif -%}
   {{ return(info['row_count'] | int) }}
@@ -55,7 +59,7 @@
     (vars: icecore: metadata_fallback_kinds). A project that overrides the icecore var replaces the whole dict,
     so the same default is applied when the key is absent, until a shared config accessor merges defaults. -#}
 {% macro _icecore_metadata_fallback_kinds() %}
-  {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg'])) }}
+  {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg', 'materialized_view'])) }}
 {% endmacro %}
 
 
@@ -148,9 +152,10 @@ end;
     on the view and its base tables, covering the whole window.
     Cost (S5): only the new micro-partitions for insert-only windows; old and new versions of every rewritten
     micro-partition after DELETE / UPDATE / MERGE, about 1.9 times a full scan in S5. -#}
-{% macro _icecore_changes_source(relation, since) %}
+{% macro _icecore_changes_source(relation, since, until=none) %}
   {{ return(icecore._icecore_quoted_name(relation)
-      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))') }}
+      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))'
+      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(until) ~ '))')) }}
 {% endmacro %}
 
 

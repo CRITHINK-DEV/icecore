@@ -11,7 +11,7 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{% macro get_change_window(relation, since, timestamp_column=none) %}
+{% macro get_change_window(relation, since, timestamp_column=none, until=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set name = icecore._icecore_quoted_name(relation) -%}
   {%- if since is none -%}
@@ -24,13 +24,14 @@
       query runs. The compute macros handle that (_icecore_window_scalar) and fall back to timestamp_column then.
       A runnable probe would have to read the change data, which is the expensive part (S5). -#}
   {%- set probe = icecore._icecore_try_scalar(
-      'select count(*) from (select 1 from ' ~ icecore._icecore_changes_source(relation, since) ~ ' limit 0)') -%}
+      'select count(*) from (select 1 from ' ~ icecore._icecore_changes_source(relation, since, until) ~ ' limit 0)') -%}
   {%- if 'error' not in probe -%}
     {%- set window = {'mode': 'changes', 'since': since} -%}
+    {%- if until is not none -%}{%- do window.update({'until': until}) -%}{%- endif -%}
     {%- if timestamp_column is not none -%}{%- do window.update({'timestamp_column': timestamp_column}) -%}{%- endif -%}
     {{ return(window) }}
   {%- endif -%}
-  {{ return(icecore._icecore_timestamp_window(relation, since, timestamp_column,
+  {{ return(icecore._icecore_timestamp_window(relation, since, timestamp_column, until,
       name ~ ': CHANGES is unavailable since ' ~ since ~ ' (' ~ probe['error'] ~ ')')) }}
 {% endmacro %}
 
@@ -137,7 +138,7 @@
 
 {#- The timestamp-column window, or none with one warning saying why not. `reason` says why CHANGES is not used
     and is logged with the outcome. -#}
-{% macro _icecore_timestamp_window(relation, since, timestamp_column, reason) %}
+{% macro _icecore_timestamp_window(relation, since, timestamp_column, until, reason) %}
   {%- if timestamp_column is none -%}
     {% do log('icecore: warning: no change window for ' ~ reason ~ ' and no timestamp_column was given', info=True) %}
     {{ return(none) }}
@@ -149,7 +150,9 @@
     {{ return(none) }}
   {%- endif -%}
   {% do log('icecore: ' ~ reason ~ '; using timestamp column ' ~ timestamp_column ~ ' (' ~ ts_type ~ ')', info=True) %}
-  {{ return({'mode': 'timestamp_column', 'since': since, 'timestamp_column': timestamp_column, 'timestamp_type': ts_type}) }}
+  {%- set window = {'mode': 'timestamp_column', 'since': since, 'timestamp_column': timestamp_column, 'timestamp_type': ts_type} -%}
+  {%- if until is not none -%}{%- do window.update({'until': until}) -%}{%- endif -%}
+  {{ return(window) }}
 {% endmacro %}
 
 
@@ -188,7 +191,7 @@
   {%- set out = icecore._icecore_try_scalar(icecore._icecore_window_query(what, relation, column, window, extra)) -%}
   {%- if 'error' in out and window['mode'] == 'changes' and window.get('timestamp_column') is not none
         and out.get('code') in icecore._icecore_changes_window_error_codes() -%}
-    {%- set ts_window = icecore._icecore_timestamp_window(relation, window['since'], window['timestamp_column'],
+    {%- set ts_window = icecore._icecore_timestamp_window(relation, window['since'], window['timestamp_column'], window.get('until'),
         icecore._icecore_quoted_name(relation) ~ ': the CHANGES query failed (' ~ out['error'] ~ ')') -%}
     {%- if ts_window is not none -%}
       {%- do window.update(ts_window) -%}
@@ -214,17 +217,18 @@
   {%- set select_list = refs | join(', ') -%}
   {%- set since = icecore._icecore_sql_literal(window['since']) -%}
   {%- if window['mode'] == 'changes' -%}
-    {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'])
+    {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'], window.get('until'))
         ~ " where metadata$action = 'INSERT'") }}
   {%- endif -%}
   {%- set ts = icecore._icecore_column_ref(window['timestamp_column']) -%}
   {%- set ts_type = window['timestamp_type'] -%}
+  {%- set stop = icecore._icecore_sql_literal(window['until']) if window.get('until') is not none else none -%}
   {%- if ts_type == 'DATE' -%}
-    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')::date') -%}
   {%- elif ts_type == 'TIMESTAMP_NTZ' -%}
-    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')') -%}
   {%- else -%}
-    {%- set predicate = ts ~ ' >= to_timestamp_tz(' ~ since ~ ')' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_tz(' ~ since ~ ')' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_tz(' ~ stop ~ ')') -%}
   {%- endif -%}
   {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_quoted_name(relation) ~ ' where ' ~ predicate) }}
 {% endmacro %}

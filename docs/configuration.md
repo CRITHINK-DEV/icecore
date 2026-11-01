@@ -68,15 +68,24 @@ The tests do not score anomalies yet. These keys are read today by the scoring m
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why. | Cost: none today. |
+| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why at debug level only: run dbt with `--debug` to see it. | Cost: none today. |
 | `anomaly_sensitivity` | `medium` | string | `low`, `medium` or `high`. Sets the band width to 4, 3 or 2 median absolute deviations. | None. |
 | `anomaly_min_consecutive` | `1` | integer | How many points in a row must be outside the band. At least 1. | None. |
 | `anomaly_mad_floor_pct` | `0.01` | number | Smallest band half-width as a share of the expected value. | None. |
 | `anomaly_mad_floor_abs` | `0` | number | Smallest band half-width as an absolute value. | None. |
 | `shadow_engine` | `none` | string | Recorded on each run's start and end records. Shadow scoring is **coming**. | None. |
 | `history_delay_minutes` | `1` | number | Metric history leaves out the newest minutes, because of ingestion lag. Spike S3 measured a p95 lag of about 8 s and a worst case of 20 s. | None. |
-| `metadata_fallback_kinds` | `[iceberg]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
+| `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |
+
+### Root cause
+
+Off by default. When `root_cause` is true, `end_run` explains each failed test of the run: it walks the dbt graph upstream and writes `dbt.root_cause.unique_id`, `dbt.root_cause.kind` (`upstream_failure`, `schema_change` or `stale_source`) and `dbt.root_cause.distance` on that test's result record. Signals: this run's failed nodes, `SCHEMA_CHANGES` and `METRICS` rows recorded in the lookback (they must have been recorded before the run: ingestion lag), and any `icecore.freshness` test that failed or warned in this run. The views must exist (`icecore.setup`); an unreadable view logs one warning and its signal stays empty.
+
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `root_cause` | `false` | boolean | Turn the explanation on. | Two small queries on the views at the end of a run with a failed test; no row of its own while `node_results` is on. |
+| `root_cause_lookback_hours` | `24` | integer | How far back schema changes and metric anomalies count as signals. | None. |
 
 ### Declared, not read yet
 
@@ -86,7 +95,6 @@ These keys are in the package's `dbt_project.yml`, but no merged macro reads the
 | --- | --- | --- |
 | `monitors` | `true` | **coming** |
 | `cost` | `false` | **coming** |
-| `root_cause` | `false` | **coming** |
 | `alerts` | `false` | **coming** |
 
 The `meta.sla` and `meta.alerts` model settings, the alerts and the app are **coming** too.
@@ -133,11 +141,11 @@ Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 prin
 The role that runs `setup` needs:
 
 - USAGE on the target database;
-- CREATE SCHEMA on it, or an existing schema it can use;
+- CREATE SCHEMA on it, or ownership of the schema;
 - CREATE PROCEDURE and CREATE VIEW on the schema;
 - read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table).
 
-`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It never runs `ALTER ACCOUNT`.
+`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
 
 ### `icecore.doctor`
 
@@ -151,7 +159,7 @@ dbt run-operation icecore.doctor --args '{schema: ICECORE_OBS}'
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var | string | Schema to check. |
 
-It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause.
+It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, or with `<n> records ..., but <problems>` when records exist and a check failed or the count could not be read.
 
 ### `icecore.estimate_telemetry_cost`
 
@@ -187,7 +195,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | `LINEAGE_LATEST` | view | The edges of each project's latest invocation that wrote lineage. |
 | `CAPABILITIES` | view | The latest detection of edition, event table, levels and Cortex, per database. |
 
-The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. Readers need SELECT on the views.
+The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. The role that runs dbt also needs SELECT on the views. Readers need USAGE on the database and schema, SELECT on the views, and the `EVENTS_VIEWER` application role when the views read the account table.
 
 Which view fills from which record today: `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness` and `icecore.volume` tests. `SCHEMA_CHANGES` stays empty until the test that writes it is merged.
 
@@ -222,17 +230,17 @@ Reads the relation's total row count from `INFORMATION_SCHEMA.TABLES`, writes it
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
-| `min_rows` | none | integer | Smallest accepted row count. |
-| `max_rows` | none | integer | Largest accepted row count. |
+| `min_rows` | none | number | Smallest accepted row count. |
+| `max_rows` | none | number | Largest accepted row count. |
 
-Each must be a non-negative number. `min_rows` above `max_rows` is a compile error. With neither, the test records the metric and always passes.
+Each accepts any non-negative number, not only integers. `min_rows` above `max_rows` is a compile error. With neither, the test records the metric and always passes.
 
 ### When a metric cannot be read
 
 Sometimes the test has nothing to measure:
 
 - `freshness`: the relation was never written, or its last change time is not readable.
-- `volume`: the relation is a view, an external table or an Iceberg table, or its row count is missing or not readable. (The `metadata_fallback_kinds` var sets which kinds are not trusted.)
+- `volume`: the relation is a view, an external table, an Iceberg table or a materialized view, or its row count is missing or not readable. (The `metadata_fallback_kinds` var sets which kinds are not trusted: by default Iceberg, which is unmeasured, and materialized views, whose metadata total lags the data. A volume test with `min_rows` or `max_rows` on a materialized view therefore fails as `unmeasured` instead of judging a stale count; without a threshold it passes and writes no metric.)
 
 In that case no metric is written, and the test logs a warning. What happens next depends on the threshold:
 

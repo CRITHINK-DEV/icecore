@@ -1,0 +1,17 @@
+{
+  "external": {
+    "created": false,
+    "error": "091080 (55000): Cannot use internal stage UC2_KIND_STG_DF3927B04FDE47CA9E0E2D7FCD92BC42 as the location for an external table.",
+    "readers": "a table that does not exist reads as none with a warning (test_relation_in_a_missing_database_or_schema)",
+    "unmeasured": "ROW_COUNT / last change of a real external table; the reader maps table_type EXTERNAL TABLE to 'external' and returns none with the views-and-external-tables message when ROW_COUNT is null"
+  },
+  "iceberg": {
+    "ICECORE_EXTERNAL_VOLUME_set": false,
+    "external_volumes_visible_to_role": [],
+    "unmeasured": "S5 left Iceberg unmeasured and still is; the default fallback kind (metadata_fallback_kinds: [iceberg]) is proved by naming other kinds as fallback kinds (test_flagged_kind_skips_the_metadata_total_and_keeps_the_delta)"
+  },
+  "materialized_view_row_count": {
+    "metadata_row_count_60s_after_insert": 30,
+    "true_count": 55
+  }
+}

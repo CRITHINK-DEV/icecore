@@ -3,8 +3,8 @@ version: 2
 macros:
   - name: create_silence_task
     description: >
-      Creates the Snowflake task `ICECORE_SILENCE` in the obs schema, the `create_tasks` step of `setup`. Its body is
-      `render_silence_task_sql` over the entries of `collect_sla_config`; with no `meta.sla` nothing is created and a
+      Creates the procedure `ICECORE_SILENCE_CHECK` (static code) and the Snowflake task `ICECORE_SILENCE` in the obs schema, the
+      `create_tasks` step of `setup`. The task body is `render_silence_task_sql` over the entries of `collect_sla_config`; with no `meta.sla` nothing is created and a
       line says so. `CREATE OR REPLACE TASK` (a task has no COPY GRANTS, so a re-run resets its grants and leaves it
       suspended). The task is created suspended, so creating it never starts spending credits without consent; set
       the var `icecore.silence_task_resume` to true to resume it. Resuming, and `EXECUTE TASK`, need the EXECUTE

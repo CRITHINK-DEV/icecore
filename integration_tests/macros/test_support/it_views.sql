@@ -37,8 +37,12 @@
   {% do log('icecore_it_result:' ~ tojson(icecore.render_silence_task_sql(entries, schema, source)), info=True) %}
 {% endmacro %}
 
-{% macro it_silence_task_ddl(schema=none, warehouse='WH', schedule='5 MINUTE') %}
-  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_silence_task_ddl(icecore._icecore_procedure('ICECORE_SILENCE', schema), 'select 1', warehouse, schedule)), info=True) %}
+{% macro it_silence_task_ddl(body, schema=none, warehouse='WH', schedule='5 MINUTE') %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_silence_task_ddl(icecore._icecore_procedure('ICECORE_SILENCE', schema), body, warehouse, schedule)), info=True) %}
+{% endmacro %}
+
+{% macro it_silence_procedure_ddl(schema=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_silence_procedure_ddl(schema)), info=True) %}
 {% endmacro %}
 
 {% macro it_create_silence_task(schema=none, entries=none, source=none, resume=none) %}

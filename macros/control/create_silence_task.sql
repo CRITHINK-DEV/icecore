@@ -1,9 +1,12 @@
 {#- UC6 create_silence_task: creates the Snowflake task ICECORE_SILENCE in the obs schema (setup step `create_tasks`).
 
-    The task body is render_silence_task_sql(sla entries). Entries come from collect_sla_config() (the dbt graph) or
-    the `entries` argument. Without any meta.sla nothing is created and a line says so.
+    Creates the static procedure ICECORE_SILENCE_CHECK and the task, whose body is render_silence_task_sql(sla entries): a
+    CALL carrying the SLA as one JSON literal (no SLA value is ever part of executed code). Entries come from
+    collect_sla_config() (the dbt graph) or the `entries` argument. Without any meta.sla nothing is created and a line
+    says so.
 
-    CREATE OR REPLACE TASK (a task has no COPY GRANTS: a re-run resets the task's grants and leaves it suspended).
+    CREATE OR REPLACE TASK (a task has no COPY GRANTS: a re-run resets the task's grants). A task that was resumed
+    before the re-run is resumed again and a line says so: setup never silently suspends it.
     The task is created SUSPENDED, so creating it never starts spending credits without consent; var
     icecore.silence_task_resume: true resumes it. Resuming and EXECUTE TASK need the EXECUTE TASK privilege on the
     account: when the resume fails, the grant is printed for an admin (and when the role cannot create the task,
@@ -34,16 +37,27 @@
   {%- set schedule = schedule or cfg.get('silence_task_schedule', '5 MINUTE') -%}
   {%- set resume = cfg.get('silence_task_resume', false) if resume is none else resume -%}
   {%- set task = icecore._icecore_procedure('ICECORE_SILENCE', schema) -%}
-  {%- set body = icecore.render_silence_task_sql(scheduled, schema, source) -%}
-  {%- set ddl = icecore._icecore_silence_task_ddl(task, body, warehouse, schedule) -%}
-  {%- set status = icecore._icecore_guarded_ddl(ddl) -%}
+  {#- the state of a task created earlier: a re-run keeps it (CREATE OR REPLACE would leave it suspended) -#}
+  {%- set before = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- set was_started = (before | length) > 0 and (before[0]['state'] | string | lower) == 'started' -%}
+  {#- the procedure first: static code, no SLA value. The task body is a CALL carrying the SLA as one JSON literal. -#}
+  {%- set made = icecore._icecore_guarded_ddl(icecore._icecore_silence_procedure_ddl(schema)) -%}
+  {%- set status = made -%}
+  {%- if made == 'ok' -%}
+    {%- set body = icecore.render_silence_task_sql(scheduled, schema, source) -%}
+    {%- set status = icecore._icecore_guarded_ddl(icecore._icecore_silence_task_ddl(task, body, warehouse, schedule)) -%}
+  {%- endif -%}
   {%- do out.update({'task': task, 'status': status}) -%}
   {%- if status != 'ok' -%}
-    {%- do out['printed'].append('GRANT CREATE TASK ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
+    {%- do out['printed'].append('GRANT CREATE TASK, CREATE PROCEDURE ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
     {%- do log('icecore: warning: could not create ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][-1], info=True) -%}
     {{ return(out) }}
   {%- endif -%}
-  {%- if resume is sameas true or (resume | string | lower) == 'true' -%}
+  {%- set want_resume = resume is sameas true or (resume | string | lower) == 'true' -%}
+  {%- if was_started and not want_resume -%}
+    {%- do log('icecore: ' ~ task ~ ' was resumed before this run: keeping it resumed (it was recreated; set silence_task_resume to make this explicit)', info=True) -%}
+  {%- endif -%}
+  {%- if want_resume or was_started -%}
     {%- set resumed = icecore._icecore_guarded_ddl('ALTER TASK ' ~ task ~ ' RESUME') -%}
     {%- if resumed == 'ok' -%}
       {%- do out.update({'resumed': true}) -%}
@@ -64,5 +78,5 @@
       ~ ('\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '')
       ~ '\n  SCHEDULE = ' ~ icecore._icecore_sql_literal(schedule)
       ~ "\n  COMMENT = 'icecore: detects runs that did not happen (meta.sla)'"
-      ~ '\nAS\nEXECUTE IMMEDIATE $$\n' ~ body ~ '\n$$') }}
+      ~ '\nAS\n' ~ body) }}
 {% endmacro %}

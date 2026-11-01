@@ -3,19 +3,19 @@ version: 2
 macros:
   - name: render_silence_task_sql
     description: >
-      Renders the body of the silence task: one Snowflake Scripting block, run as `EXECUTE IMMEDIATE $$ ... $$`,
-      that finds the runs that never happened. The SLA entries of `collect_sla_config` are embedded as a VALUES list,
-      so change `meta.sla` and run setup again to refresh the task. For each entry with `meta.sla` it takes the
-      latest `recorded_at` of the node's successful rows (status success or pass) in `node_executions`, adds
-      `expected_every`, and flags the node when Snowflake's now is later than that plus the grace (the default grace
-      is 1 minute, from spike S3). `recorded_at` is the TIMESTAMP of the node's result record, so the comparison
-      stays on Snowflake's clock. A node with no successful row yet gets no verdict. A verdict is a span event
-      `icecore.silence`, written by a CALL of `ICECORE_EMIT` from the task body, never an INSERT, with
-      `dbt.node.unique_id`, `icecore.silence.expected_at`, `last_success_at`, `expected_every_minutes`,
-      `grace_minutes`, `channel` and `severity` at level warn. A node already in `silence_events` with the same
-      `expected_at` gets none, so a task that runs every few minutes does not repeat a verdict once the first one is
-      readable. At most 100 verdicts per run; an error returns `icecore-error` instead of failing the task. Raises a
-      compiler error when no entry has `meta.sla`.
+      Renders the body of the silence task: one CALL of the procedure `ICECORE_SILENCE_CHECK`, with the SLA entries of
+      `collect_sla_config` as ONE JSON literal, `PARSE_JSON('...')`, and the names of the relations it reads and of the emitter
+      it calls as further literals. No SLA value is part of executed code: the procedure is static, reads the names with
+      IDENTIFIER, and a `$$`, a quote, a backslash, a semicolon or a newline in a unique_id or a channel stays data
+      inside the escaped literal. The SLA is embedded when setup runs, so change `meta.sla` and run setup again to refresh the
+      task. For each entry with `meta.sla` the procedure takes the latest `recorded_at` of the node's successful rows (status
+      success or pass) in `node_executions`, adds `expected_every`, and flags the node when Snowflake's now is later than
+      that plus the grace (the default grace is 1 minute, from spike S3). `recorded_at` is the TIMESTAMP of the node's result
+      record, so the comparison stays on Snowflake's clock. A node with no successful row yet gets no verdict. A verdict is a
+      span event `icecore.silence`, written by a CALL of `ICECORE_EMIT`, never an INSERT, with `dbt.node.unique_id`,
+      `icecore.silence.expected_at`, `last_success_at`, `expected_every_minutes`, `grace_minutes`, `channel` and
+      `severity` at level warn. A node already in `silence_events` with the same `expected_at` gets none. At most 100
+      verdicts per run. A failure raises, so the task history shows it. Raises a compiler error when no entry has `meta.sla`.
     arguments:
       - name: entries
         type: list[dict]

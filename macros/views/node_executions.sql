@@ -12,7 +12,8 @@
     Times: started_at and completed_at are dbt's clock, the dbt host's (dbt.node.* attributes). The TIMESTAMP of
     the records is Snowflake's clock (the CALL's time). The two are never subtracted from each other.
 
-    recorded_at is the TIMESTAMP of the node's result record: Snowflake's clock, the time of the CALL. The silence
+    recorded_at is the TIMESTAMP of the node's result record: Snowflake's clock, the time of the CALL (null for a node that
+    has a span and no result: the span's TIMESTAMP is dbt's clock and is not used). The silence
     task compares it with Snowflake's now, which keeps that comparison on one clock.
 
     credits (dbt.cost.credits) and root_cause_unique_id (dbt.root_cause.unique_id) are read from the node-result LOG
@@ -72,7 +73,7 @@ select
     node_queries.query_ids as query_ids,
     node_result.cost_credits as credits,
     node_result.root_cause_unique_id as root_cause_unique_id,
-    coalesce(node_result.event_at, node_span.event_at) as recorded_at
+    node_result.event_at as recorded_at
 from keys
 left join node_span on node_span.invocation_id = keys.invocation_id and node_span.node_unique_id = keys.node_unique_id
 left join node_result on node_result.invocation_id = keys.invocation_id and node_result.node_unique_id = keys.node_unique_id

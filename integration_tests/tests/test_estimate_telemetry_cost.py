@@ -48,7 +48,7 @@ def test_100_nodes_24_runs_prints_a_monthly_record_count_and_a_credit_range():
     # CALL = 309 rows
     assert out["records_per_run"] == {"start": 1, "invocation_span": 1, "end": 1, "node_spans": 100,
                                       "node_results": 100, "query_events": 100, "lineage": 1, "samples": 0,
-                                      "cost": 0, "call_overhead": 5}
+                                      "root_cause": 0, "cost": 0, "call_overhead": 5}
     assert out["rows_per_run"] == 309
     assert out["rows_per_month"] == 309 * 24 * 30 == 222_480
     low, high = out["credits_per_month"]

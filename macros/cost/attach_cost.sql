@@ -41,7 +41,7 @@
     {%- set points = [] -%}
     {%- for unique_id, cost in costs.items() -%}
       {%- if not cost.get('settled') -%}
-        {%- do points.append({'key': icecore._icecore_cost_key(nodes[unique_id]), 'credits': cost['credits']}) -%}
+        {%- do points.append({'id': unique_id, 'key': icecore._icecore_cost_key(nodes[unique_id]), 'credits': cost['credits']}) -%}
       {%- endif -%}
     {%- endfor -%}
     {%- set anomalies = icecore._icecore_score_costs(points, batch) -%}
@@ -49,7 +49,7 @@
     {%- for unique_id, cost in costs.items() -%}
       {%- do batch['items'].append(icecore._icecore_cost_log(nodes[unique_id], cost)) -%}
       {%- do events.extend(icecore._icecore_cost_metric_events(nodes[unique_id], cost,
-          anomalies.get(icecore._icecore_cost_key(nodes[unique_id])))) -%}
+          anomalies.get(unique_id))) -%}
     {%- endfor -%}
     {%- if events -%}
       {%- do icecore.emit_events(events) -%}
@@ -84,6 +84,7 @@
   {%- set days = lookback_days or icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7 -%}
   {%- set literals = [] -%}
   {%- for query_id in query_ids -%}
+    {#- TODO(#75): once icecore._sql lands on develop, use icecore._sql(value, 'string') for this record-value literal. -#}
     {%- do literals.append(icecore._icecore_sql_literal(query_id)) -%}
   {%- endfor -%}
   {{ return("select array_agg(object_construct('query_id', query_id, 'warehouse', warehouse_name, "
@@ -251,19 +252,13 @@
   {%- set found = decided['found'] -%}
   {%- set costs = decided['costs'] -%}
   {%- set now_ns = (batch.get('timing') or {}).get('completed_ns') or icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
-  {%- set points = [] -%}
-  {%- for node in pending -%}
-    {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
-    {%- if cost is not none and not cost.get('settled') -%}
-      {%- do points.append({'key': icecore._icecore_cost_key({'dbt.node.relation': node.get('relation'), 'dbt.node.unique_id': node['unique_id']}), 'credits': cost['credits']}) -%}
-    {%- endif -%}
-  {%- endfor -%}
+  {%- set points = icecore._icecore_backfill_points(pending, costs) -%}
   {%- set anomalies = icecore._icecore_score_costs(points, batch) -%}
   {%- for node in pending -%}
     {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
     {%- if cost is not none -%}
-      {%- do batch['items'].extend(icecore._icecore_backfill_items(node, cost, invocation_id, now_ns, anomalies.get(
-          icecore._icecore_cost_key({'dbt.node.relation': node.get('relation'), 'dbt.node.unique_id': node['unique_id']})))) -%}
+      {%- do batch['items'].extend(icecore._icecore_backfill_items(node, cost, invocation_id, now_ns,
+          anomalies.get(node['invocation_id'] ~ '|' ~ node['unique_id']))) -%}
     {%- endif -%}
   {%- endfor -%}
   {%- if found['error'] -%}
@@ -272,6 +267,24 @@
   {%- if costs -%}
     {%- do log('icecore: cost backfill: ' ~ (costs | length) ~ ' of ' ~ (pending | length) ~ ' earlier nodes got their cost', info=True) -%}
   {%- endif -%}
+{% endmacro %}
+
+
+{#- The points to score for the backfilled nodes: one per (invocation, node) with a real (unsettled) cost. `id` is
+    `invocation_id|unique_id`, so a node costed by several invocations keeps one result per invocation; `key` is the
+    node's series (its relation), shared by those points. -#}
+{% macro _icecore_backfill_points(pending, costs) %}
+  {%- set points = [] -%}
+  {%- for node in pending -%}
+    {%- set id = node['invocation_id'] ~ '|' ~ node['unique_id'] -%}
+    {%- set cost = costs.get(id) -%}
+    {%- if cost is not none and not cost.get('settled') -%}
+      {%- do points.append({'id': id,
+                            'key': icecore._icecore_cost_key({'dbt.node.relation': node.get('relation'), 'dbt.node.unique_id': node['unique_id']}),
+                            'credits': cost['credits']}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(points) }}
 {% endmacro %}
 
 
@@ -359,6 +372,7 @@ window_events as (
   select * from events
   where event_at >= dateadd(day, -{{ days | int }}, current_timestamp())
     and node_unique_id is not null and invocation_id is not null
+    {#- TODO(#75): icecore._sql(current_invocation_id, 'string') once icecore._sql is on develop. #}
     and invocation_id <> {{ icecore._icecore_sql_literal(current_invocation_id) }}
 ),
 costed as (
@@ -396,21 +410,37 @@ from pending
 {% endmacro %}
 
 
-{#- {key: anomaly result} for points [{key, credits}] (the run's costed nodes, in order; backfill after the run's own
-    nodes), each scored with icecore.score against the node's earlier `credits` points before its own is written, so
-    a point never scores against itself. One query reads the number of history points of every key (the metrics
-    view of the obs schema, the window and the lag delay of get_metric_history), and score runs only for the keys
-    with at least 7 points, so a run with no history costs one query, not two per node. At most var
-    cost_score_max_nodes (default 50) nodes are scored per run, newest first (the budget is shared by the run's own
-    nodes and the backfill, kept in batch['cost_score_left']); the rest are written unscored with a warning. Nothing
-    is scored with var cost_score false, or when the history cannot be read (a warning). A regression is a rise: a
-    drop in credits scores as an anomaly too, as for any metric. -#}
-{% macro _icecore_score_costs(points, batch) %}
+{#- {id: anomaly result} for points [{id, key, credits}] (the run's costed nodes, in order; backfill after the run's own
+    nodes). `key` is the series (the node's relation, or its unique id): the history is read by key. `id` names the
+    point (default: the key): the result is returned by id, so the same node costed by several invocations in a
+    backfill (same key, different ids `invocation_id|unique_id`) keeps one result, and one anomaly event, per point.
+    Each point is scored against the node's earlier `credits` points before its own is written, so a point never
+    scores against itself. One query reads the number of history points of every key (the metrics view of the obs
+    schema, the window and the lag delay of get_metric_history), and a point is scored only with at least 7 points
+    for its key, so a run with no history costs one query, not two per node. At most var cost_score_max_nodes
+    (default 50, a negative value counts as 0) points are scored per run, newest first (the budget is shared by the
+    run's own nodes and the backfill, kept in batch['cost_score_left']); the rest are written unscored with a
+    warning. Nothing is scored with var cost_score false.
+    on-run-end must never fail the user's run, so scoring is guarded end to end: invalid anomaly settings
+    (_icecore_anomaly_settings_error) skip scoring with one warning per run (icecore.score would raise on them), and
+    the history reads and the native scoring query both run through _icecore_try_scalar (not icecore.score, whose
+    native__score runs its query unguarded): an error skips that point with one warning per run. The engine is native:
+    the Cortex engine is not available yet, so score would fall back to it as well. A regression is a rise: a drop in
+    credits scores as an anomaly too, as for any metric. `runner` and `cfg` (tests only) replace _icecore_try_scalar and var('icecore') in the settings check. -#}
+{% macro _icecore_score_costs(points, batch, runner=none, cfg=none) %}
   {%- set out = {} -%}
   {%- if not execute or not points or not icecore._icecore_flag('cost_score', true) -%}{{ return(out) }}{%- endif -%}
+  {%- set problem = icecore._icecore_anomaly_settings_error(cfg) -%}
+  {%- if problem -%}
+    {%- if not batch.get('cost_score_warned') -%}
+      {%- do batch.update({'cost_score_warned': true}) -%}
+      {%- do log('icecore: warning: cost scoring skipped, ' ~ problem, info=True) -%}
+    {%- endif -%}
+    {{ return(out) }}
+  {%- endif -%}
   {%- set budget = batch.get('cost_score_left') -%}
   {%- if budget is none -%}
-    {%- set budget = (icecore._icecore_number(icecore._icecore_setting('cost_score_max_nodes', 50)) or 0) | int -%}
+    {%- set budget = [(icecore._icecore_number(icecore._icecore_setting('cost_score_max_nodes', 50)) or 0) | int, 0] | max -%}
   {%- endif -%}
   {%- set candidates = (points | reverse | list)[:budget] -%}
   {%- do batch.update({'cost_score_left': budget - (candidates | length)}) -%}
@@ -419,23 +449,82 @@ from pending
   {%- endif -%}
   {%- if not candidates -%}{{ return(out) }}{%- endif -%}
   {%- set keys = [] -%}
-  {%- for point in candidates -%}{%- do keys.append(point['key']) -%}{%- endfor -%}
-  {%- set counts = icecore._icecore_credit_history_points(keys) -%}
+  {%- for point in candidates -%}
+    {%- if point['key'] not in keys -%}{%- do keys.append(point['key']) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- set counts = icecore._icecore_credit_history_points(keys, runner) -%}
   {%- set delay = icecore._icecore_history_delay(none) -%}
+  {%- set settings = icecore._anomaly_settings(none, none, none) -%}
+  {%- set failed = [] -%}
   {%- for point in candidates -%}
     {%- if counts.get(point['key'], 0) >= 7 -%}
-      {%- do out.update({point['key']: icecore.score(icecore.get_metric_history_sql(point['key'], 'credits', none, none, 30, delay), point['credits'])}) -%}
+      {%- set scored = icecore._icecore_score_guarded(icecore.get_metric_history_sql(point['key'], 'credits', none, none, 30, delay),
+                                                      point['credits'], settings, runner) -%}
+      {%- if 'error' in scored -%}
+        {%- do failed.append(scored['error']) -%}
+      {%- else -%}
+        {%- do out.update({point.get('id', point['key']): scored}) -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- if failed -%}
+    {%- do log('icecore: warning: cost scoring failed for ' ~ (failed | length) ~ ' of ' ~ (candidates | length) ~ ' nodes (' ~ failed[0] ~ '); they are written unscored', info=True) -%}
+  {%- endif -%}
   {{ return(out) }}
+{% endmacro %}
+
+
+{#- Text naming the first invalid anomaly setting, or none when icecore.score would accept them. Mirrors the checks of
+    _anomaly_settings and the numeric floors of native__score_sql, without raising (`cfg`, tests only, replaces var('icecore')). -#}
+{% macro _icecore_anomaly_settings_error(cfg=none) %}
+  {%- set cfg = var('icecore', {}) if cfg is none else cfg -%}
+  {%- set engine = cfg.get('anomaly_engine', 'auto') -%}
+  {%- set sensitivity = cfg.get('anomaly_sensitivity', 'medium') -%}
+  {%- set min_consecutive = cfg.get('anomaly_min_consecutive', 1) -%}
+  {%- if engine is not string or engine not in ['native', 'cortex', 'auto'] -%}
+    {{ return("anomaly_engine must be native, cortex or auto") }}
+  {%- endif -%}
+  {%- if sensitivity is not string or sensitivity not in ['low', 'medium', 'high'] -%}
+    {{ return("anomaly_sensitivity must be low, medium or high") }}
+  {%- endif -%}
+  {%- if min_consecutive is not integer or min_consecutive is sameas true or min_consecutive is sameas false or min_consecutive < 1 -%}
+    {{ return("anomaly_min_consecutive must be an integer of at least 1") }}
+  {%- endif -%}
+  {%- for name, default in [('anomaly_mad_floor_pct', 0.01), ('anomaly_mad_floor_abs', 0)] -%}
+    {%- set value = cfg.get(name, default) -%}
+    {%- if value is not none and (value is not number or value is sameas true or value is sameas false) -%}
+      {{ return(name ~ " must be a number") }}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(none) }}
+{% endmacro %}
+
+
+{#- One point scored by the native engine with the query run through _icecore_try_scalar (or `runner`): the contract of
+    icecore.score (engine, expected, lower, upper, score, is_anomaly, fallback_reason, plus baseline and history
+    sizes), or {'error': text} when the query failed. -#}
+{% macro _icecore_score_guarded(series_sql, current_value, settings, runner=none) %}
+  {%- set sql = 'select object_construct(*) from (' ~ icecore.native__score_sql(series_sql, current_value, settings['sensitivity'], settings['min_consecutive']) ~ ')' -%}
+  {%- set res = runner(sql) if runner else icecore._icecore_try_scalar(sql) -%}
+  {%- if 'error' in res -%}{{ return({'error': res['error']}) }}{%- endif -%}
+  {%- set row = {} -%}
+  {%- for name, value in (res.get('value') or {}).items() -%}{%- do row.update({name | lower: value}) -%}{%- endfor -%}
+  {%- if not row -%}{{ return({'error': 'the scoring query returned no row'}) }}{%- endif -%}
+  {%- set result = {'engine': 'native', 'fallback_reason': none, 'is_anomaly': row.get('is_anomaly') == true,
+                    'baseline': row.get('baseline'), 'history_points': row.get('history_points') | int,
+                    'history_days': row.get('history_days') | int} -%}
+  {%- for name in ['expected', 'lower', 'upper', 'score'] -%}
+    {%- do result.update({name: none if row.get(name) is none else row[name] | float}) -%}
+  {%- endfor -%}
+  {{ return(result) }}
 {% endmacro %}
 
 
 {#- {key: number of points} of the `credits` series of each key, in one query over the metrics view with
     get_metric_history's window (30 days, minus the history delay). {} with a warning when it cannot be read. -#}
-{% macro _icecore_credit_history_points(keys) %}
+{% macro _icecore_credit_history_points(keys, runner=none) %}
   {%- set sql = icecore._icecore_credit_history_points_sql(keys, icecore._icecore_history_delay(none)) -%}
-  {%- set out = icecore._icecore_try_scalar(sql) -%}
+  {%- set out = runner(sql) if runner else icecore._icecore_try_scalar(sql) -%}
   {%- if 'error' in out -%}
     {%- do log('icecore: warning: cost scoring could not read the credits history (' ~ out['error'] ~ '); no cost is scored this run', info=True) -%}
     {{ return({}) }}
@@ -447,6 +536,7 @@ from pending
 {% macro _icecore_credit_history_points_sql(keys, delay_minutes) %}
   {%- set now = "convert_timezone('UTC', current_timestamp())::timestamp_ntz" -%}
   {%- set literals = [] -%}
+  {#- TODO(#75): once icecore._sql lands on develop, use icecore._sql(value, 'string') for this record-value literal. -#}
   {%- for key in keys -%}{%- do literals.append(icecore._icecore_sql_literal(key)) -%}{%- endfor -%}
   {{ return("select object_agg(relation, n) from (select relation, count(*) as n from " ~ icecore._icecore_procedure('METRICS')
       ~ " where metric = 'credits' and \"COLUMN\" is not distinct from null and dimension is not distinct from null"

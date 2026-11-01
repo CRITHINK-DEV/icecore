@@ -85,3 +85,30 @@
   {% set batch = {'items': []} %}
   {% do _it_result({'scored': icecore._icecore_score_costs(points, batch), 'left': batch.get('cost_score_left')}) %}
 {% endmacro %}
+
+{#- Offline stand-in for the history count and the native scoring query of _icecore_score_costs: every key has 10 points; a
+    statement that names a key containing FAIL fails; any other scores 5.0 outside the band. -#}
+{% macro _it_score_runner(sql) %}
+  {%- if sql.startswith('select object_agg') -%}
+    {%- set counts = {} -%}
+    {%- for key in modules.re.findall("'([^']*)'", sql.split('relation in (')[1]) -%}{%- do counts.update({key: 10}) -%}{%- endfor -%}
+    {{ return({'value': counts}) }}
+  {%- endif -%}
+  {%- if 'FAIL' in sql -%}{{ return({'error': 'forced scoring failure'}) }}{%- endif -%}
+  {{ return({'value': {'ENGINE': 'native', 'EXPECTED': 1.0, 'LOWER': 0.9, 'UPPER': 1.1, 'SCORE': 5.0, 'IS_ANOMALY': true,
+                       'BASELINE': 'flat', 'HISTORY_POINTS': 10, 'HISTORY_DAYS': 14}}) }}
+{% endmacro %}
+
+{% macro it_score_costs_stubbed(points) %}
+  {% set batch = {'items': []} %}
+  {% do _it_result({'scored': icecore._icecore_score_costs(points, batch, _it_score_runner), 'left': batch.get('cost_score_left')}) %}
+{% endmacro %}
+
+{% macro it_backfill_points(pending, costs) %}
+  {% do _it_result(icecore._icecore_backfill_points(pending, costs)) %}
+{% endmacro %}
+
+{% macro it_score_costs_cfg(points, cfg) %}
+  {% set batch = {'items': []} %}
+  {% do _it_result({'scored': icecore._icecore_score_costs(points, batch, _it_score_runner, cfg), 'left': batch.get('cost_score_left')}) %}
+{% endmacro %}

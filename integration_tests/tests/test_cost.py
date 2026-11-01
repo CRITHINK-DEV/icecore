@@ -480,3 +480,48 @@ def test_cost_score_off_or_capped_at_zero_scores_nothing_and_queries_nothing():
     assert off == {"scored": {}, "left": None}
     zero = run_macro("it_score_costs", {"points": points}, ["--vars", json.dumps({"icecore": {"cost_score_max_nodes": 0}})])
     assert zero == {"scored": {}, "left": 0}
+
+
+def _vars(**icecore):
+    return ["--vars", json.dumps({"icecore": icecore})]
+
+
+def test_same_node_from_several_invocations_is_scored_once_per_invocation():
+    pending = [{"invocation_id": "i1", "unique_id": "n.a", "relation": '"DB"."S"."A"'},
+               {"invocation_id": "i2", "unique_id": "n.a", "relation": '"DB"."S"."A"'}]
+    cost = {"credits": 2.0, "warehouse": "WH"}
+    points = run_macro("it_backfill_points", {"pending": pending, "costs": {"i1|n.a": cost, "i2|n.a": cost}})
+    assert [p["id"] for p in points] == ["i1|n.a", "i2|n.a"] and {p["key"] for p in points} == {'"DB"."S"."A"'}
+    out = run_macro("it_score_costs_stubbed", {"points": points})
+    assert sorted(out["scored"]) == ["i1|n.a", "i2|n.a"]  # one result each: no last-write-wins
+    assert all(r["is_anomaly"] is True and r["score"] == 5.0 and r["engine"] == "native" for r in out["scored"].values())
+
+
+def test_settled_backfill_points_are_not_scored():
+    pending = [{"invocation_id": "i1", "unique_id": "n.a", "relation": "r"}]
+    out = run_macro("it_backfill_points", {"pending": pending, "costs": {"i1|n.a": {"credits": 0.0, "settled": "no_attribution"}}})
+    assert out == []
+
+
+def test_invalid_anomaly_settings_skip_scoring_with_one_warning_and_never_raise():
+    points = [{"key": "a", "credits": 1.0}]
+    ok = run_macro("it_score_costs_cfg", {"points": points, "cfg": {"anomaly_sensitivity": "high"}})
+    assert list(ok["scored"]) == ["a"]  # valid settings score (stub runner)
+    for bad in ({"anomaly_engine": "prophet"}, {"anomaly_sensitivity": "extreme"}, {"anomaly_min_consecutive": 0},
+                {"anomaly_min_consecutive": "2"}, {"anomaly_mad_floor_pct": "x"}):
+        out, logs = run_macro_with_logs("it_score_costs_cfg", {"points": points, "cfg": bad})
+        assert out == {"scored": {}, "left": None}, bad
+        assert any("cost scoring skipped" in line for line in logs), bad
+
+
+def test_a_failing_native_query_scores_that_point_unscored_with_a_warning_and_never_raises():
+    points = [{"id": "ok", "key": "k-ok", "credits": 1.0}, {"id": "bad", "key": "k-FAIL", "credits": 1.0}]
+    out, logs = run_macro_with_logs("it_score_costs_stubbed", {"points": points})
+    assert sorted(out["scored"]) == ["ok"]
+    assert sum("cost scoring failed for 1 of 2" in line for line in logs) == 1
+
+
+def test_negative_cost_score_max_nodes_counts_as_zero():
+    points = [{"key": "a", "credits": 1.0}]
+    out = run_macro("it_score_costs", {"points": points}, _vars(cost_score_max_nodes=-5))
+    assert out == {"scored": {}, "left": 0}

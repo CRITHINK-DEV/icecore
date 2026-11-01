@@ -151,9 +151,15 @@
 {#- Run the one-value query that the macro named `render` builds as render(relation, column, window, extra).
     When a CHANGES query fails at run time (window not covered: table re-created after since, change tracking
     enabled after rows were written since then, retention exceeded) and the window carries a timestamp_column,
-    the query is run again over the timestamp-column window. Returns the value, or none with a logged warning;
+    the query is run again over the timestamp-column window. A column that is not found returns none at once
+    (no query, no fallback). Returns the value, or none with a logged warning;
     never raises. -#}
 {% macro _icecore_window_scalar(relation, window, what, render, column, extra) %}
+  {#- A column that does not exist fails every window the same way: say so, and skip the query and the fallback scan. -#}
+  {%- if icecore._icecore_column_type(relation, column) is none -%}
+    {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': column ' ~ column ~ ' not found', info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
   {%- set out = icecore._icecore_try_scalar(icecore[render](relation, column, window, extra)) -%}
   {%- if 'error' in out and window['mode'] == 'changes' and window.get('timestamp_column') is not none -%}
     {%- set ts_window = icecore._icecore_timestamp_window(relation, window['since'], window['timestamp_column'],

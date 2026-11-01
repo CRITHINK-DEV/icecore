@@ -9,7 +9,8 @@ macros:
       tracking covers the whole window: a table re-created after `since` (dbt full refresh, table models), or one
       whose change tracking was enabled after rows were written since then, passes the probe and fails only when
       the CHANGES query runs. `compute_column_metrics` and `compute_dimension_metrics` catch that failure, log it,
-      and run again over `timestamp_column` when the window carries one. A probe that runs would have to read the
+      and run again over `timestamp_column` when the window carries one. A column that does not exist is
+      reported as not found before any query runs, so it never triggers a second scan over the timestamp column. A probe that runs would have to read the
       change data, which is the expensive part. When the probe fails and `timestamp_column` is a DATE or TIMESTAMP
       column, returns `{mode: timestamp_column, since, timestamp_column, timestamp_type}` and logs why CHANGES was
       not used. Returns none with a logged warning when neither works (no change tracking and no usable timestamp

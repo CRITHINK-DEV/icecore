@@ -401,3 +401,26 @@ def test_numeric_metrics_selection_and_non_numeric_column(dbt, sf, run_id):
         assert got["metrics"] == {"null_rate": 0.0}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_missing_metric_column_does_not_trigger_the_timestamp_fallback(dbt, sf, run_id):
+    # A column that does not exist fails the CHANGES query for a reason the timestamp window cannot fix. The macro
+    # must say so and return none, not log "CHANGES query failed" and scan the table a second time.
+    name = f"UC2_COLS_NOCOL_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 10)
+        time.sleep(2)
+        since = utc_now(sf)
+        insert_rows(sf, table, 5, start=100)
+
+        got, logs = run_macro_with_logs("it_column_metrics", {"rel": rel(name.lower()), "column_name": "no_such_column",
+                                                              "since": since, "timestamp_column": "updated_at"})
+        assert got["window"]["mode"] == "changes", got
+        assert got["metrics"] is None, got
+        assert any("compute_column_metrics could not read" in m and "column no_such_column not found" in m for m in logs), logs
+        assert not any("CHANGES query failed" in m or "using timestamp column" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")

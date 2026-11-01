@@ -21,7 +21,7 @@ macros:
       integer, with no data scan. Always a total, never a delta. Returns none, with one log line saying why,
       when: the relation is missing or not readable; it is a view or an external table (no ROW_COUNT in
       metadata, so zero-scan volume is not supported); or its kind is in
-      `vars: icecore: metadata_fallback_kinds` (default `[iceberg]`, from spike S5), in which case use
+      `vars: icecore: metadata_fallback_kinds` (default `[iceberg, materialized_view]`: Iceberg from spike S5; a materialized view's metadata total was still the old one 60 s after an insert in the table-kinds tests), in which case use
       `get_row_count_changes`. It never fails the run. The volume test emits this value as the metric
       `row_count`, distinct from `rows_added`.
     arguments:

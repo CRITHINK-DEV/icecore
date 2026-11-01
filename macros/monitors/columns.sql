@@ -11,7 +11,7 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{% macro get_change_window(relation, since, timestamp_column=none) %}
+{% macro get_change_window(relation, since, timestamp_column=none, until=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set name = icecore._icecore_quoted_name(relation) -%}
   {%- if since is none -%}
@@ -24,18 +24,22 @@
       query runs. The compute macros handle that (_icecore_window_scalar) and fall back to timestamp_column then.
       A runnable probe would have to read the change data, which is the expensive part (S5). -#}
   {%- set probe = icecore._icecore_try_scalar(
-      'select count(*) from (select 1 from ' ~ icecore._icecore_changes_source(relation, since) ~ ' limit 0)') -%}
+      'select count(*) from (select 1 from ' ~ icecore._icecore_changes_source(relation, since, until) ~ ' limit 0)') -%}
   {%- if 'error' not in probe -%}
     {%- set window = {'mode': 'changes', 'since': since} -%}
+    {%- if until is not none -%}{%- do window.update({'until': until}) -%}{%- endif -%}
     {%- if timestamp_column is not none -%}{%- do window.update({'timestamp_column': timestamp_column}) -%}{%- endif -%}
     {{ return(window) }}
   {%- endif -%}
-  {{ return(icecore._icecore_timestamp_window(relation, since, timestamp_column,
+  {{ return(icecore._icecore_timestamp_window(relation, since, timestamp_column, until,
       name ~ ': CHANGES is unavailable since ' ~ since ~ ' (' ~ probe['error'] ~ ')')) }}
 {% endmacro %}
 
 
 {% macro compute_column_metrics(relation, column_name, window, metrics=none) %}
+  {%- if column_name is none -%}
+    {{ exceptions.raise_compiler_error('compute_column_metrics needs a column_name for ' ~ icecore._icecore_quoted_name(relation)) }}
+  {%- endif -%}
   {%- if not execute or window is none -%}{{ return(none) }}{%- endif -%}
   {%- set names = icecore._icecore_column_metric_names(metrics) -%}
   {%- set numeric = icecore._icecore_numeric_metric_names() -%}
@@ -55,7 +59,7 @@
   {%- endif -%}
   {%- if names | length == 0 -%}{{ return({}) }}{%- endif -%}
   {%- set value = icecore._icecore_window_scalar(
-      relation, window, 'compute_column_metrics', '_icecore_column_metrics_sql', column_name, names) -%}
+      relation, window, 'compute_column_metrics', column_name, names) -%}
   {%- if value is none -%}{{ return(none) }}{%- endif -%}
   {%- set parsed = fromjson(value) if value is string else value -%}
   {%- set out = {} -%}
@@ -73,14 +77,16 @@
     window_rows: rows in the window (inserted or updated row versions). Named so that it never collides with the
     volume monitor's `row_count` (metadata total) or `rows_added` (net delta from get_row_count_changes).
     null_rate: share of those rows where the column is null; null when the window is empty.
-    avg, min, max: over the non-null values of a numeric column, as FLOAT; null when there are none. -#}
+    avg: over the non-null values of a numeric column, as FLOAT.
+    min, max: the same values in the column's own type (a NUMBER stays exact above 2^53; a FLOAT stays a FLOAT).
+    Null when there are no non-null values. -#}
 {% macro _icecore_column_metric_exprs(c) %}
   {{ return({
       'window_rows': 'count(*)',
       'null_rate': 'count_if(' ~ c ~ ' is null)::float / nullif(count(*), 0)',
       'avg': 'avg(' ~ c ~ ')::float',
-      'min': 'min(' ~ c ~ ')::float',
-      'max': 'max(' ~ c ~ ')::float',
+      'min': 'min(' ~ c ~ ')',
+      'max': 'max(' ~ c ~ ')',
   }) }}
 {% endmacro %}
 
@@ -132,7 +138,7 @@
 
 {#- The timestamp-column window, or none with one warning saying why not. `reason` says why CHANGES is not used
     and is logged with the outcome. -#}
-{% macro _icecore_timestamp_window(relation, since, timestamp_column, reason) %}
+{% macro _icecore_timestamp_window(relation, since, timestamp_column, until, reason) %}
   {%- if timestamp_column is none -%}
     {% do log('icecore: warning: no change window for ' ~ reason ~ ' and no timestamp_column was given', info=True) %}
     {{ return(none) }}
@@ -144,22 +150,52 @@
     {{ return(none) }}
   {%- endif -%}
   {% do log('icecore: ' ~ reason ~ '; using timestamp column ' ~ timestamp_column ~ ' (' ~ ts_type ~ ')', info=True) %}
-  {{ return({'mode': 'timestamp_column', 'since': since, 'timestamp_column': timestamp_column, 'timestamp_type': ts_type}) }}
+  {%- set window = {'mode': 'timestamp_column', 'since': since, 'timestamp_column': timestamp_column, 'timestamp_type': ts_type} -%}
+  {%- if until is not none -%}{%- do window.update({'until': until}) -%}{%- endif -%}
+  {{ return(window) }}
 {% endmacro %}
 
 
-{#- Run the one-value query that the macro named `render` builds as render(relation, column, window, extra).
-    When a CHANGES query fails at run time (window not covered: table re-created after since, change tracking
-    enabled after rows were written since then, retention exceeded) and the window carries a timestamp_column,
-    the query is run again over the timestamp-column window. Returns the value, or none with a logged warning;
-    never raises. -#}
-{% macro _icecore_window_scalar(relation, window, what, render, column, extra) %}
-  {%- set out = icecore._icecore_try_scalar(icecore[render](relation, column, window, extra)) -%}
-  {%- if 'error' in out and window['mode'] == 'changes' and window.get('timestamp_column') is not none -%}
-    {%- set ts_window = icecore._icecore_timestamp_window(relation, window['since'], window['timestamp_column'],
+{#- The SQL of the one-value query for `what`, over `window`: an explicit branch, not a macro looked up by name. -#}
+{% macro _icecore_window_query(what, relation, column, window, extra) %}
+  {%- if what == 'compute_column_metrics' -%}
+    {{ return(icecore._icecore_column_metrics_sql(relation, column, window, extra)) }}
+  {%- endif -%}
+  {{ return(icecore._icecore_dimension_metrics_sql(relation, column, window, extra)) }}
+{% endmacro %}
+
+
+{#- SQLCODEs of a CHANGES query whose window change tracking does not cover: 707 (000707, time travel data not
+    available: table re-created after since, retention exceeded) and 91930 (091930, change tracking enabled
+    after the window started). Any other error is not helped by a timestamp window. -#}
+{% macro _icecore_changes_window_error_codes() %}
+  {{ return([707, 91930]) }}
+{% endmacro %}
+
+
+{#- Run the one-value query of `what` (compute_column_metrics or compute_dimension_metrics) over the window.
+    A column that is not found, or whose INFORMATION_SCHEMA read fails (logged as a read failure), returns none at once (no query, no fallback). When a CHANGES query fails with a
+    window-coverage code (see _icecore_changes_window_error_codes) and the window carries a timestamp_column, the
+    query runs again over the timestamp-column window, and the window dict is switched to it in place: later
+    calls with the same window skip CHANGES, so the fallback happens once per window. Returns the value, or none
+    with a logged warning; never raises. -#}
+{% macro _icecore_window_scalar(relation, window, what, column, extra) %}
+  {%- set col = icecore._icecore_column_type_read(relation, column) -%}
+  {%- if 'error' in col -%}
+    {% do log('icecore: warning: ' ~ what ~ ' could not read the columns of ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ col['error'], info=True) %}
+    {{ return(none) }}
+  {%- elif col.get('value') is none -%}
+    {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': column ' ~ column ~ ' not found', info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set out = icecore._icecore_try_scalar(icecore._icecore_window_query(what, relation, column, window, extra)) -%}
+  {%- if 'error' in out and window['mode'] == 'changes' and window.get('timestamp_column') is not none
+        and out.get('code') in icecore._icecore_changes_window_error_codes() -%}
+    {%- set ts_window = icecore._icecore_timestamp_window(relation, window['since'], window['timestamp_column'], window.get('until'),
         icecore._icecore_quoted_name(relation) ~ ': the CHANGES query failed (' ~ out['error'] ~ ')') -%}
     {%- if ts_window is not none -%}
-      {%- set out = icecore._icecore_try_scalar(icecore[render](relation, column, ts_window, extra)) -%}
+      {%- do window.update(ts_window) -%}
+      {%- set out = icecore._icecore_try_scalar(icecore._icecore_window_query(what, relation, column, window, extra)) -%}
     {%- endif -%}
   {%- endif -%}
   {%- if 'error' in out -%}
@@ -172,7 +208,7 @@
 
 {#- The rows of the window, with only the given columns (columnar storage: never select *).
     changes: the INSERT row versions over CHANGES (new rows and the new values of updated rows).
-    timestamp_column: rows whose timestamp is after `since`; a TIMESTAMP_NTZ column is read as UTC wall-clock time.
+    timestamp_column: rows whose timestamp is at or after `since` (CHANGES AT(TIMESTAMP => since) includes `since` too); a TIMESTAMP_NTZ column is read as UTC wall-clock time.
     A DATE column has day granularity: the window starts at the day of `since`, so rows of that day are counted
     again on every run that day. Prefer a timestamp column. -#}
 {% macro _icecore_window_rows_sql(relation, window, columns) %}
@@ -181,17 +217,18 @@
   {%- set select_list = refs | join(', ') -%}
   {%- set since = icecore._icecore_sql_literal(window['since']) -%}
   {%- if window['mode'] == 'changes' -%}
-    {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'])
+    {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'], window.get('until'))
         ~ " where metadata$action = 'INSERT'") }}
   {%- endif -%}
   {%- set ts = icecore._icecore_column_ref(window['timestamp_column']) -%}
   {%- set ts_type = window['timestamp_type'] -%}
+  {%- set stop = icecore._icecore_sql_literal(window['until']) if window.get('until') is not none else none -%}
   {%- if ts_type == 'DATE' -%}
-    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')::date') -%}
   {%- elif ts_type == 'TIMESTAMP_NTZ' -%}
-    {%- set predicate = ts ~ ' > to_timestamp_ntz(' ~ since ~ ')' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')') -%}
   {%- else -%}
-    {%- set predicate = ts ~ ' > to_timestamp_tz(' ~ since ~ ')' -%}
+    {%- set predicate = ts ~ ' >= to_timestamp_tz(' ~ since ~ ')' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_tz(' ~ stop ~ ')') -%}
   {%- endif -%}
   {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_quoted_name(relation) ~ ' where ' ~ predicate) }}
 {% endmacro %}
@@ -225,6 +262,17 @@
 
 {#- DATA_TYPE of the column from INFORMATION_SCHEMA.COLUMNS (TIMESTAMP_NTZ, NUMBER, TEXT, ...), or none. -#}
 {% macro _icecore_column_type(relation, column_name) %}
+  {%- set out = icecore._icecore_column_type_read(relation, column_name) -%}
+  {%- if 'error' in out -%}
+    {% do log('icecore: warning: column type could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ out['error'], info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return(out.get('value')) }}
+{% endmacro %}
+
+
+{#- The same read as {'value': <type or none>} or {'error': <message>}: a read that failed is not "column not found". -#}
+{% macro _icecore_column_type_read(relation, column_name) %}
   {%- set parts = icecore._icecore_name_parts(relation) -%}
   {%- set sql -%}
     select data_type
@@ -233,17 +281,20 @@
       and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
       and column_name = {{ icecore._icecore_sql_literal(icecore._icecore_column_name(column_name)) }}
   {%- endset -%}
-  {{ return(icecore._icecore_safe_scalar(sql, 'column type', relation)) }}
+  {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}
 
 
 {#- Dimension metrics ---------------------------------------------------------------------------- -#}
 
 {% macro compute_dimension_metrics(relation, dimension_column, window, max_values=none) %}
+  {%- if dimension_column is none -%}
+    {{ exceptions.raise_compiler_error('compute_dimension_metrics needs a dimension_column for ' ~ icecore._icecore_quoted_name(relation)) }}
+  {%- endif -%}
   {%- if not execute or window is none -%}{{ return(none) }}{%- endif -%}
   {%- set cap = icecore._icecore_dimension_max_values(max_values) -%}
   {%- set value = icecore._icecore_window_scalar(
-      relation, window, 'compute_dimension_metrics', '_icecore_dimension_metrics_sql', dimension_column, cap) -%}
+      relation, window, 'compute_dimension_metrics', dimension_column, cap) -%}
   {%- if value is none -%}{{ return(none) }}{%- endif -%}
   {%- set parsed = fromjson(value) if value is string else value -%}
   {%- set out = [] -%}

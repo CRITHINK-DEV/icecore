@@ -117,7 +117,7 @@ flowchart LR
     views --> alerts["Snowflake Alerts and tasks<br/>email, Slack, Teams"]
 ```
 
-- **Write path** (`building`). Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 512 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks write only to the account's event table, and only when the session sets `LOG_LEVEL` and `TRACE_LEVEL`, while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
+- **Write path** (`building`). Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 512 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks land nothing in the database's event table (for LOG records, the only ones checked, the record goes to the account table and only when the session sets `LOG_LEVEL`; SPAN and SPAN_EVENT routing there is unmeasured), while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
 - **Read path** (`planned`). `icecore.setup` creates views over the event table (and the two emitter procedures; no tables). Views are the only public interface: the app and your BI tools read views, never the raw table.
 - **Control path** (`planned`). Snowflake Alerts run against the views and notify through a notification integration. A Snowflake task detects runs that never happened.
 
@@ -198,6 +198,10 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 
 - [Scope and architecture](docs/design/scope-and-architecture.md): the full design, event-table conventions and spikes.
 - [Roadmap](docs/superpowers/plans/2026-10-30-icecore-roadmap.md): six phases, three gates.
+- [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
+- [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
+- [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
+- [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 
 ## Develop icecore

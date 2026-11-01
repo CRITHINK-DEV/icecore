@@ -4,6 +4,8 @@ Offline tests check rendering and the mapping of DETECT_ANOMALIES rows to the co
 at most one tiny model per run (named with the run_id, in SPIKES), drop it afterwards, and are skipped with the
 recorded reason when the capabilities say Cortex is not available to the role.
 """
+import uuid
+
 import pytest
 
 from helpers.macros import MacroFailed, call_macro
@@ -70,6 +72,13 @@ def test_result_requires_previous_points_outside_on_the_same_side():
     assert call_macro("_cortex_result", rows=[current, outside, other_side], min_consecutive=3)["is_anomaly"] is False
 
 
+def test_a_null_bound_is_an_error_not_a_crash():
+    assert "error" in call_macro("_cortex_result", rows=[row(120, None, None, None, None)], min_consecutive=1)
+    # a null bound on an older point counts as inside the band
+    out = call_macro("_cortex_result", rows=[row(120, 100, 90, 110, True), row(130, None, None, None, None)], min_consecutive=2)
+    assert out["is_anomaly"] is False
+
+
 def test_result_without_rows_is_an_error_not_a_crash():
     assert "error" in call_macro("_cortex_result", rows=[], min_consecutive=1)
 
@@ -80,12 +89,11 @@ def test_result_without_rows_is_an_error_not_a_crash():
 @pytest.fixture(scope="module")
 def cortex_model(sf):
     """One tiny two-series model for the whole module, dropped afterwards; skipped when Cortex is unavailable."""
-    import uuid
     caps = call_macro("detect_capabilities", record=False)
     if not caps["cortex"]:
         pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
-    rid = uuid.uuid4().hex[:10].upper()
-    table, model = f"CX_T_{rid}", f"CX_M_{rid}"
+    run_id = uuid.uuid4().hex.upper()
+    table, model = f"ICECORE_CX_T_{run_id}", f"ICECORE_CX_M_{run_id}"
     cur = sf.cursor()
     cur.execute(f"""create table {SCHEMA}.{table} as
         select 'a' as series, dateadd(day, seq4(), '2026-09-01'::timestamp_ntz) as ts, 100 + uniform(0, 5, random(1))::float as y

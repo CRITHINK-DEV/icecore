@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import os
+import re
 
 import yaml
 
@@ -121,11 +122,36 @@ def test_a_model_calling_score_parses():
     assert invoke(["parse", "--no-partial-parse"]).success
 
 
+WRITE_STATEMENTS = [
+    r"create\s+(or\s+replace\s+)?(snowflake\.ml|table|stage)", r"insert\s+into", r"merge\s+into",
+    r"(?<!\.)\bdrop\b", r"(?<!\.)\bdelete\b", r"(?<!\.)\bupdate\b",  # not Jinja dict.update(...)
+]
+
+
+def writes_in(sql: str) -> list[str]:
+    """The write statements found in macro text, ignoring Jinja comments, case and whitespace."""
+    sql = re.sub(r"\{#.*?#\}", "", sql, flags=re.S).lower()
+    return [pattern for pattern in WRITE_STATEMENTS if re.search(pattern, sql)]
+
+
+@pytest.mark.parametrize("sql", [
+    "create or replace snowflake.ml.anomaly_detection m(...)", "create  or  replace table t as select 1", "CREATE STAGE s",
+    "insert  into t values (1)", "merge into t using s", "drop table t", "delete from t", "update t set a = 1",
+])
+def test_the_no_write_check_catches_what_a_substring_match_missed(sql):
+    assert writes_in(sql), sql
+
+
+def test_the_no_write_check_ignores_reads_and_comments():
+    assert writes_in("select updated_at from t") == []
+    assert writes_in("{% do result.update({1: 2}) %}") == []  # a Jinja dict method, not SQL
+    assert writes_in("{#- never trained here: no create table, no drop -#} select 1") == []
+
+
 def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():
     engines = REPO / "macros" / "engines"
-    everything = "\n".join(p.read_text() for p in engines.glob("*.sql")).lower()
-    for forbidden in ("insert ", "merge ", "create table", "create stage", "create snowflake.ml"):
-        assert forbidden not in everything, forbidden
+    for path in engines.glob("*.sql"):
+        assert writes_in(path.read_text()) == [], path.name
     others = "\n".join(p.read_text() for p in engines.glob("*.sql") if p.name != "cortex.sql").lower()
     for forbidden in ("snowflake.ml", "anomaly_detection", "detect_anomalies"):
         assert forbidden not in others, forbidden

@@ -76,7 +76,7 @@ macros:
       on all its series (models are refreshed by a task, never trained at test time). One
       DETECT_ANOMALIES call on the existing model, inside a Snowflake Scripting block that catches every
       error, so a missing model, privilege or region never fails a test. prediction_interval is 0.99
-      (low), 0.95 (medium) or 0.90 (high). Returns `engine` (cortex), `expected` (forecast), `lower`,
+      (low), 0.95 (medium) or 0.90 (high); Cortex high is wider than native high (k = 2 MADs, about 82%), so the same sensitivity flags somewhat fewer points with Cortex. Returns `engine` (cortex), `expected` (forecast), `lower`,
       `upper`, `score` (signed distance outside the band, 0 inside, as native) and `is_anomaly` (Cortex
       verdict, and the min_consecutive - 1 latest history points outside the band on the same side).
       When the model cannot score it returns only `error` (code and message) and logs a warning. At parse

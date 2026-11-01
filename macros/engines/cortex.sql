@@ -4,7 +4,9 @@
   existing model, inside a Snowflake Scripting block that catches every error, so a missing model, privilege or region
   never fails a test (as _icecore_try_scalar does).
 
-  prediction_interval: 0.99 (low), 0.95 (medium), 0.90 (high). Cortex returns forecast, lower and upper bounds and
+  prediction_interval: 0.99 (low), 0.95 (medium), 0.90 (high). The sensitivities are not the same width across engines:
+  Cortex high (0.90) is wider than native high (k = 2 MADs, about an 82% band on normal data), so the same sensitivity
+  flags somewhat fewer points with Cortex. Cortex returns forecast, lower and upper bounds and
   its own is_anomaly; they are mapped to the contract: expected, lower, upper, score (signed distance outside the
   band, 0 inside, as native), is_anomaly. min_consecutive: the min_consecutive - 1 latest history points are scored
   in the same call and must be outside the band on the same side as the current value.
@@ -78,9 +80,16 @@ end;
     {{ return({'error': 'the model returned no row for the series'}) }}
   {% endif %}
   {% set cur = rows[0] %}
+  {% if cur['Y'] is none or cur['LOWER_BOUND'] is none or cur['UPPER_BOUND'] is none or cur['FORECAST'] is none %}
+    {{ return({'error': 'the model returned no band for the series (null bound)'}) }}
+  {% endif %}
   {% set directions = [] %}
   {% for row in rows %}
-    {% do directions.append(1 if row['Y'] > row['UPPER_BOUND'] else (-1 if row['Y'] < row['LOWER_BOUND'] else 0)) %}
+    {% if row['Y'] is none or row['UPPER_BOUND'] is none or row['LOWER_BOUND'] is none %}
+      {% do directions.append(0) %}
+    {% else %}
+      {% do directions.append(1 if row['Y'] > row['UPPER_BOUND'] else (-1 if row['Y'] < row['LOWER_BOUND'] else 0)) %}
+    {% endif %}
   {% endfor %}
   {% set side = directions[0] %}
   {% set previous = (min_consecutive | int) - 1 %}

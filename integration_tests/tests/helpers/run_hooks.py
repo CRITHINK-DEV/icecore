@@ -82,6 +82,15 @@ def drop_fixture_views(sf, run_id: str) -> None:
         sf.cursor().execute(f'drop view if exists "{DATABASE}"."{SCHEMA}"."{model.upper()}_{run_id.upper()}"')
 
 
+def drop_stored_failures(sf, run_id):
+    """The tests' stored failures, named with the run_id, in <schema>_dbt_test__audit."""
+    cur = sf.cursor()
+    audit = f"{SCHEMA}_DBT_TEST__AUDIT"
+    if cur.execute(f"show schemas like '{audit}' in database \"{DATABASE}\"").fetchall():
+        for row in cur.execute(f"show tables like '%{run_id.upper()}' in schema \"{DATABASE}\".\"{audit}\"").fetchall():
+            cur.execute(f'drop table if exists "{DATABASE}"."{audit}"."{row[1]}"')
+
+
 def node_results(run_results: dict) -> list[dict]:
     """run_results.json results without the hook operations (dbt 1.12 lists on-run-start/end hooks there)."""
     return [r for r in run_results["results"] if not r["unique_id"].startswith("operation.")]

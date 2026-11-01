@@ -97,7 +97,7 @@ macros:
       that catches every error, so a missing model, privilege or region never fails a test. Snowflake documents
       that models cannot be shared across roles, so they are trained and scored in setup's role and the dbt role
       needs only USAGE on `ICECORE_SCORE`. The procedure's arguments are values (the series key, an array of points,
-      numbers, three plain identifiers), never SQL text. prediction_interval is 0.99
+      numbers, the model name `ICECORE_M_<16 hex>`), never SQL text, and takes no database or schema: it reads the models of its own obs schema only. prediction_interval is 0.99
       (low), 0.95 (medium) or 0.90 (high); Cortex high is wider than native high (k = 2 MADs, about 82%), so the same sensitivity flags somewhat fewer points with Cortex. Returns `engine` (cortex), `expected` (forecast), `lower`,
       `upper`, `score` (signed distance outside the band, 0 inside, as native) and `is_anomaly` (Cortex
       verdict, and the min_consecutive - 1 latest history points outside the band on the same side).
@@ -106,7 +106,7 @@ macros:
     arguments:
       - name: model
         type: string
-        description: The per-table model, a plain (qualified) identifier such as `DB.SCHEMA.MODEL` (letters, digits, `_`, `$`); anything else is refused.
+        description: The per-table model, `ICECORE_M_` and 16 upper-case hex digits (`cortex_model_name`); anything else is refused.
       - name: series
         type: string
         description: "The series key (see `cortex_series_key`); the model was trained on its MD5, which the procedure computes."

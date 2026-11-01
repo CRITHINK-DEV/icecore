@@ -69,10 +69,24 @@ def test_excluded_columns_are_masked_in_the_query_not_in_dbt():
     assert "to_variant" not in plain  # nothing excluded: the plain query
 
 
-def test_a_quote_in_an_excluded_name_is_escaped():
-    sql = run_macro("it_sample_sql", {"relation_name": RELATION, "limit": 5, "with_excluded": True},
-                    with_vars({"sample_exclude_columns": ["o'x"]}))
-    assert "'O\\'X'" in sql
+def test_excluded_names_are_validated_and_fail_closed():
+    names = ["email", "Col_1", "A", "a b", "o'x", "x'); drop table t; --", "a\n", "$$", "\u00e9", "a-b"]
+    got = run_macro("it_sample_validate", {"names": names, "relations": []})["names"]
+    assert got == [True, True, True] + [False] * 7
+    # one bad name and no sample is read: end_run with a failing test sends no query (offline: it would not connect)
+    records = run_macro("it_end_run_render", {"results": [test_result()]},
+                        with_vars({"samples": True, "sample_exclude_columns": ["ok", "bad'name"]}))["records"]
+    assert not sample_logs(records)
+
+
+def test_relation_names_are_validated_as_identifiers():
+    ok = ['"DB"."S_DBT_TEST__AUDIT"."unique_orders_id"', 'DB.SCH.T1', '"a""b"."c d".e', "T$1"]
+    bad = ['DB.SCH.T; drop table x', "DB.SCH.T\n", '"unclosed', 'a.b.c.d', "x' or '1'='1", '"a"."b"; select 1', ""]
+    got = run_macro("it_sample_validate", {"names": [], "relations": ok + bad})["relations"]
+    assert got == [True] * len(ok) + [False] * len(bad)
+    result = test_result(relation='"DB"."S"."t"; drop table x')
+    records = run_macro("it_end_run_render", {"results": [result]}, with_vars({"samples": True}))["records"]
+    assert not sample_logs(records)
 
 
 def test_a_failed_test_with_stored_failures_is_a_candidate():

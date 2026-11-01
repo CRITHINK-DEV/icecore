@@ -11,8 +11,23 @@
     Called by end_run as emit_samples(results, batch). -#}
 {% macro emit_samples(results, batch) %}
   {%- set limit = icecore._icecore_sample_limit() -%}
+  {%- set excluded = icecore._icecore_sample_excluded_columns() -%}
+  {#- var sample_exclude_columns is project data and ends up in SQL: any name that is not plain [A-Za-z0-9_] fails
+      closed, no sample is read (a sample without its mask would leak). -#}
+  {%- set invalid = [] -%}
+  {%- for name in excluded if not icecore._icecore_sample_valid_name(name) -%}
+    {%- do invalid.append(name) -%}
+  {%- endfor -%}
+  {%- if invalid -%}
+    {% do log('icecore: warning: samples skipped: sample_exclude_columns must hold plain column names (letters, digits, underscore); invalid: ' ~ (invalid | map('string') | map('truncate', 40) | join(', ')), info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
   {%- for candidate in icecore._icecore_sample_candidates(results) -%}
-    {%- set out = icecore._icecore_try_scalar(icecore._icecore_sample_sql(candidate['relation_name'], limit, icecore._icecore_sample_excluded_columns())) -%}
+    {%- if not icecore._icecore_sample_valid_relation(candidate['relation_name']) -%}
+      {% do log('icecore: warning: samples skipped ' ~ candidate['unique_id'] ~ ': its failures relation name is not a plain or quoted identifier', info=True) %}
+      {%- continue -%}
+    {%- endif -%}
+    {%- set out = icecore._icecore_try_scalar(icecore._icecore_sample_sql(candidate['relation_name'], limit, excluded)) -%}
     {%- if 'error' in out -%}
       {% do log('icecore: warning: samples could not read ' ~ candidate['relation_name'] ~ ' for ' ~ candidate['unique_id'] ~ ': ' ~ out['error'], info=True) %}
     {%- else -%}
@@ -57,9 +72,25 @@
   {%- set raw = (raw | string).split(',') if raw is string else (raw if raw is iterable else []) -%}
   {%- set names = [] -%}
   {%- for name in raw -%}
-    {%- do names.append((name | string | trim | upper)) -%}
+    {%- if (name | string | trim) -%}
+      {%- do names.append((name | string | trim | upper)) -%}
+    {%- endif -%}
   {%- endfor -%}
   {{ return(names) }}
+{% endmacro %}
+
+
+{#- A column name that is safe in SQL: letters, digits and underscore only (\Z anchors: no trailing newline). -#}
+{% macro _icecore_sample_valid_name(name) %}
+  {{ return(modules.re.match('^[A-Za-z0-9_]+\\Z', name | string) is not none) }}
+{% endmacro %}
+
+
+{#- A relation name that is safe in SQL: one to three parts, each plain (letters, digits, _ and $) or double-quoted
+    with "" for a quote inside. TODO: replace with icecore._sql(name, 'ident') from story 51335a30. -#}
+{% macro _icecore_sample_valid_relation(relation_name) %}
+  {%- set part = '(?:[A-Za-z_][A-Za-z0-9_$]*|"(?:[^"]|"")+")' -%}
+  {{ return(modules.re.match('^' ~ part ~ '(?:[.]' ~ part ~ '){0,2}\\Z', relation_name | string) is not none) }}
 {% endmacro %}
 
 

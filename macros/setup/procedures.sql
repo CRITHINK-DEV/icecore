@@ -1,6 +1,6 @@
 {#-
   The write-path contract of Gate 1 option B (spikes/GATE1.md): the two persisted procedures every icecore record
-  is written through, both EXECUTE AS OWNER, in <target.database>.<obs schema>.
+  is written through, both EXECUTE AS OWNER, in <target.database>.<obs schema>, and the scoring procedure next to them.
 
   ICECORE_EMIT(events ARRAY)      SQL. One SPAN_EVENT per element {name, attrs} through SYSTEM$ADD_EVENT, named
                                   `icecore.<kind>` (SQL cannot set SCOPE, so it stays `global`). Refuses more than
@@ -9,6 +9,15 @@
                                   failed to import, S1.md). Elements are spans {name, start_ns, end_ns, attrs,
                                   events: [{name, ts_ns, attrs}]} written with their explicit times, or logs
                                   {type: 'log', level, message, attrs}. SCOPE `icecore`.
+
+  ICECORE_SCORE(db, schema, model, series, points, prediction_interval, refresh_days)
+                                  SQL, RETURNS VARIANT, EXECUTE AS OWNER. Scores points with one Cortex anomaly model
+                                  in the owner's role, the role that trained it: Snowflake documents that models cannot be
+                                  shared across roles, so the dbt role needs only USAGE on this procedure, never on a model.
+                                  Reads the model's age with SHOW, refuses a missing or stale one, and returns
+                                  {state, age_days, rows} (rows: DETECT_ANOMALIES output, latest first) or {error}.
+                                  `points` is an ARRAY of {ts, y} (ts null: now, UTC) for the one `series`; the input is
+                                  built from the array, never from caller SQL, so the owner's rights read nothing else.
 
   create_emit_procedures(schema) is called by setup; the obs schema must exist. CREATE OR REPLACE ... COPY GRANTS,
   so a second setup keeps the grants an admin made on the procedures. The DDL is rendered by
@@ -46,7 +55,7 @@
     {%- for ddl in icecore._icecore_emit_procedures_ddl(schema) -%}
       {%- do run_query(ddl) -%}
     {%- endfor -%}
-    {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
+    {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_SCORE'] -%}
       {%- do created.append(icecore._icecore_procedure(name, schema)) -%}
     {%- endfor -%}
     {%- do log('icecore: created ' ~ (created | join(' and ')), info=True) -%}
@@ -132,5 +141,69 @@ def run(session, spans):
     return "ok spans=%d logs=%d" % (n_spans, n_logs)
 $$
   {%- endset -%}
-  {{ return([emit | trim, emit_run | trim]) }}
+  {%- set score -%}
+CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}(db STRING, sch STRING, model STRING, series STRING, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)
+COPY GRANTS
+RETURNS VARIANT
+LANGUAGE SQL
+COMMENT = 'icecore: scores points with a Cortex anomaly model in the owner role (models cannot be shared across roles)'
+EXECUTE AS OWNER
+AS $$
+DECLARE
+  q STRING DEFAULT CHR(39);
+  qq STRING DEFAULT CHR(39) || CHR(39);
+  found INTEGER DEFAULT 0;
+  age_s NUMBER DEFAULT 0;
+  n INTEGER;
+  ts_ntz TIMESTAMP_NTZ;
+  y_f FLOAT;
+  vals STRING DEFAULT '';
+  series_hash STRING;
+  input_sql STRING;
+  rows_out VARIANT;
+BEGIN
+  -- No SQL text is built from a caller's string. The three names must be plain identifiers; the series key is hashed
+  -- (the models are trained on the same hash); points are typed (a timestamp and a finite float) before they are written
+  -- into the input; the interval is a float.
+  IF (NOT REGEXP_LIKE(db, '[A-Za-z0-9_$]+') OR NOT REGEXP_LIKE(sch, '[A-Za-z0-9_$]+') OR NOT REGEXP_LIKE(model, '[A-Za-z0-9_$]+')) THEN
+    RETURN OBJECT_CONSTRUCT('error', 'database, schema and model must be plain identifiers');
+  END IF;
+  IF (prediction_interval IS NULL OR prediction_interval <= 0 OR prediction_interval >= 1) THEN
+    RETURN OBJECT_CONSTRUCT('error', 'prediction_interval must be between 0 and 1');
+  END IF;
+  n := COALESCE(ARRAY_SIZE(points), 0);
+  IF (n = 0 OR n > 1000 OR series IS NULL) THEN
+    RETURN OBJECT_CONSTRUCT('error', 'a series and 1 to 1000 points are required');
+  END IF;
+  EXECUTE IMMEDIATE 'SHOW SNOWFLAKE.ML.ANOMALY_DETECTION LIKE ' || q || model || q || ' IN SCHEMA "' || db || '"."' || sch || '"';
+  SELECT COUNT(*), COALESCE(MAX(DATEDIFF('second', "created_on", CURRENT_TIMESTAMP())), 0) INTO :found, :age_s
+    FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "name" = :model;
+  IF (found = 0) THEN
+    RETURN OBJECT_CONSTRUCT('state', 'missing');
+  END IF;
+  IF (refresh_days IS NOT NULL AND age_s / 86400 > refresh_days) THEN
+    RETURN OBJECT_CONSTRUCT('state', 'stale', 'age_days', age_s / 86400);
+  END IF;
+  series_hash := MD5(series);
+  FOR i IN 0 TO n - 1 DO
+    ts_ntz := COALESCE(TRY_TO_TIMESTAMP_NTZ(points[i]:ts::STRING), CONVERT_TIMEZONE('UTC', CURRENT_TIMESTAMP())::TIMESTAMP_NTZ);
+    y_f := TRY_TO_DOUBLE(points[i]:y::STRING);
+    IF (y_f IS NULL OR NOT REGEXP_LIKE(TO_VARCHAR(y_f), '-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?')) THEN
+      RETURN OBJECT_CONSTRUCT('error', 'a point has no finite numeric y');
+    END IF;
+    vals := vals || IFF(i = 0, '', ', ') || '(' || qq || TO_VARCHAR(ts_ntz, 'YYYY-MM-DD HH24:MI:SS.FF3') || qq || ', ' || TO_VARCHAR(y_f) || ')';
+  END FOR;
+  input_sql := 'select ' || qq || series_hash || qq || ' as series, column1::timestamp_ntz as ts, column2::float as y from values ' || vals;
+  EXECUTE IMMEDIATE 'CALL "' || db || '"."' || sch || '"."' || model || '"!DETECT_ANOMALIES('
+    || 'INPUT_DATA => SYSTEM$QUERY_REFERENCE(' || q || input_sql || q || '), '
+    || 'SERIES_COLNAME => ' || q || 'SERIES' || q || ', TIMESTAMP_COLNAME => ' || q || 'TS' || q || ', TARGET_COLNAME => ' || q || 'Y' || q || ', '
+    || 'CONFIG_OBJECT => {' || q || 'prediction_interval' || q || ': ' || TO_VARCHAR(prediction_interval) || '})';
+  SELECT COALESCE(ARRAY_AGG(OBJECT_CONSTRUCT(*)) WITHIN GROUP (ORDER BY ts DESC), ARRAY_CONSTRUCT()) INTO :rows_out FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+  RETURN OBJECT_CONSTRUCT('state', 'ok', 'age_days', age_s / 86400, 'rows', rows_out);
+EXCEPTION
+  WHEN OTHER THEN RETURN OBJECT_CONSTRUCT('error', SQLCODE || ': ' || SQLERRM);
+END;
+$$
+  {%- endset -%}
+  {{ return([emit | trim, emit_run | trim, score | trim]) }}
 {% endmacro %}

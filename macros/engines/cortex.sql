@@ -1,8 +1,11 @@
 {#-
   Cortex engine (spec section 6): scores one series with a SNOWFLAKE.ML.ANOMALY_DETECTION model trained per table on
   all its series. Models are refreshed by a task, never trained here. Scoring is one DETECT_ANOMALIES call against the
-  existing model, inside a Snowflake Scripting block that catches every error, so a missing model, privilege or region
-  never fails a test (as _icecore_try_scalar does).
+  existing model, made by the persisted owner's-rights procedure ICECORE_SCORE (macros/setup/procedures.sql) inside a
+  Snowflake Scripting block that catches every error, so a missing model, privilege or region never fails a test (as
+  _icecore_try_scalar does). Models cannot be shared across roles (Snowflake's documented limitation), so they are
+  trained and scored in setup's role: the dbt role needs only USAGE on ICECORE_SCORE. The procedure's arguments are
+  bound values (a series key, an array of points, numbers, three plain identifiers), never SQL text.
 
   prediction_interval: 0.99 (low), 0.95 (medium), 0.90 (high). The sensitivities are not the same width across engines:
   Cortex high (0.90) is wider than native high (k = 2 MADs, about an 82% band on normal data), so the same sensitivity
@@ -10,25 +13,39 @@
   its own is_anomaly; they are mapped to the contract: expected, lower, upper, score (signed distance outside the
   band, 0 inside, as native), is_anomaly. min_consecutive: the min_consecutive - 1 latest history points are scored
   in the same call and must be outside the band on the same side as the current value.
-  Returns the contract fields with engine 'cortex', or {'error': '<code>: <message>'} when the model could not score.
+  Returns the contract fields with engine 'cortex', or {'error': message, 'state': 'error'|'missing'|'stale', 'age_days'}
+  when the model could not score (missing: no such model for setup's role; stale: older than refresh_days).
 -#}
 
-{% macro cortex__score(model, series, series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
+{% macro cortex__score(model, series, series_sql, current_value, sensitivity, min_consecutive, observed_at=none, schema=none, refresh_days=none) %}
   {% if not execute %}{{ return(none) }}{% endif %}
-  {% set out = icecore._icecore_try_cortex(icecore.cortex__detect_sql(model, series, series_sql, current_value, sensitivity, min_consecutive, observed_at)) %}
+  {% set call = icecore._cortex_call_sql(model, series, current_value, sensitivity, observed_at, schema, refresh_days,
+                                        icecore._cortex_previous_points(series_sql, min_consecutive)) %}
+  {% set out = icecore._icecore_try_cortex(call) %}
   {% if 'error' in out %}
     {% do log('icecore: warning: Cortex model ' ~ model ~ ' could not score: ' ~ out['error'], info=True) %}
-    {{ return({'error': out['error']}) }}
+    {{ return({'error': out['error'], 'state': 'error', 'age_days': none}) }}
+  {% endif %}
+  {% if out.get('state') != 'ok' %}
+    {{ return({'error': 'model ' ~ model ~ ' is ' ~ out.get('state'), 'state': out.get('state'), 'age_days': out.get('age_days')}) }}
   {% endif %}
   {{ return(icecore._cortex_result(out['rows'], min_consecutive)) }}
 {% endmacro %}
 
 
-{#- The model name is pasted into SQL: only dotted plain or double-quoted identifiers are accepted. -#}
-{% macro _cortex_check_model_name(model) %}
-  {% if model is not string or not modules.re.match('^([A-Za-z_][A-Za-z0-9_$]*|"[^"]+")(\\.([A-Za-z_][A-Za-z0-9_$]*|"[^"]+")){0,2}$', model) %}
-    {{ exceptions.raise_compiler_error("icecore: Cortex model must be a (qualified) identifier, got '" ~ model ~ "'") }}
+{#- The model's parts [database, schema, name], each a plain identifier (letters, digits, _ and $): other shapes are refused, so
+    nothing but identifiers reaches the procedure. An unqualified model is read in the obs schema. -#}
+{% macro _cortex_model_parts(model, schema=none) %}
+  {% if model is not string or not modules.re.match('^[A-Za-z0-9_$]+(\\.[A-Za-z0-9_$]+){0,2}$', model) %}
+    {{ exceptions.raise_compiler_error("icecore: Cortex model must be a (qualified) plain identifier, got '" ~ model ~ "'") }}
   {% endif %}
+  {% set parts = model.split('.') | map('upper') | list %}
+  {% if parts | length == 1 %}
+    {{ return([target.database | upper, icecore.obs_schema_name(schema), parts[0]]) }}
+  {% elif parts | length == 2 %}
+    {{ return([target.database | upper, parts[0], parts[1]]) }}
+  {% endif %}
+  {{ return(parts) }}
 {% endmacro %}
 
 
@@ -38,28 +55,39 @@
 {% endmacro %}
 
 
-{#- The Scripting block text (no run): CALL <model>!DETECT_ANOMALIES over the latest history points and the current one. -#}
-{% macro cortex__detect_sql(model, series, series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
-  {% do icecore._cortex_check_model_name(model) %}
+{#- cortex_refresh_days: a number of days, 0 or more (default 7, the refresh task's period). -#}
+{% macro _cortex_refresh_days(refresh_days=none) %}
+  {% set refresh_days = var('icecore', {}).get('cortex_refresh_days', 7) if refresh_days is none else refresh_days %}
+  {% if refresh_days is not number or refresh_days is sameas true or refresh_days is sameas false or refresh_days < 0 %}
+    {{ exceptions.raise_compiler_error("icecore: cortex_refresh_days must be a number of days, 0 or more, got '" ~ refresh_days ~ "'") }}
+  {% endif %}
+  {{ return(refresh_days) }}
+{% endmacro %}
+
+
+{#- The min_consecutive - 1 latest history points as [{ts, y}], latest first; [] when min_consecutive is 1 (no query). -#}
+{% macro _cortex_previous_points(series_sql, min_consecutive) %}
   {% set previous = (min_consecutive | int) - 1 %}
+  {% if previous < 1 %}{{ return([]) }}{% endif %}
+  {% set got = icecore._icecore_try_scalar("select array_agg(object_construct('ts', to_varchar(observed_at::timestamp_ntz, 'YYYY-MM-DD HH24:MI:SS.FF3'), 'y', value::float)) from (select observed_at, value from (" ~ series_sql ~ ") where value is not null and observed_at is not null qualify row_number() over (order by observed_at desc) <= " ~ previous ~ ")") %}
+  {{ return([] if 'error' in got else (got.get('value') or [])) }}
+{% endmacro %}
+
+
+{#- The Scripting block text (no run): CALL ICECORE_SCORE with the current point and the previous ones. Every value is a
+    typed argument or goes through the shared _icecore_sql_literal. The series key is hashed inside the procedure. -#}
+{% macro _cortex_call_sql(model, series, current_value, sensitivity, observed_at, schema, refresh_days, previous) %}
+  {% set parts = icecore._cortex_model_parts(model, schema) %}
   {% set interval = icecore._cortex_prediction_interval(sensitivity) %}
-  {% set input_sql %}
-select {{ icecore._icecore_sql_literal(series) }} as series, observed_at::timestamp_ntz as ts, value::float as y
-from (select * from ({{ series_sql }}) where value is not null and observed_at is not null
-      qualify row_number() over (order by observed_at desc) <= {{ previous }})
-union all
-select {{ icecore._icecore_sql_literal(series) }}, {{ icecore._sql_timestamp(observed_at) }}, {{ icecore._sql_number(current_value) }}::float
-  {% endset %}
+  {% set points = [{'ts': none if observed_at is none else observed_at | string, 'y': icecore._sql_number(current_value) | float}] + previous %}
+  {% set lit = icecore._icecore_sql_literal %}
   {% set block %}
 declare
   res variant;
 begin
-  call {{ model }}!detect_anomalies(
-    input_data => system$query_reference({{ icecore._icecore_sql_literal(input_sql) }}),
-    series_colname => 'SERIES', timestamp_colname => 'TS', target_colname => 'Y',
-    config_object => {'prediction_interval': {{ interval }}});
-  select coalesce(array_agg(object_construct(*)) within group (order by ts desc), array_construct()) into :res from table(result_scan(last_query_id()));
-  return object_construct('rows', res);
+  call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}({{ lit(parts[0]) }}, {{ lit(parts[1]) }}, {{ lit(parts[2]) }}, {{ lit(series) }},
+    to_array(parse_json({{ lit(tojson(points)) }})), {{ interval }}, {{ icecore._cortex_refresh_days(refresh_days) }}) into :res;
+  return res;
 exception
   when other then return object_construct('error', sqlcode || ': ' || sqlerrm);
 end;
@@ -68,7 +96,7 @@ end;
 {% endmacro %}
 
 
-{#- Run a Scripting block that returns an object: {'rows': [...]} or {'error': ...}; never raises. -#}
+{#- Run a Scripting block that returns an object; never raises. -#}
 {% macro _icecore_try_cortex(block) %}
   {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
 {% endmacro %}
@@ -103,55 +131,4 @@ end;
     'score': score | float,
     'is_anomaly': side != 0 and streak >= previous and (cur['IS_ANOMALY'] is sameas true),
   }) }}
-{% endmacro %}
-
-
-{#-
-  Fallbacks. A model that is missing, older than the refresh period, or unreadable never fails a test: the
-  dispatcher scores with native and records why (fallback_reason).
--#}
-
-{#- 'fresh', 'missing', 'stale' or 'error' for the per-table model, read with SHOW SNOWFLAKE.ML.ANOMALY_DETECTION inside a
-    catching block. Stale: created more than var icecore.cortex_refresh_days (default 7) days ago, the period of the
-    task that refreshes the models. Returns {'state', 'age_days', 'error'}; never raises. -#}
-{% macro _cortex_model_state(model, refresh_days=none) %}
-  {% do icecore._cortex_check_model_name(model) %}
-  {% set refresh_days = var('icecore', {}).get('cortex_refresh_days', 7) if refresh_days is none else refresh_days %}
-  {% if refresh_days is not number or refresh_days is sameas true or refresh_days is sameas false or refresh_days < 0 %}
-    {{ exceptions.raise_compiler_error("icecore: cortex_refresh_days must be a number of days, 0 or more, got '" ~ refresh_days ~ "'") }}
-  {% endif %}
-  {% set parts = [] %}
-  {#- split on dots outside double quotes: a quoted name may contain dots -#}
-  {% for part in modules.re.findall('"[^"]+"|[^.]+', model) %}
-    {% do parts.append(part[1:-1] if part.startswith('"') else part | upper) %}
-  {% endfor %}
-  {% set name = parts[-1] %}
-  {% set schema = parts[-2] if parts | length > 1 else target.schema | upper %}
-  {% set database = parts[-3] if parts | length > 2 else target.database | upper %}
-  {% set block %}
-declare
-  res variant;
-begin
-  show snowflake.ml.anomaly_detection like {{ icecore._icecore_sql_literal(name) }} in schema "{{ database | replace('"', '""') }}"."{{ schema | replace('"', '""') }}";
-  select coalesce(array_agg(object_construct('age_s', datediff('second', "created_on", current_timestamp()))), array_construct()) into :res from table(result_scan(last_query_id()));
-  return object_construct('rows', res);
-exception
-  when other then return object_construct('error', sqlcode || ': ' || sqlerrm);
-end;
-  {% endset %}
-  {% set out = icecore._icecore_try_cortex(block) %}
-  {% if 'error' in out %}
-    {{ return({'state': 'error', 'age_days': none, 'error': out['error']}) }}
-  {% endif %}
-  {{ return(icecore._cortex_state_of(out['rows'], refresh_days)) }}
-{% endmacro %}
-
-
-{#- Pure: the model state from the SHOW rows (age in seconds). -#}
-{% macro _cortex_state_of(rows, refresh_days) %}
-  {% if not rows %}
-    {{ return({'state': 'missing', 'age_days': none, 'error': none}) }}
-  {% endif %}
-  {% set age_days = rows[0]['age_s'] / 86400 %}
-  {{ return({'state': 'stale' if age_days > refresh_days else 'fresh', 'age_days': age_days, 'error': none}) }}
 {% endmacro %}

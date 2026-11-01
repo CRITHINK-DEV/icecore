@@ -10,12 +10,9 @@
   {%- if 'datediff(\'day\'' in text -%}
     {%- do log('icecore: query: history', info=True) -%}
     {{ return({'rows': [[30]]}) }}
-  {%- elif 'show snowflake.ml.anomaly_detection' in text -%}
-    {%- do log('icecore: query: model state', info=True) -%}
-    {{ return({'rows': [[tojson({'rows': [{'age_s': 3600}]})]]}) }}
-  {%- elif 'detect_anomalies' in text -%}
-    {%- do log('icecore: query: detect', info=True) -%}
-    {{ return({'rows': [[tojson({'rows': [{'Y': 500, 'FORECAST': 100, 'LOWER_BOUND': 90, 'UPPER_BOUND': 110, 'IS_ANOMALY': true}]})]]}) }}
+  {%- elif 'icecore_score' in text -%}
+    {%- do log('icecore: query: score call', info=True) -%}
+    {{ return({'rows': [[tojson({'state': 'ok', 'age_days': 1.0, 'rows': [{'Y': 500, 'FORECAST': 100, 'LOWER_BOUND': 90, 'UPPER_BOUND': 110, 'IS_ANOMALY': true}]})]]}) }}
   {%- endif -%}
   {%- do log('icecore: query: other', info=True) -%}
   {{ return({'rows': [[tojson({'error': 'not scripted'})]]}) }}

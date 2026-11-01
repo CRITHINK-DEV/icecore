@@ -4,7 +4,7 @@
   engine was not the one that scored. Computes and returns values only; emission is emit_metric's job.
 -#}
 
-{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, capabilities=none, min_points=7) %}
+{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, capabilities=none, min_points=7, schema=none) %}
   {% set settings = icecore._anomaly_settings(engine, sensitivity, min_consecutive) %}
   {#- At parse time nothing runs: return the contract shape with nulls so callers can render. -#}
   {% if not execute %}
@@ -17,7 +17,7 @@
   {% set choice = {'engine': 'native', 'fallback_reason': none} %}
   {% set result = none %}
   {% if settings.engine != 'native' %}
-    {% set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities) %}
+    {% set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities, schema) %}
     {% if attempt.result is not none %}
       {% set result = attempt.result %}
       {% do result.update({'fallback_reason': none}) %}
@@ -104,9 +104,9 @@
 
 {#- Try the Cortex engine for one series: {'result': contract dict} or {'result': none, 'fallback_reason', 'detail'}.
     Never raises. Order, cheapest first: capabilities given and Cortex off (no query), no model given (no query),
-    history under 14 days (1 query), the model's state (1 guarded SHOW), the DETECT call (1 guarded). A failing guard is
-    diagnosed with detect_capabilities. A working call costs 3 queries. -#}
-{% macro _cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities=none) %}
+    history under 14 days (1 query), then ONE guarded CALL of ICECORE_SCORE (the SHOW of the model's age and the DETECT happen
+    inside it, in setup's role). A failing call is diagnosed with detect_capabilities. A working call costs 2 queries. -#}
+{% macro _cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities=none, schema=none) %}
   {% set unavailable = icecore._cortex_unavailable_reason(capabilities) %}
   {% if unavailable is not none %}
     {{ return({'result': none, 'fallback_reason': unavailable, 'detail': capabilities.get('cortex_reason')}) }}
@@ -118,21 +118,16 @@
   {% if choice.engine != 'cortex' %}
     {{ return({'result': none, 'fallback_reason': choice.fallback_reason, 'detail': 'fewer than 14 days of history'}) }}
   {% endif %}
-  {% set state = icecore._cortex_model_state(model) %}
-  {% if state.state == 'missing' %}
-    {{ return({'result': none, 'fallback_reason': 'model_missing', 'detail': 'no model ' ~ model}) }}
-  {% elif state.state == 'stale' %}
-    {{ return({'result': none, 'fallback_reason': 'model_stale', 'detail': 'model ' ~ model ~ ' is ' ~ (state.age_days | round(1)) ~ ' days old'}) }}
-  {% elif state.state == 'error' %}
-    {% set d = icecore._cortex_diagnose(state.error) %}
-    {{ return({'result': none, 'fallback_reason': d.fallback_reason, 'detail': d.detail}) }}
+  {% set scored = icecore.cortex__score(model, series, series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at, schema) %}
+  {% if 'error' not in scored %}
+    {{ return({'result': scored}) }}
+  {% elif scored.state == 'missing' %}
+    {{ return({'result': none, 'fallback_reason': 'model_missing', 'detail': scored.error}) }}
+  {% elif scored.state == 'stale' %}
+    {{ return({'result': none, 'fallback_reason': 'model_stale', 'detail': scored.error ~ ' (' ~ (scored.age_days | round(1)) ~ ' days)'}) }}
   {% endif %}
-  {% set scored = icecore.cortex__score(model, series, series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at) %}
-  {% if 'error' in scored %}
-    {% set d = icecore._cortex_diagnose(scored.error) %}
-    {{ return({'result': none, 'fallback_reason': d.fallback_reason, 'detail': d.detail}) }}
-  {% endif %}
-  {{ return({'result': scored}) }}
+  {% set d = icecore._cortex_diagnose(scored.error) %}
+  {{ return({'result': none, 'fallback_reason': d.fallback_reason, 'detail': d.detail}) }}
 {% endmacro %}
 
 

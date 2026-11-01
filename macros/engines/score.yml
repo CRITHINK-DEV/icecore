@@ -13,9 +13,9 @@ macros:
       scores with a recorded `fallback_reason` when: the caller's `capabilities` say Cortex is off
       (`cortex_unavailable`, no query); no `model` is given or it does not exist (`model_missing`, no query for
       the first); the series covers fewer than 14 days (`history_too_short`, 1 query); the model is older than
-      `var('icecore').cortex_refresh_days`, a number, default 7, the refresh task's period (`model_stale`); or a
+      `var('icecore').cortex_refresh_days`, a number, default 7, the refresh task's period (`model_stale`, read inside ICECORE_SCORE); or a
       guarded Cortex call fails, in which case `detect_capabilities` runs once to tell `cortex_unavailable` from
-      `cortex_error`. A working Cortex call costs 3 queries (history, model state, detect). A fallback is logged
+      `cortex_error`. A working Cortex call costs 2 queries (history, one call of ICECORE_SCORE, which reads the model's age and detects). A fallback is logged
       and recorded in `fallback_reason`. Computes and returns values only;       emitting them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
       keys are returned with null values, so a model or test calling score always parses.
     arguments:
@@ -28,9 +28,12 @@ macros:
       - name: series
         type: string
         description: The series key the model was trained with. Required with `model`.
+      - name: schema
+        type: string
+        description: The obs schema whose `ICECORE_SCORE` scores with Cortex. Default the `obs_schema` var.
       - name: min_points
         type: integer
-        description: "Fewer history points than this never flag (native, baseline insufficient_history). Default 7, the previous fixed value; a monitor passes the history reader's min_points."
+        description: "Fewer history points than this never flag (native, baseline insufficient_history). Default 7, the previous fixed value; a monitor passes the history reader's min_points. The Cortex path ignores it: Cortex has its own minimum (12 points per series) and the 14-day history rule applies instead."
       - name: capabilities
         type: dict
         description: A `detect_capabilities` result the caller already holds. When it says Cortex is off, native scores at once without a query. Default none.
@@ -89,21 +92,30 @@ macros:
   - name: cortex__score
     description: >
       Cortex engine: scores one series with the SNOWFLAKE.ML.ANOMALY_DETECTION model trained per table
-      on all its series (models are refreshed by a task, never trained at test time). One
-      DETECT_ANOMALIES call on the existing model, inside a Snowflake Scripting block that catches every
-      error, so a missing model, privilege or region never fails a test. prediction_interval is 0.99
+      on all its series (models are refreshed by a task, never trained at test time). One CALL of the
+      persisted owner's-rights procedure `ICECORE_SCORE` (created by setup), inside a Snowflake Scripting block
+      that catches every error, so a missing model, privilege or region never fails a test. Snowflake documents
+      that models cannot be shared across roles, so they are trained and scored in setup's role and the dbt role
+      needs only USAGE on `ICECORE_SCORE`. The procedure's arguments are values (the series key, an array of points,
+      numbers, three plain identifiers), never SQL text. prediction_interval is 0.99
       (low), 0.95 (medium) or 0.90 (high); Cortex high is wider than native high (k = 2 MADs, about 82%), so the same sensitivity flags somewhat fewer points with Cortex. Returns `engine` (cortex), `expected` (forecast), `lower`,
       `upper`, `score` (signed distance outside the band, 0 inside, as native) and `is_anomaly` (Cortex
       verdict, and the min_consecutive - 1 latest history points outside the band on the same side).
-      When the model cannot score it returns only `error` (code and message) and logs a warning. At parse
+      When the model cannot score it returns `error` (message), `state` (`missing`, `stale` or `error`) and `age_days`, and logs a warning. At parse
       time it returns null. Called by `score`, which falls back to native when it returns `error`.
     arguments:
       - name: model
         type: string
-        description: The per-table model, a (qualified) identifier such as `DB.SCHEMA.MODEL`; anything else is refused.
+        description: The per-table model, a plain (qualified) identifier such as `DB.SCHEMA.MODEL` (letters, digits, `_`, `$`); anything else is refused.
       - name: series
         type: string
-        description: The series key as it was given to the model's SERIES_COLNAME at training.
+        description: "The series key (see `cortex_series_key`); the model was trained on its MD5, which the procedure computes."
+      - name: schema
+        type: string
+        description: The obs schema whose `ICECORE_SCORE` scores, and the default schema of an unqualified model. Default the `obs_schema` var.
+      - name: refresh_days
+        type: number
+        description: A model older than this many days is `stale`. Default `var('icecore').cortex_refresh_days`, 7.
       - name: series_sql
         type: string
         description: As for `score`; only the latest min_consecutive - 1 points are read.

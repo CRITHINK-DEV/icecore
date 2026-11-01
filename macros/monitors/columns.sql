@@ -253,11 +253,14 @@
 
 
 {#- {'value': {COLUMN_NAME: DATA_TYPE}} of every column of the relation, from one INFORMATION_SCHEMA read, or {'error'}.
-    No column name goes into the SQL. The database part is quoted by hand like the rest of this file (parts come from
-    the relation, never from a name the caller types).
+    No column name goes into the SQL. The database comes from the model's configured database (project config), so it is
+    validated against [A-Za-z0-9_] before it is quoted; anything else returns an error and nothing runs.
     TODO(PR #75): quote database, schema and table through the shared icecore._sql(..., 'name') helper once it is merged. -#}
 {% macro _icecore_column_types_read(relation) %}
   {%- set parts = icecore._icecore_name_parts(relation) -%}
+  {%- if not modules.re.match('^[A-Za-z0-9_]+\\Z', parts[0] | string) -%}
+    {{ return({'error': 'database name ' ~ (parts[0] | string | tojson) ~ ' is not a plain identifier; icecore reads only [A-Za-z0-9_] database names here'}) }}
+  {%- endif -%}
   {%- set sql -%}
     select coalesce(object_agg(column_name, data_type::variant), object_construct())
     from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.columns

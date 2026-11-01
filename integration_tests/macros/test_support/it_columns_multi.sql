@@ -30,3 +30,9 @@
   {%- for c in columns -%}{%- do single.update({c: icecore.compute_column_metrics(relation, c, window)}) -%}{%- endfor -%}
   {% do log('icecore_it_result:' ~ tojson({'window': window, 'multi': multi, 'single': single}), info=True) %}
 {% endmacro %}
+
+{#- The column-type read for a relation in database `database` (no query runs when the name is refused). -#}
+{% macro it_column_types_read(database) %}
+  {%- set relation = api.Relation.create(database=database, schema='S', identifier='T') -%}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_column_types_read(relation)), info=True) %}
+{% endmacro %}

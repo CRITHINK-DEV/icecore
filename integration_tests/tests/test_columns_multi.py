@@ -35,6 +35,12 @@ def test_timestamp_window_is_one_query_too():
     assert sql.count('"U" >= to_timestamp_ntz') == 1
 
 
+@pytest.mark.parametrize("database", ["MY-DB", 'X"; drop table t; --', "A$$B", "A\nB"])
+def test_a_database_name_outside_plain_identifiers_is_refused_before_any_query(database):
+    got = run_macro("it_column_types_read", {"database": database})
+    assert "error" in got and "plain identifier" in got["error"], got
+
+
 def test_column_names_never_become_string_literals():
     sql = render(['Net "Amount"', "x' or 1=1 --"], {"mode": "changes", "since": SINCE})
     assert "'x'" not in sql and "or 1=1" in sql  # only inside a quoted identifier
@@ -105,8 +111,8 @@ def test_multi_column_falls_back_once_and_reports_missing_columns(dbt, sf, run_i
         fill(sf, table, 50)
         time.sleep(2)
         since = "2000-01-01T00:00:00.000000Z"
-        got, logs = run_macro_with_logs("it_columns_equivalence", {
-            "rel": rel(name.lower()), "columns": ["n0", "t0", "nope"][:2] + ["d1"], "since": since, "timestamp_column": "d1"})
+        got = run_macro("it_columns_equivalence", {
+            "rel": rel(name.lower()), "columns": ["n0", "t0", "d1"], "since": since, "timestamp_column": "d1"})
         assert got["window"]["mode"] == "timestamp_column", got
         assert got["multi"] == got["single"], got
         got2 = run_macro("it_columns_equivalence", {

@@ -1,0 +1,74 @@
+version: 2
+
+macros:
+  - name: get_metric_history
+    description: >
+      Lag-aware history reader for the anomaly engines. Reads the points of ONE metric series, the key
+      (relation, metric, column, dimension), from the `METRICS` view of the obs schema and returns a dict
+      `{sql, points, min_points, insufficient_history, lookback_days, delay_minutes}`. `sql` is a SELECT of
+      `observed_at` and `value` ordered by time, which is what `icecore.score` takes as `series_sql`. The window
+      is `observed_at` after now minus `lookback_days` (default 30) and not after now minus the history delay (var
+      `icecore.history_delay_minutes`, default 1, from spike S3 where lag p95 was about 8 s and the worst 20 s), on
+      Snowflake's UTC clock. OBSERVED_TIMESTAMP is NULL on icecore records (S3), so the delay applies to the
+      `observed_at` of the view, the event TIMESTAMP. With fewer than `min_points` (default 7) points
+      `insufficient_history` is true and a line is logged; `score` never flags such a series. A null column or
+      dimension matches only metrics written without one. At parse time nothing runs and `points` and
+      `insufficient_history` are null.
+    arguments:
+      - name: relation
+        type: string
+        description: The relation the metric is on, a dbt Relation or the quoted name `"DB"."SCHEMA"."NAME"` that `emit_metric` writes.
+      - name: metric
+        type: string
+        description: The metric name, for example row_count.
+      - name: column
+        type: string
+        description: The column of the metric. Default none, which matches metrics without a column.
+      - name: dimension
+        type: string
+        description: The dimension of the metric. Default none, which matches metrics without a dimension.
+      - name: lookback_days
+        type: integer
+        description: Days of history, at least 1. Default 30.
+      - name: delay_minutes
+        type: integer
+        description: Minutes to leave out at the recent end, at least 0. Default the `history_delay_minutes` var (1).
+      - name: min_points
+        type: integer
+        description: Points below which the history is insufficient. Default 7.
+      - name: source
+        type: string
+        description: The relation to read. Default the `METRICS` view of the obs schema.
+      - name: schema
+        type: string
+        description: The obs schema holding the view. Default the `obs_schema` var.
+
+  - name: get_metric_history_sql
+    description: >
+      The series SELECT of `get_metric_history` alone, without running a query. `delay_minutes` is used as given.
+      Raises a compiler error for a `lookback_days` below 1 or a negative `delay_minutes`.
+    arguments:
+      - name: relation
+        type: string
+        description: As for `get_metric_history`.
+      - name: metric
+        type: string
+        description: As for `get_metric_history`.
+      - name: column
+        type: string
+        description: As for `get_metric_history`.
+      - name: dimension
+        type: string
+        description: As for `get_metric_history`.
+      - name: lookback_days
+        type: integer
+        description: Days of history. Default 30.
+      - name: delay_minutes
+        type: integer
+        description: Minutes left out at the recent end. Default 1.
+      - name: source
+        type: string
+        description: The relation to read. Default the `METRICS` view of the obs schema.
+      - name: schema
+        type: string
+        description: The obs schema holding the view. Default the `obs_schema` var.

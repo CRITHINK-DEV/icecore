@@ -7,7 +7,7 @@ macros:
       through, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
       made on them when setup runs again. Called by `setup`; the schema must exist,
       and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
-      dbt needs USAGE on the database, the schema and both emitters; USAGE on `ICECORE_ACK` is granted separately.
+      dbt needs USAGE on the database, the schema and both emitters; USAGE on `ICECORE_ACK` and `ICECORE_NOTIFIED` is granted separately (the latter only to the role that owns the alerts).
       `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
       `SYSTEM$ADD_EVENT`; a name without the `icecore.` prefix gets it. Refuses a CALL of more than 100 events
       (returns `icecore-error too_many_events: ...` and writes nothing). Returns `ok <n>`. `SCOPE` is `global`.
@@ -22,7 +22,12 @@ macros:
       else writes one span event `icecore.ack` with `icecore.ack.incident_key` and `icecore.ack.by`, the caller's
       `CURRENT_USER()`. Returns `ok 1`. `ICECORE_EMIT` refuses any event named `icecore.ack`
       (`icecore-error forbidden_event: ...`, nothing written).
-      Records land in the event table of the procedures' database, at that database's levels. Returns the three
+      `ICECORE_NOTIFIED(incident_key STRING, channel STRING)`: LANGUAGE SQL, the only writer of `icecore.notified`, the record
+      that an alert notified an incident on a channel. Refuses a key that is not 32 hex characters
+      (`icecore-error invalid_incident_key`) and a channel that is not a plain name (`icecore-error invalid_channel`), names
+      no object and takes none, records the caller as `icecore.notified.by`. Returns `ok 1`. `ICECORE_EMIT` and
+      `ICECORE_EMIT_RUN` refuse any event named `icecore.notified` (`icecore-error forbidden_event`, nothing written).
+      Records land in the event table of the procedures' database, at that database's levels. Returns the four
       qualified procedure names (empty at parse time).
     arguments:
       - name: schema

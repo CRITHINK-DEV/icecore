@@ -5,7 +5,7 @@
     One ordered list of steps (_icecore_setup_steps), run in order:
       1. detect_capabilities      reads only; recorded in step 5, once the procedures exist;
       2. create_schema            CREATE SCHEMA IF NOT EXISTS <target db>.<obs schema> (create_emit_procedures needs it);
-      3. create_emit_procedures   ICECORE_EMIT, ICECORE_EMIT_RUN and ICECORE_ACK (CREATE OR REPLACE ... COPY GRANTS);
+      3. create_emit_procedures   ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK and ICECORE_NOTIFIED (CREATE OR REPLACE ... COPY GRANTS);
       4. set_telemetry_levels     the database's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
@@ -59,7 +59,7 @@
   {%- set steps = [
       {'name': 'detect_capabilities', 'ready': true, 'detail': 'edition, event table, levels, Cortex'},
       {'name': 'create_schema', 'ready': true, 'detail': 'the obs schema'},
-      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT, ICECORE_EMIT_RUN and ICECORE_ACK'},
+      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK and ICECORE_NOTIFIED'},
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},

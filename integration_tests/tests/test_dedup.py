@@ -2,9 +2,11 @@
 
 Offline tests render the SQL. The sandbox test creates the emitter procedures and the views in a run_id-named schema,
 ICECORE_OBS_<run_id>; seeds three schema-change incidents (icecore.emit_events), records a notification and an
-acknowledgement the way the alert and icecore.acknowledge do, and runs the dedup SELECT, once against the live event
-table and once against a copy of it whose `icecore.notified` rows are moved back in time (a notification older than
-the window). The copy is a table in SPIKES named with the run_id, dropped at the end.
+acknowledgement the way the alert and icecore.acknowledge do, and runs the dedup SELECT. Notifications are written
+only by the ICECORE_NOTIFIED procedure (a CALL here, as the alert's action does); forged ones through ICECORE_EMIT
+(refused) and ICECORE_EMIT_RUN (lands, ignored) must leave the incident alerting. One test reads a copy of the event
+table whose `icecore.notified` rows are moved 3 days back, before the incident's first detection (a table in SPIKES
+named with the run_id, dropped at the end).
 """
 import json
 import os
@@ -13,7 +15,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
-from helpers.events import wait_for_events
+from helpers.events import assert_no_events, wait_for_events
 from helpers.macros import run_macro, run_macro_with_logs
 from helpers.run_hooks import icecore_vars, obs_schema, snowflake_since
 
@@ -37,7 +39,7 @@ def test_dedup_reads_the_feed_and_the_notified_events_through_base_events():
     sql = dedup(schema="my_obs")
     assert f"from {EVENT_TABLE}" in sql and "ICECORE_EMIT%" in sql
     assert """"snow.schema.name"::string = 'MY_OBS'""" in sql
-    assert f'"{DATABASE}"."MY_OBS"."ALERTS_FEED" as feed' in sql
+    assert f'from "{DATABASE}"."MY_OBS"."ALERTS_FEED"' in sql
     assert "record_name = 'icecore.notified'" in sql
     assert '"icecore.notified.incident_key"' in sql and '"icecore.notified.channel"' in sql
 
@@ -60,7 +62,13 @@ def test_window_defaults_to_the_incident_window(settings, expected):
     assert minutes(settings) == expected
 
 
-def test_notifications_are_recorded_through_emit_never_inserted():
+def test_only_notified_records_of_the_notified_procedure_after_first_detection_count():
+    sql = dedup()
+    assert "startswith(executable_name, 'ICECORE_NOTIFIED(')" in sql
+    assert "and notified.event_at >= feed.first_detected_at" in sql
+
+
+def test_notifications_are_recorded_through_the_procedure_never_inserted():
     sql = dedup()
     assert "insert" not in sql.lower() and "merge" not in sql.lower()
 
@@ -99,15 +107,18 @@ def seeded(dbt, sf):
         sf.cursor().execute(f"drop table if exists {copy}")
 
 
-def notify(seeded, key, channel):
-    run_macro("it_emit_events", {"events": [{"kind": "notified", "attributes": {
-        "icecore.notified.incident_key": key, "icecore.notified.channel": channel}}]}, seeded["obs_vars"])
+def notify(sf, seeded, key, channel):
+    """What the alert's action does: CALL ICECORE_NOTIFIED."""
+    (status,) = sf.cursor().execute(
+        f'call "{DATABASE}"."{seeded["schema"]}"."ICECORE_NOTIFIED"(%s, %s)', (key, channel)).fetchone()
+    assert status == "ok 1", status
 
 
 def wait_notified(sf, seeded, n):
     wait_for_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
-                        " and record:name::string = 'icecore.notified'", {"schema": seeded["schema"]},
-                    min_rows=n, since=seeded["since"], settle_s=5)
+                        " and record:name::string = 'icecore.notified'"
+                        " and startswith(resource_attributes:\"snow.executable.name\"::string, 'ICECORE_NOTIFIED(')",
+                    {"schema": seeded["schema"]}, min_rows=n, since=seeded["since"], settle_s=5)
 
 
 @pytest.mark.sandbox
@@ -119,8 +130,44 @@ def test_01_new_incidents_are_all_pending(sf, seeded):
 
 
 @pytest.mark.sandbox
-def test_02_notified_incident_is_not_notified_again_inside_the_window_but_other_channels_are(sf, seeded):
-    notify(seeded, seeded["keys"]["A"], "email")
+def test_02_forged_notified_through_icecore_emit_is_refused_and_the_incident_still_alerts(sf, seeded):
+    key = seeded["keys"]["A"]
+    out = run_macro("it_emit", {"kind": "notified", "attributes": {
+        "icecore.notified.incident_key": key, "icecore.notified.channel": "email"}}, seeded["obs_vars"])
+    assert out["statuses"][0].startswith("icecore-error forbidden_event"), out
+    since = snowflake_since(sf, 1)
+    assert_no_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
+                         " and record:name::string = 'icecore.notified'", {"schema": seeded["schema"]},
+                     wait_s=30, since=since)
+    assert sorted(r["incident_key"] for r in _pending(sf, seeded["schema"], "email", seeded["table"])) == sorted(
+        seeded["keys"].values())
+
+
+@pytest.mark.sandbox
+def test_03_forged_notified_through_icecore_emit_run_lands_but_is_ignored(sf, seeded):
+    key = seeded["keys"]["A"]
+    now_ns = int(sf.cursor().execute("select date_part(epoch_second, current_timestamp())").fetchone()[0]) * 1_000_000_000
+    item = {"name": "icecore.forged", "start_ns": now_ns, "end_ns": now_ns, "attrs": {}, "events": [
+        {"name": "icecore.notified", "ts_ns": now_ns, "attrs": {
+            "icecore.notified.incident_key": key, "icecore.notified.channel": "email"}}]}
+    out = run_macro("it_emit_run_items", {"items": [item]}, seeded["obs_vars"])
+    assert str(out["statuses"][0]).startswith("icecore-error forbidden_event"), out  # refused, nothing written
+    assert sorted(r["incident_key"] for r in _pending(sf, seeded["schema"], "email", seeded["table"])) == sorted(
+        seeded["keys"].values())
+
+
+@pytest.mark.sandbox
+def test_04_the_procedure_refuses_bad_arguments(sf, seeded):
+    cur = sf.cursor()
+    for key, channel, error in [("x", "email", "invalid_incident_key"), (seeded["keys"]["A"], "e'; drop", "invalid_channel"),
+                                (None, "email", "invalid_incident_key")]:
+        (status,) = cur.execute(f'call "{DATABASE}"."{seeded["schema"]}"."ICECORE_NOTIFIED"(%s, %s)', (key, channel)).fetchone()
+        assert status.startswith("icecore-error " + error), status
+
+
+@pytest.mark.sandbox
+def test_05_notified_incident_is_not_notified_again_inside_the_window_but_other_channels_are(sf, seeded):
+    notify(sf, seeded, seeded["keys"]["A"], "email")
     wait_notified(sf, seeded, 1)
     email = _pending(sf, seeded["schema"], "email", seeded["table"])
     assert [r["incident_key"] for r in email] == [seeded["keys"]["B"]]
@@ -129,29 +176,34 @@ def test_02_notified_incident_is_not_notified_again_inside_the_window_but_other_
 
 
 @pytest.mark.sandbox
-def test_03_acknowledged_incident_is_not_notified_even_after_the_window(sf, seeded):
+def test_06_acknowledged_incident_is_never_notified_and_an_open_one_is_reminded_after_the_window(sf, seeded):
     key = seeded["keys"]["B"]
     out = run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": key}}, seeded["obs_vars"])[0]
     assert out == "ok 1", out
     wait_for_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
                         " and record:name::string = 'icecore.ack'", {"schema": seeded["schema"]},
                     since=seeded["since"], settle_s=5)
-    notify(seeded, key, "email")
+    notify(sf, seeded, key, "email")
     wait_notified(sf, seeded, 2)
+    # a window of 0 minutes: A (notified, open) is a reminder; B (acknowledged) is never returned
+    after = _pending(sf, seeded["schema"], "email", seeded["table"], window=0)
+    assert [r["incident_key"] for r in after] == [seeded["keys"]["A"]]
+
+
+@pytest.mark.sandbox
+def test_07_a_notified_record_older_than_the_incident_does_not_count(sf, seeded):
     cur = sf.cursor()
     cur.execute(f"create table {seeded['copy']} as select * from {seeded['table']}"
                 " where RESOURCE_ATTRIBUTES:\"snow.schema.name\"::string = %s", (seeded["schema"],))
     cur.execute(f"update {seeded['copy']} set TIMESTAMP = dateadd(day, -3, TIMESTAMP)"
                 " where RECORD:name::string = 'icecore.notified'")
-    old = _pending(sf, seeded["schema"], "email", seeded["copy"])
-    # A was notified 3 days ago and is still open: a reminder; B is acknowledged: nothing, whatever the age
-    assert [r["incident_key"] for r in old] == [seeded["keys"]["A"]]
+    rows = _pending(sf, seeded["schema"], "email", seeded["copy"])
+    assert [r["incident_key"] for r in rows] == [seeded["keys"]["A"]]  # A's notification predates its detection
 
 
 @pytest.mark.sandbox
-def test_04_new_incident_key_after_an_acknowledgement_is_notified(sf, seeded):
+def test_08_new_incident_key_after_an_acknowledgement_is_notified(sf, seeded):
     rel = f'"{DATABASE}"."SPIKES"."it_dedup_{seeded["run_id"]}"'
-    since = snowflake_since(sf, 1)
     run_macro("it_emit_events", {"events": [_change(rel, "C")]}, seeded["obs_vars"])
     wait_for_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
                         " and record:name::string = 'icecore.schema_change'", {"schema": seeded["schema"]},

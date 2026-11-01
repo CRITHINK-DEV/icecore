@@ -127,7 +127,7 @@ Run these with `dbt run-operation`. Arguments go in `--args`.
 dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'
 ```
 
-`setup` runs these steps in order and prints one line for each: detect capabilities, create the schema, create the two procedures, set the database's log and trace levels, record the capabilities, print the cost estimate, create the views. It creates no tables. Running it again changes nothing, and grants made on the procedures and views are kept.
+`setup` runs these steps in order and prints one line for each: detect capabilities, create the schema, create the procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN` and `ICECORE_ACK`), set the database's log and trace levels, record the capabilities, print the cost estimate, create the views. It creates no tables. Running it again changes nothing, and grants made on the procedures and views are kept.
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
@@ -188,6 +188,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | --- | --- | --- |
 | `ICECORE_EMIT` | SQL procedure | Writes span events. At most 100 events and 512 KB per `CALL`. |
 | `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
+| `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |
 | `TEST_RESULTS` | view | One row per test per invocation. |

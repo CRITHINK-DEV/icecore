@@ -11,7 +11,12 @@ macros:
       the JSON sent) has its longest string values cut and carries `icecore.truncated = true` and
       `icecore.truncated_keys` (comma-separated). The CALL runs inside the guard block measured in S1: a missing
       procedure, schema or grant returns `icecore-error <code>: <message>`, which is logged as
-      `icecore: warning: telemetry not written (...)`, and the run continues. Never INSERTs, never emits from an
+      `icecore: warning: telemetry not written (...)`, and the run continues. Many failing CALLs of one call to `emit_events`
+      log one warning, with the count. Inputs are validated: an event that is not a mapping is skipped, attributes
+      that are not a mapping are ignored, and a value that is not a string, number, boolean, mapping or list is
+      written as text, so none raises. Chunks are measured on the escaped literal that is sent. What is left: the
+      `run_query` of the guard block itself can still raise (no warehouse, a closed connection), and dbt's Jinja
+      cannot catch it. Never INSERTs, never emits from an
       anonymous block, never changes session levels; the database's LOG_LEVEL and TRACE_LEVEL apply. A no-op at
       parse time. Returns `{events, calls, statuses}` (one status per CALL: `ok <n>` or `icecore-error ...`).
       Event-table timestamps are the CALL's, so dbt timings belong in attributes.

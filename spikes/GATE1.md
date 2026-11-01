@@ -90,6 +90,10 @@ the documented last resort only.
 | `ICECORE_EMIT`, bytes per CALL | If the kept events total about **1 MB**, **none** land, with no drop count (15 × 64 KB landed, 16 × 64 KB did not) | S2.md; `proc_batch.15x64`, `proc_batch.16x64` |
 | `ICECORE_EMIT_RUN`, per CALL | **200 spans** and **4 MB** (64 × 64 KB) landed whole; the 4 MB CALL took **153.81 s** of dbt wall time, against 5.30 s for 200 KB | S2.md; `emit_run_batch.200x1`, `emit_run_batch.64x64` |
 
+Statement size is not a limit in practice: on 1 Nov 2026 a plain `SELECT` of 2 MB and a guard block (`EXECUTE IMMEDIATE $$ ... $$`) of
+40 MB were accepted by the sandbox account, although Snowflake documents 1 MB for query text. icecore keeps statements near 512 KB
+(chunks are measured on the escaped literal) and does not refuse by size.
+
 The 4 MB time is client-side: Snowflake reported about 3–4 s of execution (S2.md, exploration). dbt and Jinja spend the rest
 building, escaping and logging the literal.
 
@@ -180,8 +184,14 @@ role. Whether procedure records from a database without an event table of its ow
    design expects them in the account table. On that table, only LOG records from anonymous blocks were checked, by the lead
    with ACCOUNTADMIN. The query's `value::string` predicate dropped every SPAN and SPAN_EVENT row, so SPAN and SPAN_EVENT
    routing there is unmeasured too (S1.md, "Routing").
-3. **Rollback through the persisted Python procedure is unmeasured.** It was measured for `ICECORE_EMIT` (both records kept,
-   `proc.rollback`) and for the temporary procedures (S1.md, open point 3).
+3. **Closed (1 Nov 2026, story cd57206a, `test_records_survive_a_rollback_through_both_procedures` in
+   `integration_tests/tests/test_failure_isolation.py`).** Inside one explicit transaction (`BEGIN`; an `INSERT` into a
+   control table; one `CALL` of `ICECORE_EMIT` with 1 event; one `CALL` of the persisted Python `ICECORE_EMIT_RUN` with 1 span
+   and 1 LOG; `ROLLBACK`), the control table went from 1 row to 0, so the transaction was rolled back, and **all 3 records
+   landed**: 1 SPAN_EVENT from `ICECORE_EMIT` (status `ok 1`) and 1 SPAN and 1 LOG from `ICECORE_EMIT_RUN` (status `ok spans=1
+   logs=1`). Rollback does not lose icecore records through either procedure (`ICECORE_EMIT` was also measured in S1,
+   `proc.rollback`). The same test gives the story's acceptance criterion: a record emitted in a rolled-back transaction is
+   present when the event table is read.
 4. **The temporary-table privilege for `edr report` is unmeasured** (S4.md, consequence 3).
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later

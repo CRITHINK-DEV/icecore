@@ -12,7 +12,8 @@
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
       8. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
          views of step 7 (macros/compat/create_compat_views.sql);
-         create_alerts, create_tasks, deploy_app (app): planned. They keep
+      9. create_tasks            the silence task (created suspended; resumed by var), see create_silence_task;
+         create_alerts, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -35,7 +36,7 @@
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
-      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
+      'tasks': none, 'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
   {% do log('icecore: setup in ' ~ icecore.obs_schema(state['schema']) ~ ' (' ~ steps | length ~ ' steps)', info=True) %}
@@ -74,7 +75,7 @@
     {%- do steps.append({'name': 'create_compat_views', 'ready': true, 'detail': 'the ' ~ compat ~ ' compat views'}) -%}
   {%- endif -%}
   {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
-  {%- do steps.append({'name': 'create_tasks', 'ready': false, 'detail': 'Snowflake tasks'}) -%}
+  {%- do steps.append({'name': 'create_tasks', 'ready': true, 'detail': 'Snowflake tasks'}) -%}
   {%- if app is sameas true -%}
     {%- do steps.append({'name': 'deploy_app', 'ready': false, 'detail': 'the Streamlit app'}) -%}
   {%- endif -%}
@@ -123,6 +124,12 @@
     {%- set compat_schema = icecore._icecore_compat_schema(state['schema']) -%}
     {%- do state.update({'compat_schema': compat_schema}) -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
+  {%- elif name == 'create_tasks' -%}
+    {%- set t = icecore.create_silence_task(state['schema']) -%}
+    {%- do state.update({'tasks': t}) -%}
+    {{ return(('no model declares meta.sla: silence task not created' if t['status'] == 'skipped'
+        else (t['task'] ~ (' (resumed)' if t['resumed'] else ' (suspended)') if t['status'] == 'ok'
+        else 'could not create ' ~ t['task'] ~ ': ' ~ t['status']))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

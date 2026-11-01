@@ -28,12 +28,20 @@
       {'name': 'node_results', 'var': 'node_results', 'default': true, 'macro': icecore.emit_node_results},
       {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
       {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
+      {'name': 'samples', 'var': 'samples', 'default': false, 'macro': icecore.emit_samples},
+      {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
   ]) }}
 {% endmacro %}
 
 
-{#- The batch end_run sends for these results: the spans, the emitters' items, then the invocation-end LOG. -#}
-{% macro _icecore_end_run_items(results) %}
+{#- The batch end_run sends for these results: the spans, the emitters' items, then the invocation-end LOG.
+    Isolation of the emitters: an emitter runs only when its var is on and its entry is usable (a mapping with a
+    callable macro); one that returns `{'error': <text>}` (a failed guarded query) or has a broken entry is
+    skipped, and the loop goes on with the next. One warning per hook sums them up. A Jinja exception inside an
+    emitter cannot be caught and would still stop the hook: emitters must only build data and validate their
+    inputs. extra_emitters are run after the package's own (tests; same entry shape). -#}
+{% macro _icecore_end_run_items(results, extra_emitters=none) %}
+  {%- set results = results if (results is iterable and results is not string and results is not mapping) else [] -%}
   {%- set results = icecore._icecore_node_results(results) -%}
   {%- set timing = icecore._icecore_invocation_timing() -%}
   {%- set batch = {'items': [icecore._icecore_invocation_span(timing)], 'node_spans': {}, 'timing': timing} -%}
@@ -44,11 +52,20 @@
       {%- do batch['node_spans'].update({span['attrs'].get('dbt.node.unique_id'): span}) -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- for emitter in icecore._icecore_end_run_emitters() -%}
-    {%- if icecore._icecore_flag(emitter['var'], emitter['default']) -%}
-      {%- do emitter['macro'](results, batch) -%}
+  {%- set skipped = [] -%}
+  {%- for emitter in icecore._icecore_end_run_emitters() + (extra_emitters or []) -%}
+    {%- if emitter is not mapping or emitter.get('macro') is not callable -%}
+      {%- do skipped.append((emitter.get('name') if emitter is mapping else 'entry') ~ ': not a usable emitter entry') -%}
+    {%- elif icecore._icecore_flag(emitter.get('var'), emitter.get('default')) -%}
+      {%- set outcome = emitter['macro'](results, batch) -%}
+      {%- if outcome is mapping and outcome.get('error') -%}
+        {%- do skipped.append((emitter.get('name') or 'emitter') ~ ': ' ~ outcome.get('error')) -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- if skipped -%}
+    {%- do log('icecore: warning: end_run emitters reported errors, the others still ran (' ~ (skipped | join('; ')) ~ ')', info=True) -%}
+  {%- endif -%}
   {%- do batch['items'].append(icecore._icecore_run_end_log(results, timing)) -%}
   {{ return(batch['items']) }}
 {% endmacro %}
@@ -75,10 +92,11 @@
 {% endmacro %}
 
 
-{#- The results of nodes: hook operations (unique_id operation.*) are left out, whatever the dbt version passes. -#}
+{#- The results of nodes: hook operations (unique_id operation.*) are left out, whatever the dbt version passes, and
+    so is anything that is not a result (none, text, a number). -#}
 {% macro _icecore_node_results(results) %}
   {%- set out = [] -%}
-  {%- for result in results or [] -%}
+  {%- for result in results or [] if result is not none and result is not string and result is not number -%}
     {%- set unique_id = icecore._icecore_get(result, 'unique_id') or icecore._icecore_get(icecore._icecore_get(result, 'node'), 'unique_id') -%}
     {%- if not (unique_id | string).startswith('operation.') -%}
       {%- do out.append(result) -%}
@@ -109,24 +127,31 @@
       emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
       uncounted names of emitters in the list that have no count here.
     An emitter added to the list needs its count here: a test fails until it has one.
-    lineage  the records of the graph's edges split under the payload cap (0 with no edges). -#}
-{% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1) %}
+    lineage    the records of the graph's edges split under the payload cap (0 with no edges);
+    samples    one per failing test with store_failures, failing_tests of them (the caller knows; the graph does
+               not), 0 when var samples is off (the default). Warn-severity failures count only if the caller counts them.
+    root_cause is 0 while node_results is on (it annotates the failed tests' node_result LOGs); with node_results off it
+               writes one LOG per explained test, at most one per node, so `nodes` is the upper bound used. -#}
+{% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1, failing_tests=0) %}
   {%- set nodes = nodes | int -%}
   {%- set per_emitter = {
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
+      'root_cause': 0 if icecore._icecore_flag('node_results', true) else nodes,
   } -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}
     {%- set name = emitter['name'] -%}
-    {%- if name not in per_emitter and name != 'lineage' -%}
+    {%- if name not in per_emitter and name not in ['lineage', 'samples'] -%}
       {%- do out['uncounted'].append(name) -%}
     {%- elif not icecore._icecore_flag(emitter['var'], emitter['default']) -%}
       {%- do out['emitters'].update({name: 0}) -%}
     {%- elif name in per_emitter -%}
       {%- do out['emitters'].update({name: per_emitter[name]}) -%}
-    {%- else -%}
+    {%- elif name == 'lineage' -%}
       {%- do out['emitters'].update({name: icecore._icecore_lineage_parts(icecore._icecore_lineage_edges(graph)) | length}) -%}
+    {%- else -%}
+      {%- do out['emitters'].update({name: failing_tests | int}) -%}
     {%- endif -%}
   {%- endfor -%}
   {{ return(out) }}

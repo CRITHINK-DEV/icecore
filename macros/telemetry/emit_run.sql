@@ -9,18 +9,21 @@
   icecore.message). Records are sent in as many CALLs of at most 512 KB of JSON as needed (S2: no count
   limit applies to an ICECORE_EMIT_RUN CALL; 512 KB keeps dbt time low), each through the guard block.
   Each CALL is its own trace, so a run is grouped by dbt.invocation_id.
+  Inputs are validated, never raised on: an item that is not a mapping, or a span without a numeric start_ns
+  (the procedure would fail the whole CALL on it), is skipped. One warning per hook for failing CALLs (emit.sql).
 -#}
 
 {% macro emit_run(items) %}
   {%- set out = {'records': 0, 'calls': 0, 'statuses': []} -%}
-  {%- if not execute or not items -%}
+  {%- if not execute or items is none or items is string or items is mapping or items is not iterable or not items -%}
     {{ return(out) }}
   {%- endif -%}
   {%- set records = icecore._icecore_emit_run_records(items) -%}
   {%- set procedure = icecore._icecore_procedure('ICECORE_EMIT_RUN') -%}
   {%- for chunk in icecore._icecore_emit_run_chunks(records) -%}
-    {%- do out['statuses'].append(icecore._icecore_guarded_call(procedure, chunk)) -%}
+    {%- do out['statuses'].append(icecore._icecore_guarded_status(procedure, chunk)) -%}
   {%- endfor -%}
+  {%- do icecore._icecore_warn_failed_calls(procedure, out['statuses']) -%}
   {%- do out.update({'records': records | length, 'calls': out['statuses'] | length}) -%}
   {{ return(out) }}
 {% endmacro %}
@@ -31,7 +34,7 @@
   {%- set base = icecore.base_attributes() -%}
   {%- set cap = icecore._icecore_payload_cap_bytes() -%}
   {%- set records = [] -%}
-  {%- for item in items -%}
+  {%- for item in items if item is mapping and (item.get('type') == 'log' or item.get('start_ns') is number) -%}
     {%- set record = {} -%}
     {%- do record.update(item) -%}
     {%- if item.get('type') == 'log' -%}
@@ -44,13 +47,13 @@
       }) -%}
     {%- else -%}
       {%- set events = [] -%}
-      {%- for event in item.get('events') or [] -%}
+      {%- for event in item.get('events') or [] if event is mapping -%}
         {%- set copy = {} -%}
         {%- do copy.update(event) -%}
-        {%- do copy.update({'attrs': icecore._icecore_run_attrs(base, event.get('attrs'), cap)}) -%}
+        {%- do copy.update({'attrs': icecore._icecore_run_attrs(base, event.get('attrs'), cap, none, true)}) -%}
         {%- do events.append(copy) -%}
       {%- endfor -%}
-      {%- do record.update({'attrs': icecore._icecore_run_attrs(base, item.get('attrs'), cap), 'events': events}) -%}
+      {%- do record.update({'attrs': icecore._icecore_run_attrs(base, item.get('attrs'), cap, none, true), 'events': events}) -%}
     {%- endif -%}
     {%- do records.append(record) -%}
   {%- endfor -%}
@@ -58,11 +61,11 @@
 {% endmacro %}
 
 
-{#- base + attrs, capped; with message, the message rides along as icecore.message so it is capped too. -#}
-{% macro _icecore_run_attrs(base, attrs, cap, message=none) %}
+{#- base + attrs, capped (as_json: mapping and list values as JSON text, for spans and span events, which drop them otherwise); with message, the message rides along as icecore.message so it is capped too. -#}
+{% macro _icecore_run_attrs(base, attrs, cap, message=none, as_json=false) %}
   {%- set out = {} -%}
   {%- do out.update(base) -%}
-  {%- do out.update(attrs or {}) -%}
+  {%- do out.update(icecore._icecore_safe_attributes(attrs, as_json)) -%}
   {%- if message is not none -%}
     {%- do out.update({'icecore.message': message}) -%}
   {%- endif -%}

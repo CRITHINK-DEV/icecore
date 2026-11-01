@@ -1,0 +1,14 @@
+# Key-pair login, as in integration_tests/profiles.yml. SHOP_SCHEMA is where the models and seeds go.
+shop:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'ICECORE_SANDBOX') }}"
+      schema: "{{ env_var('SHOP_SCHEMA', 'SHOP') }}"
+      threads: 4

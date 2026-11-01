@@ -67,17 +67,17 @@ A telemetry failure never fails your run: if the procedures or a grant are missi
 
 ### Set up and check the install
 
-`setup` and `doctor` run today; the views, alerts, tasks and app that `setup` will also create are not built yet, and `setup` lists them as planned.
+`setup` and `doctor` run today. `setup` already creates the views that exist; the alerts, tasks and app it will also create are not built yet, and `setup` lists them as planned.
 
 ```bash
 dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'
 dbt run-operation icecore.doctor
 ```
 
-- `setup` detects the account's capabilities, creates the schema if it is missing, creates the procedures `ICECORE_EMIT` and `ICECORE_EMIT_RUN` in it, and checks the database's `LOG_LEVEL` and `TRACE_LEVEL`. When its role cannot set the levels, it prints the `ALTER DATABASE` statement for an admin. Running it again changes nothing, and grants on the procedures are kept. All arguments are optional; `schema` defaults to the `obs_schema` var (`ICECORE_OBS`). If you pass another schema, set the var to it too, because dbt runs write through the procedures of the var's schema.
+- `setup` detects the account's capabilities, creates the schema if it is missing, creates the procedures `ICECORE_EMIT` and `ICECORE_EMIT_RUN` and the views (`metrics`, `schema_changes`) in it, and checks the database's `LOG_LEVEL` and `TRACE_LEVEL`. When its role cannot set the levels, it prints the `ALTER DATABASE` statement for an admin. Running it again changes nothing, and grants on the procedures and views are kept. All arguments are optional; `schema` defaults to the `obs_schema` var (`ICECORE_OBS`). If you pass another schema, set the var to it too, because dbt runs write through the procedures of the var's schema.
 - `setup` ends with an estimate of the rows icecore will write per month and the ingestion credits, from your node count and `runs_per_day`. Run it alone with `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`. For 100 nodes and 24 runs a day it estimates 149,760 rows and 0.0048 to 0.21 credits a month at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It prints its assumptions and sources.
 - `doctor` never fails. It checks the event table, the database's levels, makes one test `CALL` of each procedure, and counts icecore records of the last 24 hours. It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, most often the hooks above.
-- The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema) and CREATE PROCEDURE on the schema ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
+- The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table) ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
 
 ### Configuration
 
@@ -136,8 +136,8 @@ flowchart LR
 | **Elementary compatibility target** | Pin the Elementary release the compatibility views follow; spike S4 on `edr report`. | `building` |
 | **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `building` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
-| **Setup and doctor** | `icecore.setup` creates the schema and the two emitter procedures and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
-| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`. | `planned` |
+| **Setup and doctor** | `icecore.setup` creates the schema, the two emitter procedures and the views, and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
+| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; `metrics` and `schema_changes` exist, the rest follow. | `building` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
 | **Missed-run detection** | A Snowflake task compares `meta.sla` schedules with the last successful run. | `planned` |
 | **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `planned` |

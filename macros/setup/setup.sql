@@ -9,7 +9,8 @@
       4. set_telemetry_levels     the database's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
-      7. create_views, create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
+      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 

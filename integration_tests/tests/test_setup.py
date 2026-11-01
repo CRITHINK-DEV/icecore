@@ -170,6 +170,11 @@ def _state(sf, schema):
         state[proc + "_ddl"] = cur.execute(f"select get_ddl('procedure', '{qualified}')").fetchone()
         grants = cur.execute(f"show grants on procedure {qualified}").fetchall()
         state[proc + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
+    for view in sorted(r["name"] for r in cur.execute(f'show views in schema "{DATABASE}"."{schema}"').fetchall()):
+        qualified = f'"{DATABASE}"."{schema}"."{view}"'
+        state[view + "_ddl"] = cur.execute(f"select get_ddl('view', '{qualified}')").fetchone()
+        grants = cur.execute(f"show grants on view {qualified}").fetchall()
+        state[view + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
     return state
 
 
@@ -189,8 +194,11 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
     assert any("create_views" in line and "METRICS" in line and "planned" not in line for line in logs), logs
     # a grant made after setup must survive the next setup (CREATE OR REPLACE ... COPY GRANTS)
     sf.cursor().execute(f'grant usage on procedure "{DATABASE}"."{schema}"."ICECORE_EMIT"(ARRAY) to role PUBLIC')
+    sf.cursor().execute(f'grant select on view "{DATABASE}"."{schema}"."METRICS" to role PUBLIC')  # COPY GRANTS keeps it
     before = _state(sf, schema)
     assert before["schema_created_on"] and ("USAGE", "ROLE", "PUBLIC") in before["ICECORE_EMIT_grants"]
+    assert ("SELECT", "ROLE", "PUBLIC") in before["METRICS_grants"]
+    assert {"METRICS_ddl", "SCHEMA_CHANGES_ddl"} <= set(before)  # the views exist, with their DDL compared too
 
     first, _ = call("setup", {"schema": schema})
     second, _ = call("setup", {"schema": schema})

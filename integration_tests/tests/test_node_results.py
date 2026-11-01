@@ -109,7 +109,8 @@ def test_node_results_and_query_events_are_behind_their_vars():
 
 
 def test_end_run_lists_its_emitters_with_their_vars():
-    assert run_macro("it_end_run_emitters", {}) == [
+    # the first two, in order; later emitters (lineage, samples...) follow
+    assert run_macro("it_end_run_emitters", {})[:2] == [
         {"name": "node_results", "var": "node_results", "default": True},
         {"name": "query_events", "var": "query_events", "default": True},
     ]

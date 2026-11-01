@@ -181,8 +181,14 @@ role (whether a view owned by another role can pass that access through is unmea
    design expects them in the account table. On that table, only LOG records from anonymous blocks were checked, by the lead
    with ACCOUNTADMIN. The query's `value::string` predicate dropped every SPAN and SPAN_EVENT row, so SPAN and SPAN_EVENT
    routing there is unmeasured too (S1.md, "Routing").
-3. **Rollback through the persisted Python procedure is unmeasured.** It was measured for `ICECORE_EMIT` (both records kept,
-   `proc.rollback`) and for the temporary procedures (S1.md, open point 3).
+3. **Closed (1 Nov 2026, story cd57206a, `test_records_survive_a_rollback_through_both_procedures` in
+   `integration_tests/tests/test_failure_isolation.py`).** Inside one explicit transaction (`BEGIN`; an `INSERT` into a
+   control table; one `CALL` of `ICECORE_EMIT` with 1 event; one `CALL` of the persisted Python `ICECORE_EMIT_RUN` with 1 span
+   and 1 LOG; `ROLLBACK`), the control table went from 1 row to 0, so the transaction was rolled back, and **all 3 records
+   landed**: 1 SPAN_EVENT from `ICECORE_EMIT` (status `ok 1`) and 1 SPAN and 1 LOG from `ICECORE_EMIT_RUN` (status `ok spans=1
+   logs=1`). Rollback does not lose icecore records through either procedure (`ICECORE_EMIT` was also measured in S1,
+   `proc.rollback`). The same test gives the story's acceptance criterion: a record emitted in a rolled-back transaction is
+   present when the event table is read.
 4. **The temporary-table privilege for `edr report` is unmeasured** (S4.md, consequence 3).
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later

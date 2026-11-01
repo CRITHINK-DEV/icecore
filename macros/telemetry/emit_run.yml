@@ -11,7 +11,7 @@ macros:
       `payload_cap_kb` as `emit` caps them; a log message counts towards its record's cap and, when cut, is
       flagged as `icecore.message` in `icecore.truncated_keys`. Records go in as many CALLs of at most 512 KB
       of JSON as needed, with no count limit (S2), each inside the guard block, so a missing procedure or grant
-      only logs a warning. Each CALL is its own trace. A no-op at parse time. Returns `{records, calls,
+      only logs a warning, one per call to `emit_run` (with the number of failing CALLs). Items that are not a mapping, and spans without a numeric `start_ns`, are skipped instead of failing the whole CALL. Each CALL is its own trace. A no-op at parse time. Returns `{records, calls,
       statuses}` (one status per CALL, `ok spans=<n> logs=<n>` or `icecore-error ...`).
     arguments:
       - name: items

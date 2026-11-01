@@ -11,6 +11,7 @@ vars:
     telemetry: true
     node_results: true                  # end_run: one LOG per node result (UC1)
     query_events: true                  # end_run: one icecore.query span event per node query id (UC1)
+    lineage: true                       # end_run: the DAG's edges (parent, child unique ids) as LOG records (UC1)
     result_message: redacted            # dbt.result.message: redacted (quoted literals as '?', max 1,000 chars), full or none
     monitors: true
     cost: false
@@ -24,5 +25,6 @@ vars:
     shadow_engine: none
     payload_cap_kb: 64
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
+    history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
     metadata_fallback_kinds: [iceberg]   # table kinds whose metadata row count is not trusted (spike S5)
     dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

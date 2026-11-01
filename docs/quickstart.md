@@ -25,14 +25,21 @@ If the value is empty, an `ACCOUNTADMIN` sets it:
 ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS;
 ```
 
-On Enterprise edition or above you can give the database its own event table instead. `icecore.setup` prints the statements for that and never runs them. On Standard edition, icecore uses the account's active table.
+On Enterprise edition or above you can give the database its own event table instead. An admin runs:
+
+```sql
+CREATE EVENT TABLE IF NOT EXISTS <db>.<schema>.<event_table>;
+ALTER DATABASE <db> SET EVENT_TABLE = <db>.<schema>.<event_table>;
+```
+
+`icecore.setup` never creates an event table or changes this association. On Standard edition, icecore uses the account's active table.
 
 **The Anaconda terms.** `ICECORE_EMIT_RUN` is a Python procedure. It uses Snowflake's third-party Python packages, so your organization must have accepted the Anaconda terms. An organization administrator accepts them in Snowsight.
 
 **Grants.** The role that runs `setup` needs:
 
 - USAGE on the target database;
-- CREATE SCHEMA on it, or an existing schema it can use;
+- CREATE SCHEMA on it, or ownership of the schema;
 - CREATE PROCEDURE and CREATE VIEW on that schema;
 - read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table).
 
@@ -106,7 +113,7 @@ icecore: setup step 9/9 create_tasks: planned, not available yet (Snowflake task
 
 Read the output for three things:
 
-- Step 4 says `levels sufficient`, or prints the `ALTER DATABASE` statement for an admin.
+- Step 4 says `levels sufficient`, or prints the `ALTER DATABASE` statement for an admin. With sufficient levels, `printed 1 for an admin` is not a problem: it is the recommendation to cluster the event table, an `ALTER TABLE ... CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)` that an admin may run.
 - The cost line is an estimate of what icecore will write to your event table each month. `runs_per_day` is how often dbt runs.
 - Steps 8 and 9 are not built yet. They are reported as planned and do nothing.
 

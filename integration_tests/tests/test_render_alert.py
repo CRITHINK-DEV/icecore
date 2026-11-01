@@ -14,7 +14,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
-from helpers.events import wait_for_events
+from helpers.events import assert_no_events, wait_for_events
 from helpers.macros import MacroFailed, run_macro, run_macro_with_logs
 from helpers.run_hooks import icecore_vars, obs_schema, snowflake_since
 
@@ -50,8 +50,8 @@ def test_email_alert_condition_is_the_dedup_select_and_action_sends_then_records
     assert f'from "{DATABASE}"."MY_OBS"."ALERTS_FEED"' in sql and "and notified.channel = 'email'" in sql
     assert "where feed.acknowledged_at is null" in sql
     assert "SNOWFLAKE.ALERT.GET_CONDITION_QUERY_UUID()" in sql and "result_scan(:qid)" in sql
-    assert ("SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG('ICECORE_EMAIL_INT', 'icecore alert', "
-            "ARRAY_CONSTRUCT('data@example.com'), ARRAY_CONSTRUCT('data@example.com'), 'icecore: new incidents')") in sql
+    assert ("SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG('ICECORE_EMAIL_INT', 'icecore: new incidents', "
+            "ARRAY_CONSTRUCT('data@example.com'))") in sql
     assert "CALL SYSTEM$SEND_SNOWFLAKE_NOTIFICATION(SNOWFLAKE.NOTIFICATION.TEXT_PLAIN(:msg)" in sql
     assert f'CALL "{DATABASE}"."MY_OBS"."ICECORE_NOTIFIED"(:k, \'email\');' in sql
     assert '"ICECORE_EMIT"' not in sql  # icecore.notified is refused by the emitters
@@ -214,6 +214,53 @@ def test_alerts_are_created_suspended_one_per_channel(sf, seeded):
     rows = _rows(sf.cursor(), f'show alerts in schema "{DATABASE}"."{seeded["schema"]}"')
     assert sorted(r["name"] for r in rows) == ["ICECORE_ALERT_CHAT", "ICECORE_ALERT_EMAIL", "ICECORE_ALERT_TEAMS"]
     assert {r["state"] for r in rows} == {"suspended"}
+
+
+SOLO = {"alert_channels": {"solo": {"type": "email", "integration": "ICECORE_NO_SUCH_INTEGRATION",
+                                    "recipients": ["data@example.com"]}}}
+
+
+@pytest.mark.sandbox
+def test_execute_alert_runs_condition_and_action_up_to_the_send(sf, seeded):
+    """EXECUTE ALERT on a suspended alert (the owner granted EXECUTE ALERT to the CI role). The sandbox has no
+    notification integration, so the send step errors; the action must have run up to it, and because nothing was sent
+    nothing is recorded as notified: the incidents stay pending. The alert is dropped and never resumed."""
+    schema = seeded["schema"]
+    settings = {**seeded["settings"], **SOLO}
+    obs_vars = ["--vars", json.dumps({"icecore": settings})]
+    created = run_macro("it_create_alerts", {"schema": schema}, obs_vars)
+    assert [(a["channel"], a["status"], a["resumed"]) for a in created] == [("solo", "ok", False)]
+    alert = f'"{DATABASE}"."{schema}"."ICECORE_ALERT_SOLO"'
+    cur = sf.cursor()
+    try:
+        assert _rows(cur, f"show alerts like 'ICECORE_ALERT_SOLO' in schema \"{DATABASE}\".\"{schema}\"")[0]["state"] == "suspended"
+        since = snowflake_since(sf, 1)
+        cur.execute(f"execute alert {alert}")
+        history, deadline = [], time.monotonic() + 240
+        while time.monotonic() < deadline:
+            history = _rows(sf.cursor(), (
+                f'select state, sql_error_code, sql_error_message from table("{DATABASE}".information_schema.alert_history('
+                f"scheduled_time_range_start => dateadd(hour, -1, current_timestamp()), result_limit => 20, "
+                f"alert_name => 'ICECORE_ALERT_SOLO')) where schema_name = '{schema}' and state not in ('SCHEDULED', 'EXECUTING')"))
+            if history:
+                break
+            time.sleep(10)
+        assert history, "the alert run never reached ALERT_HISTORY"
+        run = history[0]
+        # the condition held (two incidents) so the action ran; it stopped at the send: no such integration
+        assert run["state"] == "ACTION_FAILED", run
+        assert "ICECORE_NO_SUCH_INTEGRATION" in (run["sql_error_message"] or ""), run
+        assert "not a valid notification integration" in run["sql_error_message"], run
+        # nothing was sent, so nothing was recorded: no notified record, the incidents are still pending
+        assert_no_events(
+            sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s and record:name::string = 'icecore.notified'",
+            {"schema": schema}, wait_s=30, since=since)
+        solo = {"name": "solo", "type": "email", "integration": "ICECORE_NO_SUCH_INTEGRATION",
+                "recipients": ["data@example.com"], "default": True}
+        assert len(_rows(sf.cursor(), _condition(_alert_sql(seeded, solo, [solo])))) == 2
+        assert _rows(sf.cursor(), f"show alerts like 'ICECORE_ALERT_SOLO' in schema \"{DATABASE}\".\"{schema}\"")[0]["state"] == "suspended"
+    finally:
+        cur.execute(f"drop alert if exists {alert}")
 
 
 @pytest.mark.sandbox

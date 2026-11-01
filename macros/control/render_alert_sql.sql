@@ -258,7 +258,8 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
     {%- set rec = [] -%}
     {%- for r in channel['recipients'] -%}{%- do rec.append(icecore._icecore_sql_literal(r)) -%}{%- endfor -%}
     {%- set recipients = 'ARRAY_CONSTRUCT(' ~ (rec | join(', ')) ~ ')' -%}
-    {{ return('SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG(' ~ integration ~ ", 'icecore alert', " ~ recipients ~ ', ' ~ recipients ~ ", 'icecore: new incidents')") }}
+    {#- The signature Snowflake lists: EMAIL_INTEGRATION_CONFIG(integration, subject, to ARRAY) (and a 5-argument form with cc and bcc arrays). -#}
+    {{ return('SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG(' ~ integration ~ ", 'icecore: new incidents', " ~ recipients ~ ')') }}
   {%- endif -%}
   {{ return('SNOWFLAKE.NOTIFICATION.INTEGRATION(' ~ integration ~ ')') }}
 {% endmacro %}

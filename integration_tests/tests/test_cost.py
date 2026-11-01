@@ -51,6 +51,29 @@ def test_node_with_one_unattributed_query_gets_no_cost_yet():
     assert list(out) == ["n.three"]
 
 
+def test_settled_node_closes_at_what_was_attributed_and_says_why():
+    costs = {"q1": {"credits": 0.25, "warehouse": "WH"}}
+    out = run_macro("it_node_costs", {"ids_by_node": {"n.none": ["q9"], "n.part": ["q1", "q9"], "n.full": ["q1"]},
+                                      "costs": costs, "settled": {"n.none": True, "n.part": True, "n.full": True}})
+    assert out["n.none"] == {"credits": 0.0, "warehouse": None, "settled": "no_attribution"}
+    assert out["n.part"] == {"credits": 0.25, "warehouse": "WH", "settled": "no_attribution"}
+    assert "settled" not in out["n.full"]  # every query was attributed: a real cost
+
+
+def test_settled_cost_log_carries_the_flag_and_has_no_metric():
+    cost = {"credits": 0.0, "warehouse": None, "settled": "no_attribution"}
+    out = run_macro("it_cost_items", {"node_attrs": NODE, "cost": cost})
+    assert out["log"]["attrs"]["dbt.cost.settled"] == "no_attribution" and out["log"]["attrs"]["dbt.cost.credits"] == 0.0
+    assert out["metric"] == []
+
+
+def test_settle_after_24_hours_by_default_and_the_var_changes_it():
+    assert run_macro("it_cost_settled", {"age_hours": 23}) == {"settled": False, "hours": 24}
+    assert run_macro("it_cost_settled", {"age_hours": 24})["settled"] is True
+    out = run_macro("it_cost_settled", {"age_hours": 0}, ["--vars", json.dumps({"icecore": {"cost_settle_hours": 0}})])
+    assert out == {"settled": True, "hours": 0}
+
+
 def test_cost_log_and_metric_shapes():
     out = run_macro("it_cost_items", {"node_attrs": NODE, "cost": {"credits": 0.021, "warehouse": "TRANSFORM_WH"}})
     log = out["log"]

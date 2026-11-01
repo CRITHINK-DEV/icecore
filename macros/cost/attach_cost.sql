@@ -33,7 +33,11 @@
   {%- endfor -%}
   {%- if ids_by_node -%}
     {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node)) -%}
-    {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs']) -%}
+    {%- set settled = {} -%}
+    {%- if icecore._icecore_cost_settled(0) -%}
+      {%- for unique_id in ids_by_node -%}{%- do settled.update({unique_id: true}) -%}{%- endfor -%}
+    {%- endif -%}
+    {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled) -%}
     {%- set events = [] -%}
     {%- for unique_id, cost in costs.items() -%}
       {%- do batch['items'].append(icecore._icecore_cost_log(nodes[unique_id], cost)) -%}
@@ -100,8 +104,10 @@
 
 
 {#- {unique_id: {credits, warehouse}} for the nodes whose query ids are ALL in costs. A node with one query still
-    unattributed gets nothing yet: a partial sum would be wrong, and the backfill would then add a second one. -#}
-{% macro _icecore_node_costs(ids_by_node, costs) %}
+    unattributed gets nothing yet: a partial sum would be wrong, and the backfill would then add a second one.
+    A node in `settled` (see _icecore_cost_settled) is closed instead: its credits are what was attributed (0 when
+    nothing was) and it carries settled = 'no_attribution'. -#}
+{% macro _icecore_node_costs(ids_by_node, costs, settled={}) %}
   {%- set out = {} -%}
   {%- for unique_id, ids in ids_by_node.items() -%}
     {%- set total = namespace(credits=0.0, complete=true) -%}
@@ -117,6 +123,11 @@
     {%- endfor -%}
     {%- if total.complete -%}
       {%- do out.update({unique_id: {'credits': total.credits, 'warehouse': (warehouses | sort | join(',')) or none}}) -%}
+    {%- elif settled.get(unique_id) -%}
+      {#- settled: Snowflake never wrote an attribution row for this query (many statements get none), so the node
+          is closed with what was attributed (0 when nothing was) and says why -#}
+      {%- do out.update({unique_id: {'credits': total.credits, 'warehouse': (warehouses | sort | join(',')) or none,
+                                     'settled': 'no_attribution'}}) -%}
     {%- endif -%}
   {%- endfor -%}
   {{ return(out) }}
@@ -130,12 +141,13 @@
   {%- do attrs.update(node_attrs) -%}
   {%- do attrs.update({'dbt.cost.credits': cost['credits']}) -%}
   {%- do icecore._icecore_put(attrs, 'dbt.cost.warehouse', cost['warehouse']) -%}
+  {%- do icecore._icecore_put(attrs, 'dbt.cost.settled', cost.get('settled')) -%}
   {%- do attrs.update(extra) -%}
   {{ return({
       'type': 'log',
       'level': 'info',
       'message': (attrs.get('dbt.node.unique_id') or 'node') ~ ' cost: ' ~ cost['credits'] ~ ' credits'
-          ~ (' on ' ~ cost['warehouse'] if cost['warehouse'] else ''),
+          ~ (' on ' ~ cost['warehouse'] if cost['warehouse'] else '') ~ (' (settled: ' ~ cost['settled'] ~ ')' if cost.get('settled') else ''),
       'attrs': attrs,
   }) }}
 {% endmacro %}
@@ -144,10 +156,27 @@
 {#- The `credits` metric of a node, as emit_events takes it, with the node's unique id added. The metric is
     keyed by the node's relation, or its unique id when it has none (a test). -#}
 {% macro _icecore_cost_metric_events(node_attrs, cost) %}
+  {%- if cost.get('settled') -%}{{ return([]) }}{%- endif -%}
   {%- set unique_id = node_attrs.get('dbt.node.unique_id') -%}
   {%- set events = icecore._icecore_metric_events(node_attrs.get('dbt.node.relation') or unique_id, 'credits', cost['credits']) -%}
   {%- for event in events -%}
     {%- do event['attributes'].update({'dbt.node.unique_id': unique_id}) -%}
   {%- endfor -%}
   {{ return(events) }}
+{% endmacro %}
+
+
+{#- var icecore.cost_settle_hours (default 24): after this age a node whose queries have no attribution row is settled
+    (see _icecore_node_costs). Snowflake never writes attribution rows for many statements (views, plain CREATE TABLE,
+    about half of short SELECTs, measured in the sandbox), so waiting longer would leave those nodes without a cost
+    forever and fill the backfill's pending set. A value of 0 or less settles at once. -#}
+{% macro _icecore_cost_settle_hours() %}
+  {%- set hours = icecore._icecore_number(icecore._icecore_setting('cost_settle_hours', 24)) -%}
+  {{ return(24 if hours is none else hours) }}
+{% endmacro %}
+
+
+{#- true when a node of age_hours (hours since its run) is settled. -#}
+{% macro _icecore_cost_settled(age_hours) %}
+  {{ return((age_hours or 0) >= icecore._icecore_cost_settle_hours()) }}
 {% endmacro %}

@@ -49,13 +49,19 @@ def test_package_declares_the_obs_schema_var():
 
 
 def test_procedure_ddl_is_the_gate1_contract():
-    emit, emit_run, ack = run_macro("it_procedure_ddl", {})
+    emit, emit_run, ack, notified = run_macro("it_procedure_ddl", {})
     schema = f'"{DATABASE}"."ICECORE_OBS"'
     assert emit.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_EMIT"(events ARRAY)')
     assert "LANGUAGE SQL" in emit and "EXECUTE AS OWNER" in emit
     assert "SYSTEM$ADD_EVENT(:nm, :a)" in emit
     assert "> 100" in emit  # refuses more than 100 events per CALL
     assert "LOWER(nm) = 'icecore.ack'" in emit and "forbidden_event" in emit  # icecore.ack is ICECORE_ACK's only
+    assert "LOWER(nm) = 'icecore.notified'" in emit  # icecore.notified is ICECORE_NOTIFIED's only
+    assert 'if any(str(n or "").lower() == "icecore.notified" for n in names)' in emit_run
+    assert notified.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_NOTIFIED"(incident_key STRING, channel STRING)')
+    assert "LANGUAGE SQL" in notified and "EXECUTE AS OWNER" in notified and "CURRENT_USER()" in notified
+    assert "SYSTEM$ADD_EVENT('icecore.notified'" in notified and "invalid_incident_key" in notified
+    assert "EXECUTE IMMEDIATE" not in notified.upper() and "IDENTIFIER(" not in notified.upper()  # no object name from a caller
     assert ack.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_ACK"(incident_key STRING)')
     assert "LANGUAGE SQL" in ack and "EXECUTE AS OWNER" in ack and "CURRENT_USER()" in ack
     assert f'{schema}."ALERTS_FEED"' in ack and "acknowledged_at IS NULL" in ack
@@ -176,7 +182,7 @@ def params(obs, tag: str) -> dict:
 def test_create_emit_procedures_creates_all_three(sf, obs):
     rows = sf.cursor().execute(f'show user procedures in schema "{DATABASE}"."{obs["schema"]}"').fetchall()
     names = sorted(r[1] for r in rows)
-    assert names == ["ICECORE_ACK", "ICECORE_EMIT", "ICECORE_EMIT_RUN"]
+    assert names == ["ICECORE_ACK", "ICECORE_EMIT", "ICECORE_EMIT_RUN", "ICECORE_NOTIFIED"]
 
 
 @pytest.mark.sandbox

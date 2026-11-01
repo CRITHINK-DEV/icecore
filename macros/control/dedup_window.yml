@@ -4,7 +4,7 @@ macros:
   - name: dedup_window_sql
     description: >
       The SELECT of the incidents a channel's alert may notify now, computed over the `ALERTS_FEED` view and the
-      `icecore.notified` span events (written by the alert's action through ICECORE_EMIT, never an INSERT). Columns
+      `icecore.notified` span events (written only by the ICECORE_NOTIFIED procedure, which the alert's action calls; never an INSERT; only records of that executable at or after the incident's first detection count). Columns
       are those of `ALERTS_FEED` plus `last_notified_at`. An acknowledged incident is never returned. An incident
       notified on this channel inside the window is not returned again; after the window it is, while unacknowledged
       (a reminder). A new incident_key has no record and is returned. Another channel's notification does not

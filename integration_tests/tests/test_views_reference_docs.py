@@ -16,15 +16,31 @@ def views() -> dict:
 
 
 def columns(sql: str) -> list[str]:
-    """Output column names: the aliases of the last top-level select list."""
+    """Output column names: the aliases of the last top-level select list (commas inside brackets or a CASE do not split)."""
     body = sql[sql.rindex("\nselect\n") + len("\nselect\n"):]
     body = body[:body.index("\nfrom ")]
+    items, depth, current = [], 0, ""
+    for token in re.findall(r"\w+|\W", body):
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif token.lower() == "case":
+            depth += 1
+        elif token.lower() == "end":
+            depth -= 1
+        if token == "," and depth == 0:
+            items.append(current)
+            current = ""
+        else:
+            current += token
+    items.append(current)
     names = []
-    for line in body.splitlines():
-        line = line.strip().rstrip(",")
-        if not line:
+    for item in items:
+        item = " ".join(item.split())
+        if not item:
             continue
-        alias = re.split(r"\s+as\s+", line)[-1] if re.search(r"\s+as\s+", line) else line
+        alias = re.split(r"\s+as\s+", item, flags=re.I)[-1] if re.search(r"\s+as\s+", item, flags=re.I) else item.split(".")[-1]
         names.append(alias.strip().strip('"').lower())
     return names
 
@@ -34,7 +50,7 @@ def sections() -> dict:
     return {p.splitlines()[0].strip("` ").upper(): p for p in parts}
 
 
-@pytest.mark.parametrize("name", ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"])
+@pytest.mark.parametrize("name", ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS", "NODE_EXECUTIONS"])
 def test_every_view_column_is_in_the_reference(name):
     section = sections()[name if name != "LINEAGE_LATEST" else "LINEAGE_LATEST"]
     text = section.lower()

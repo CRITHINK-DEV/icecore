@@ -10,7 +10,7 @@ Every time column is the event's `TIMESTAMP`, because `OBSERVED_TIMESTAMP` is NU
 
 Re-running `icecore.setup` replaces the views with `COPY GRANTS`, so grants you made on them stay.
 
-Views not merged yet are **coming**: `INVOCATIONS`, `NODE_EXECUTIONS`, `SILENCE_EVENTS` and `ALERTS_FEED`.
+Views not merged yet are **coming**: `SILENCE_EVENTS` and `ALERTS_FEED`.
 
 ## Who can read
 
@@ -28,6 +28,48 @@ GRANT APPLICATION ROLE SNOWFLAKE.EVENTS_VIEWER TO ROLE <reader>;  -- only for th
 ```
 
 Source: `spikes/GATE1.md`, "What setup creates and the grants it needs".
+
+## `INVOCATIONS`
+
+One row per dbt invocation. It joins three records on `dbt.invocation_id`: the `icecore.run_start` event (written at `on-run-start`), the `icecore.invocation` span and the `run_end` log (both written at `on-run-end`). A run whose end never arrived has the start only. Its `status` is `running` when the start landed less than 24 hours ago, and `unfinished` after that, and `ended_at` and the counts are null.
+
+`started_at`, `ended_at` and `duration_s` are dbt's clock. The `TIMESTAMP` of the records is Snowflake's. The view never subtracts one from the other (see [the two clocks](../conventions.md#the-dbt-clock-and-the-snowflake-clock)).
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `invocation_id` | text | The dbt run | `dbt.invocation_id` |
+| `runtime` | text | `core`, `cloud` or `fusion` | `dbt.runtime` |
+| `command` | text | `build`, `run`, `test`, ... | `dbt.command` |
+| `target` | text | dbt target name | `dbt.target` |
+| `project` | text | Root dbt project | `dbt.project` |
+| `dbt_version` | text | dbt version | `dbt.version` |
+| `started_at` | time | When dbt started the run, dbt's clock | `dbt.invocation.started_at` |
+| `ended_at` | time | When the run ended, dbt's clock. Null if unfinished | `dbt.invocation.completed_at` |
+| `duration_s` | float | Seconds | `dbt.invocation.duration_s` |
+| `status` | text | `success`, `warn`, `error`, `unknown`, `running` or `unfinished` | `dbt.invocation.status`, else derived |
+| `nodes_total`, `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped` | number | Node counts. Null if unfinished | `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped` |
+| `credits` | float | Always null until cost attribution is merged | none yet |
+
+## `NODE_EXECUTIONS`
+
+One row per node per invocation. It joins the `icecore.node` span, the `node_result` log and the `icecore.query` events of the node. The row exists as soon as any of the three does. A skipped node has no span, so its `started_at` and `completed_at` come from the log if it has them. `started_at` and `completed_at` are dbt's clock.
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `invocation_id` | text | The dbt run | `dbt.invocation_id` |
+| `unique_id` | text | The node's dbt unique id | `dbt.node.unique_id` |
+| `type` | text | `model`, `seed`, `snapshot`, `test`, ... | `dbt.node.type` |
+| `name` | text | Node name | `dbt.node.name` |
+| `materialization` | text | `table`, `view`, ... | `dbt.node.materialization` |
+| `relation` | text | The quoted `"DB"."SCHEMA"."NAME"`. Null for tests | `dbt.node.relation` |
+| `status` | text | dbt's result status | `dbt.result.status` |
+| `rows_affected` | number | Rows affected | `dbt.result.rows_affected` |
+| `execution_time_s` | float | Seconds | `dbt.result.execution_time_s` |
+| `started_at`, `completed_at` | time | The node's times, dbt's clock | `dbt.node.started_at`, `dbt.node.completed_at` |
+| `query_id` | text | The node's Snowflake query: the result's, else the first query event's | `snow.query.id` |
+| `query_ids` | array | Every query id of the node | `snow.query.id` of the `icecore.query` events |
+| `credits` | float | Null until cost attribution is merged | `dbt.cost.credits` |
+| `root_cause_unique_id` | text | Null until root-cause attribution is merged | `dbt.root_cause.unique_id` |
 
 ## `TEST_RESULTS`
 

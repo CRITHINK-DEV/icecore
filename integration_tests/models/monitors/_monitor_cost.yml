@@ -1,0 +1,26 @@
+version: 2
+
+# Fixtures for the monitor cost checks (tests/test_monitor_cost.py). The table is created by the sandbox test under a
+# name that carries its run_id and passed as a var; the default only lets the project parse. Sources only.
+sources:
+  - name: it_uc2_cost
+    schema: spikes
+    tables:
+      - name: big
+        identifier: "{{ var('it_uc2_cost_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.freshness:
+              name: it_cost_freshness
+              max_lag: 2h
+          - icecore.volume:
+              name: it_cost_volume
+              min_rows: 1
+          - icecore.schema_changes:
+              name: it_cost_schema_changes
+        columns:
+          - name: amount
+            data_tests:
+              - icecore.column_anomaly:
+                  name: it_cost_column_anomaly
+                  metrics: [null_rate, avg, max]
+                  since: "{{ var('it_since', '') }}"

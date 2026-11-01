@@ -1,5 +1,5 @@
 """UC1 failed-row samples: emit_samples (macros/telemetry/emit_sample.sql), an end-of-run emitter of end_run behind
-var icecore.samples (default true).
+var icecore.samples (default false: opt-in, samples copy row values).
 
 For a failed test whose failures dbt stored (store_failures), one LOG at INFO with `icecore.kind = sample`: up to
 var sample_rows (default 10) rows of the failures relation, read through a guarded query, as a JSON list in
@@ -49,9 +49,25 @@ def candidates(results, **settings):
 
 # --- offline --------------------------------------------------------------------------------------
 
-def test_emitter_is_listed_behind_var_samples_default_true():
+def test_emitter_is_listed_behind_var_samples_default_false():
     emitters = {e["name"]: e for e in run_macro("it_end_run_emitters", {})}
-    assert emitters["samples"]["var"] == "samples" and emitters["samples"]["default"] is True
+    assert emitters["samples"]["var"] == "samples" and emitters["samples"]["default"] is False
+
+
+def test_default_vars_give_no_sample_and_run_no_query():
+    # Offline any query would fail to connect: success proves end_run ran none for a failed test.
+    records = run_macro("it_end_run_render", {"results": [test_result()]})["records"]
+    assert not sample_logs(records)
+
+
+def test_excluded_columns_become_question_marks_and_keep_their_names():
+    rows = [{"UNIQUE_FIELD": "jane@x.com", "N_RECORDS": 2, "Email": "a@b.c"}]
+    for setting in (["unique_field", "EMAIL"], "unique_field, email"):
+        a = run_macro("it_sample_render", {"result": test_result(), "rows": rows},
+                      with_vars({"sample_exclude_columns": setting}))["attrs"]
+        assert json.loads(a["dbt.sample.rows"]) == [{"UNIQUE_FIELD": "?", "N_RECORDS": 2, "Email": "?"}]
+    a = run_macro("it_sample_render", {"result": test_result(), "rows": rows})["attrs"]
+    assert json.loads(a["dbt.sample.rows"]) == rows
 
 
 def test_a_failed_test_with_stored_failures_is_a_candidate():
@@ -65,10 +81,6 @@ def test_warn_severity_is_off_by_default_and_on_with_samples_on_warn():
     assert candidates(warned, samples_on_warn="true")["ids"] == ["test.p.warned"]
 
 
-def test_samples_false_runs_no_query():
-    # Offline any query would fail to connect: success proves end_run ran none for a failed test.
-    records = run_macro("it_end_run_render", {"results": [test_result()]}, with_vars({"samples": False}))["records"]
-    assert not sample_logs(records)
 
 
 @pytest.mark.parametrize("result", [
@@ -147,7 +159,7 @@ def test_end_run_without_candidates_adds_no_sample_and_runs_no_query():
 
 def test_project_vars_docs_and_readme():
     cfg = yaml.safe_load(open(REPO / "dbt_project.yml"))["vars"]["icecore"]
-    assert (cfg["samples"], cfg["sample_rows"], cfg["samples_on_warn"]) == (True, 10, False)
+    assert (cfg["samples"], cfg["sample_rows"], cfg["samples_on_warn"], cfg["sample_exclude_columns"]) == (False, 10, False, [])
     docs = yaml.safe_load(open(REPO / "macros/telemetry/emit_sample.yml"))
     assert [m["name"] for m in docs["macros"]] == ["emit_samples"]
     assert "{{" not in (REPO / "macros/telemetry/emit_sample.yml").read_text()
@@ -190,6 +202,8 @@ DUP_TESTS = ["hooks_dup_unique_id", "hooks_dup_unique_code", "hooks_dup_code_not
 def build_tests(views, obs, tests, **settings):
     """Build hooks_dup with only `tests` (the others excluded: selecting a model brings its tests)."""
     others = [t for t in DUP_TESTS if t not in tests]
+    settings = {"samples": True, **settings}  # opt-in; samples=None leaves the var out (the default)
+    settings = {k: v for k, v in settings.items() if v is not None}
     res, run_results = run_with_hooks(["build", "--select", "hooks_dup", "--exclude", *others], views, obs, **settings)
     return res, run_results["metadata"]["invocation_id"], {r["unique_id"].split(".")[2]: r["status"]
                                                            for r in run_results["results"]}
@@ -246,11 +260,20 @@ def test_warn_severity_lands_no_sample_by_default_and_one_with_samples_on_warn(s
 
 
 @pytest.mark.sandbox
-def test_samples_false_and_telemetry_false_land_no_sample(sf, obs, views):
+def test_default_vars_and_telemetry_false_land_no_sample(sf, obs, views):
     since = snowflake_since(sf)
-    res, invocation_id, _ = build_tests(views, obs, ["hooks_dup_unique_id"], samples=False)
+    res, invocation_id, _ = build_tests(views, obs, ["hooks_dup_unique_id"], samples=None)
     assert not sample_rows_of(invocation_records(sf, obs, invocation_id, min_rows=3, since=since))
 
     since = snowflake_since(sf)
     res, invocation_id, _ = build_tests(views, obs, ["hooks_dup_unique_id"], telemetry=False)
     assert_no_invocation_records(sf, obs, invocation_id, since=since)
+
+
+@pytest.mark.sandbox
+def test_excluded_column_is_question_marks_in_the_landed_sample(sf, obs, views):
+    since = snowflake_since(sf)
+    res, invocation_id, _ = build_tests(views, obs, ["hooks_dup_unique_id"], sample_exclude_columns=["unique_field"])
+    sample, = sample_rows_of(invocation_records(sf, obs, invocation_id, min_rows=3, since=since))
+    kept = json.loads(sample["record_attributes"]["dbt.sample.rows"])
+    assert len(kept) == 10 and {r["UNIQUE_FIELD"] for r in kept} == {"?"} and all(int(r["N_RECORDS"]) == 2 for r in kept)

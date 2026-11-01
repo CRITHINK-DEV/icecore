@@ -1,4 +1,4 @@
-{#- UC1 end-of-run emitter `samples` (var icecore.samples, default true): the failed rows of failed tests, as LOG
+{#- UC1 end-of-run emitter `samples` (var icecore.samples, default false: opt-in, because samples copy row values): the failed rows of failed tests, as LOG
     records at INFO, `icecore.kind = sample`. For a test that failed (status fail; also warn when var
     samples_on_warn is true, default false) and whose failures dbt stored (config store_failures, so the node has
     a relation_name), it selects up to var sample_rows rows (default 10, clamped to 1..1000) of the failures
@@ -6,7 +6,8 @@
     privilege problem logs a warning and skips the sample, never fails the run). The record carries the test's
     node_attributes(node, result), `dbt.sample.rows` (the rows as a JSON list), `dbt.sample.row_count` and
     `dbt.sample.truncated`. Rows are dropped from the end until the record fits payload_cap_kb, and
-    dbt.sample.truncated is then true. Samples hold real data from your tables: see the README, Configuration.
+    dbt.sample.truncated is then true. Columns named in var sample_exclude_columns (case-insensitive, default
+    none) keep their name in each row and their value becomes '?'. Samples hold real data from your tables: see the README, Configuration.
     Called by end_run as emit_samples(results, batch). -#}
 {% macro emit_samples(results, batch) %}
   {%- set limit = icecore._icecore_sample_limit() -%}
@@ -50,6 +51,31 @@
 {% endmacro %}
 
 
+{#- var sample_exclude_columns as upper-case names: a list, or a comma-separated string. -#}
+{% macro _icecore_sample_excluded_columns() %}
+  {%- set raw = icecore._icecore_setting('sample_exclude_columns', []) -%}
+  {%- set raw = (raw | string).split(',') if raw is string else (raw if raw is iterable else []) -%}
+  {%- set names = [] -%}
+  {%- for name in raw -%}
+    {%- do names.append((name | string | trim | upper)) -%}
+  {%- endfor -%}
+  {{ return(names) }}
+{% endmacro %}
+
+
+{#- The row with the value of each excluded column replaced by '?'; the column names stay. -#}
+{% macro _icecore_sample_mask(row, excluded) %}
+  {%- if not excluded -%}
+    {{ return(row) }}
+  {%- endif -%}
+  {%- set out = {} -%}
+  {%- for key, value in row.items() -%}
+    {%- do out.update({key: '?' if (key | string | upper) in excluded else value}) -%}
+  {%- endfor -%}
+  {{ return(out) }}
+{% endmacro %}
+
+
 {#- One value: the rows as an array of objects (NULLs kept). relation_name is dbt's own quoted name of the stored failures. -#}
 {% macro _icecore_sample_sql(relation_name, limit) %}
   {{ return('select array_agg(object_construct_keep_null(*)) from (select * from ' ~ relation_name ~ ' limit ' ~ (limit | int) ~ ')') }}
@@ -67,7 +93,9 @@
       - (tojson(attrs) | length) - (label | length) - 400 -%}
   {%- set kept = [] -%}
   {%- set ns = namespace(size=4) -%}
+  {%- set excluded = icecore._icecore_sample_excluded_columns() -%}
   {%- for row in rows -%}
+    {%- set row = icecore._icecore_sample_mask(row, excluded) -%}
     {#- the row as it sits in the JSON string attribute, which JSON escapes once more, plus the comma -#}
     {%- set size = (tojson(tojson(row)) | length) - 1 -%}
     {%- if ns.size + size <= room and (kept | length) == loop.index0 -%}

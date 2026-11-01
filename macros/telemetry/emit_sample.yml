@@ -3,7 +3,7 @@ version: 2
 macros:
   - name: emit_samples
     description: >
-      End-of-run emitter `samples` of `end_run`, on when `var('icecore').samples` is true (the default). For
+      End-of-run emitter `samples` of `end_run`, on only when `var('icecore').samples` is true (default false: samples copy row values into the event table, which may be readable by more people than the data). For
       each test that failed (status fail; also warn when `var('icecore').samples_on_warn` is true, default
       false) and whose failures dbt stored (`store_failures`), reads up to `var('icecore').sample_rows` rows
       (default 10, clamped to 1..1000) of the failures relation and adds one LOG record at INFO with
@@ -12,10 +12,12 @@ macros:
       problem logs a warning and skips that sample and never fails the run. The record carries the test's
       `node_attributes` (`dbt.node.*`, `dbt.test.*`, `dbt.result.*`), `dbt.sample.rows` (the rows as a JSON
       list of objects, NULLs kept), `dbt.sample.row_count` and `dbt.sample.truncated`. Rows are dropped from
-      the end until the record fits `payload_cap_kb`, and `dbt.sample.truncated` is then true. A test without
+      the end until the record fits `payload_cap_kb`, and `dbt.sample.truncated` is then true. Columns named in
+      `var('icecore').sample_exclude_columns` (a list or comma-separated string, case-insensitive, default none)
+      keep their name in every row and their value becomes `?`. A test without
       stored failures, one that errored, or one that passed gets no sample. Samples contain real data from
-      your tables, so anyone who can read the event table can read them; set `samples` to false to turn them
-      off. Returns nothing.
+      your tables, so anyone who can read the event table can read them; they stay off until you set `samples` to
+      true. Returns nothing.
     arguments:
       - name: results
         type: list

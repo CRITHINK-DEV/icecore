@@ -1,10 +1,26 @@
 {
   "schema_levels": {
-    "blocked_statements": [
-      "ALTER SCHEMA SET LOG_LEVEL",
-      "ALTER SCHEMA SET TRACE_LEVEL",
-      "ALTER PROCEDURE SET LOG_LEVEL",
-      "ALTER PROCEDURE SET TRACE_LEVEL"
+    "blocked": [
+      {
+        "errno": 3001,
+        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
+        "statement": "alter schema ...LOG_LEVEL = 'INFO'"
+      },
+      {
+        "errno": 3001,
+        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY TRACE LEVEL granted on ACCOUNT RK01532.",
+        "statement": "alter schema ...TRACE_LEVEL = 'ON_EVENT'"
+      },
+      {
+        "errno": 3001,
+        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
+        "statement": "alter procedure ...LOG_LEVEL = 'INFO'"
+      },
+      {
+        "errno": 3001,
+        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY TRACE LEVEL granted on ACCOUNT RK01532.",
+        "statement": "alter procedure ...TRACE_LEVEL = 'ALWAYS'"
+      }
     ],
     "database_levels": {
       "LOG_EVENT_LEVEL": "OFF",
@@ -12,9 +28,8 @@
       "METRIC_LEVEL": "NONE",
       "TRACE_LEVEL": "ALWAYS"
     },
-    "errno": 3001,
     "measured": false,
-    "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
-    "run_id": "3146494e31634c07aa021c71ee09818a"
+    "run_id": "f6a74d7482574e3b9b64e86bd11882d8",
+    "statements_tried": 4
   }
 }

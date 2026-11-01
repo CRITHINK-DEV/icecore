@@ -119,7 +119,7 @@ the spec's list of allowed objects did not include before Gate 1 (S1.md, "Conseq
 **Which event table the views read.** `setup` resolves it once, with `SHOW PARAMETERS LIKE 'EVENT_TABLE' IN DATABASE
 <target_db>`, and builds the views on the result. That is the table they read, except when the result is
 `SNOWFLAKE.TELEMETRY.EVENTS`: then they read `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`, and readers need the `EVENTS_VIEWER` application
-role. Whether procedure records from a database without an event table of its own land in the account table is unmeasured
+role (whether a view owned by another role can pass that access through is unmeasured: open item 9). Whether procedure records from a database without an event table of its own land in the account table is unmeasured
 (open item 2).
 
 **Prerequisites.**
@@ -132,9 +132,9 @@ role. Whether procedure records from a database without an event table of its ow
 
 | Role | Needs | Why |
 |---|---|---|
-| The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)` and a deploy source the package does not create (a stage or a Git repository the role can read); CREATE SNOWFLAKE.ML.ANOMALY_DETECTION on `ICECORE_OBS` and the Cortex privileges of spec section 6 for the optional refresh task; CREATE DYNAMIC TABLE on `ICECORE_OBS` for the optional metrics table; `IMPORTED PRIVILEGES` on the `SNOWFLAKE` database (or a database role) for `attach_cost` | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
-| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read. No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
-| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
+| The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)` and a deploy source the package does not create (a stage or a Git repository the role can read); CREATE SNOWFLAKE.ML.ANOMALY_DETECTION on `ICECORE_OBS` and the Cortex privileges of spec section 6 for the optional refresh task; CREATE DYNAMIC TABLE on `ICECORE_OBS` for the optional metrics table and USAGE on the warehouse that table refreshes on | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
+| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read; with the Cortex engine, USAGE on the trained model instances in `ICECORE_OBS` (`cortex__score` runs SHOW and `<model>!DETECT_ANOMALIES` as this role; the Snowflake docs do not state the model privilege, so it is unmeasured); with cost attribution on, `SNOWFLAKE.USAGE_VIEWER` or `IMPORTED PRIVILEGES` on the `SNOWFLAKE` database (`attach_cost` reads `QUERY_ATTRIBUTION_HISTORY` at on-run-end in this role's session, spec section 5). No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
+| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table (open item 9). The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
 
 - A missing procedure or grant does not fail a run (the guard), but the telemetry is lost. `icecore.doctor` therefore makes a
   test `CALL` of both procedures and checks the grants (S1.md, "Consequences for building option B").
@@ -206,7 +206,8 @@ role. Whether procedure records from a database without an event table of its ow
    `EVENTS_VIEW` through a view; the readers' table in "What setup creates" assumes `EVENTS_VIEWER` is needed. Granting it gives
    direct access to all account telemetry, which sits badly with "views are the only interface". The sandbox has one role, so
    it cannot be measured here. The test to run with a second role: as `ACCOUNTADMIN` create `READER_PROBE` without
-   `EVENTS_VIEWER`; as `ICECORE_CI` (which holds it) create a view `ICECORE_SANDBOX.SPIKES.EV_PROBE_<run_id>` over
+   `EVENTS_VIEWER`, and grant `EVENTS_VIEWER` to the role that owns the view for the duration of the test (`bootstrap.sql` does not grant
+   it to `ICECORE_CI`); as that role create a view `ICECORE_SANDBOX.SPIKES.EV_PROBE_<run_id>` over
    `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`, `GRANT SELECT` on it and USAGE on the database and schema to `READER_PROBE`; as
    `READER_PROBE` run `SELECT COUNT(*) FROM` that view. Record whether it returns rows, errors with 2003 or 3001, or returns
    zero rows; repeat for a view over `SNOWFLAKE.TELEMETRY.EVENTS`. Drop the view and role. Until then the spec states

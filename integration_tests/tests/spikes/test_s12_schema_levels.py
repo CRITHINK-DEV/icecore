@@ -69,16 +69,30 @@ def test_schema_and_procedure_levels_take_over_from_the_database(sf, run_id):
     probe = f"GATE1_LV_{run_id[:12]}_PROBE".upper()
     cur.execute(f"create schema {DATABASE}.{probe}")
     try:
-        cur.execute(f"alter schema {DATABASE}.{probe} set LOG_LEVEL = 'INFO'")
-    except ProgrammingError as exc:
-        record_finding("gate1_followups", "schema_levels", {
-            "run_id": run_id, "database_levels": db_levels, "measured": False, "errno": exc.errno,
-            "blocked_statements": ["ALTER SCHEMA SET LOG_LEVEL", "ALTER SCHEMA SET TRACE_LEVEL", "ALTER PROCEDURE SET LOG_LEVEL",
-                                   "ALTER PROCEDURE SET TRACE_LEVEL"],
-            "reason": str(exc).splitlines()[-1][:200]})
-        pytest.skip("the role lacks MODIFY LOG LEVEL / MODIFY TRACE LEVEL on the account: schema levels cannot be set")
+        cur.execute(f"create procedure {DATABASE}.{probe}.P() returns varchar language sql as $$ begin return 'x'; end; $$")
+        statements = [
+            f"alter schema {DATABASE}.{probe} set LOG_LEVEL = 'INFO'",
+            f"alter schema {DATABASE}.{probe} set TRACE_LEVEL = 'ON_EVENT'",
+            f"alter procedure {DATABASE}.{probe}.P() set LOG_LEVEL = 'INFO'",
+            f"alter procedure {DATABASE}.{probe}.P() set TRACE_LEVEL = 'ALWAYS'",
+        ]
+        blocked = []
+        for statement in statements:
+            try:
+                cur.execute(statement)
+            except ProgrammingError as exc:
+                if exc.errno != 3001:
+                    raise  # not the missing privilege: a real failure
+                blocked.append({"statement": statement.split(f"{DATABASE}.{probe}")[0].strip() + " ..." + statement.split(" set ")[1],
+                                "errno": exc.errno, "reason": str(exc).splitlines()[-1][:200]})
     finally:
         cur.execute(f"drop schema if exists {DATABASE}.{probe}")
+    if blocked:
+        record_finding("gate1_followups", "schema_levels", {
+            "run_id": run_id, "database_levels": db_levels, "measured": False,
+            "statements_tried": len(statements), "blocked": blocked})
+        pytest.skip(f"the role lacks MODIFY LOG LEVEL / MODIFY TRACE LEVEL on the account: {len(blocked)} of "
+                    f"{len(statements)} level statements were refused (3001)")
     try:
         for case, (schema_levels, proc_levels) in CASES.items():
             schema = schemas[case]

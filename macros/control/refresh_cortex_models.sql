@@ -15,28 +15,32 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- Name of a table's model in the obs schema: ICECORE_CX_<relation, upper, non A-Z0-9_ as _, cut to 200>_<first 8 hex of
-    md5(relation)>, fully qualified and quoted. `relation` is the quoted "DB"."SCHEMA"."NAME" the metrics view carries,
-    or a dbt relation. The task computes the same name in SQL. -#}
+{#- Name of a table's model, the hash of its relation, never its text: DB.SCHEMA.ICECORE_M_<first 16 hex of md5(relation),
+    upper> in the obs schema, as the plain qualified name ICECORE_SCORE takes. `relation` is the quoted "DB"."SCHEMA"."NAME" the
+    metrics view carries, or a dbt relation. The task computes the same name in SQL and records the mapping on an
+    `icecore.cortex_model` event. -#}
 {% macro cortex_model_name(relation, schema=none) %}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
-  {%- set stem = modules.re.sub('[^A-Z0-9_]', '_', name | upper)[:200] -%}
-  {{ return(icecore.obs_schema(schema) ~ '."ICECORE_CX_' ~ stem ~ '_' ~ (local_md5(name)[:8] | upper) ~ '"') }}
+  {{ return([target.database | string | upper, icecore.obs_schema_name(schema), 'ICECORE_M_' ~ (local_md5(name)[:16] | upper)] | join('.')) }}
 {% endmacro %}
 
 
-{#- The series key a model is trained with: the JSON array [metric, column, dimension] (null as null), compact:
-    TO_JSON of the array [metric, column, dimension] with JSON nulls in the task (a SQL NULL would print as `undefined`). Pass it as `series` to score. -#}
+{#- The series key score takes: metric|column|dimension, with ~ for a missing column or dimension. A model is trained on
+    its MD5 (the task and ICECORE_SCORE both hash in SQL), so the key never reaches SQL as text. A metric with a | in its
+    name could collide with another series; harmless to safety. -#}
 {% macro cortex_series_key(metric, column=none, dimension=none) %}
-  {%- set parts = [] -%}
-  {%- for part in [metric, column, dimension] -%}
-    {%- do parts.append('null' if part is none else tojson(part | string)) -%}
-  {%- endfor -%}
-  {{ return('[' ~ parts | join(',') ~ ']') }}
+  {{ return((metric | string) ~ '|' ~ ('~' if column is none else column | string) ~ '|' ~ ('~' if dimension is none else dimension | string)) }}
 {% endmacro %}
 
 
-{#- The task body: a Scripting block. `source` is the relation read as the metrics view (default the obs schema's METRICS). -#}
+{#- The task body: a Scripting block. `source` is the relation read as the metrics view (default the obs schema's METRICS).
+
+    No SQL text is built from a record value. `relation` comes from event records the dbt role can write, so it is only
+    ever (1) checked against the strict quoted-identifier shape "DB"."SCHEMA"."NAME" (anything else is skipped and counted),
+    (2) hashed (MD5) to name the model and to filter the training rows, and (3) passed as a bound value inside
+    OBJECT_CONSTRUCT to the mapping event. The statements that are built from text contain only this macro's own constants,
+    hex digests and integers; the series key is hashed in SQL (MD5), never pasted. The one string literal in the body that
+    carries a value, the digest, is a hex string. -#}
 {% macro render_refresh_cortex_models_sql(schema=none, source=none, lookback_days=30, delay_minutes=none, min_points=14) %}
   {%- if lookback_days is not integer or lookback_days < 1 -%}
     {{ exceptions.raise_compiler_error('icecore: lookback_days must be an integer of at least 1, got ' ~ lookback_days) }}
@@ -49,41 +53,69 @@
     {{ exceptions.raise_compiler_error('icecore: history delay must be an integer of at least 0 minutes, got ' ~ delay) }}
   {%- endif -%}
   {%- set source = source or icecore._icecore_procedure('METRICS', schema) -%}
-  {%- set prefix = icecore.obs_schema(schema) ~ '."ICECORE_CX_' -%}
+  {%- set emit = icecore._icecore_procedure('ICECORE_EMIT', schema) -%}
+  {%- set prefix = icecore.obs_schema(schema) ~ '."' -%}
   {%- set window = 'value is not null and observed_at > dateadd(day, -' ~ lookback_days ~ ', sysdate()) and observed_at <= dateadd(minute, -' ~ delay ~ ', sysdate())' -%}
   {%- set sql -%}
 DECLARE
   q STRING DEFAULT CHR(39);
+  qq STRING DEFAULT CHR(39) || CHR(39);
   created ARRAY DEFAULT ARRAY_CONSTRUCT();
   failed ARRAY DEFAULT ARRAY_CONSTRUCT();
+  events ARRAY DEFAULT ARRAY_CONSTRUCT();
+  skipped INTEGER DEFAULT 0;
   rels RESULTSET DEFAULT (
     SELECT relation FROM (
       SELECT relation, metric, "COLUMN", dimension, COUNT(*) AS n FROM {{ source }}
       WHERE {{ window }}
       GROUP BY relation, metric, "COLUMN", dimension)
-    WHERE n >= {{ min_points }} GROUP BY relation);
-  model STRING;
+    WHERE n >= {{ min_points }} GROUP BY relation ORDER BY relation LIMIT 100);
+  digest STRING;
+  model_id STRING;
   train STRING;
+  emitted STRING;
 BEGIN
   FOR r IN rels DO
-    BEGIN
-      model := {{ icecore._icecore_sql_literal(prefix) }} || LEFT(REGEXP_REPLACE(UPPER(r.relation), '[^A-Z0-9_]', '_'), 200)
-               || '_' || UPPER(LEFT(MD5(r.relation), 8)) || '"';
-      train := 'select to_json(array_construct(metric, ifnull(to_variant("COLUMN"), parse_json(''null'')), ifnull(to_variant(dimension), parse_json(''null'')))) as series, observed_at as ts, value as y from ('
-               || 'select metric, "COLUMN", dimension, observed_at, value, count(*) over (partition by metric, "COLUMN", dimension) as n from {{ source }}'
-               || ' where relation = ' || q || REPLACE(r.relation, q, q || q) || q || ' and {{ window }}) where n >= {{ min_points }}';
-      EXECUTE IMMEDIATE 'CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION ' || model
-        || '(INPUT_DATA => SYSTEM$QUERY_REFERENCE(' || q || REPLACE(train, q, q || q) || q || '), SERIES_COLNAME => ' || q || 'SERIES' || q
-        || ', TIMESTAMP_COLNAME => ' || q || 'TS' || q || ', TARGET_COLNAME => ' || q || 'Y' || q || ', LABEL_COLNAME => ' || q || q || ')';
-      created := ARRAY_APPEND(created, model);
-    EXCEPTION
-      WHEN OTHER THEN failed := ARRAY_APPEND(failed, r.relation || ': ' || SQLCODE || ': ' || SQLERRM);
-    END;
+    -- a relation is a record value: only the strict shape "DB"."SCHEMA"."NAME" (no quote inside a part) goes on
+    IF (r.relation IS NULL OR NOT REGEXP_LIKE(r.relation, '"[^"]+"\\."[^"]+"\\."[^"]+"')) THEN
+      skipped := skipped + 1;
+    ELSE
+      BEGIN
+        digest := MD5(r.relation);
+        model_id := 'ICECORE_M_' || UPPER(LEFT(digest, 16));
+        train := 'select md5(nvl(metric, chr(126)) || chr(124) || nvl("COLUMN", chr(126)) || chr(124) || nvl(dimension, chr(126))) as series, '
+                 || 'observed_at as ts, value as y from (select metric, "COLUMN", dimension, observed_at, value, '
+                 || 'count(*) over (partition by metric, "COLUMN", dimension) as n from {{ source }} '
+                 || 'where md5(relation) = ' || qq || digest || qq || ' and {{ window }}) where n >= {{ min_points }}';
+        EXECUTE IMMEDIATE 'CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION {{ prefix }}' || model_id || '"'
+          || '(INPUT_DATA => SYSTEM$QUERY_REFERENCE(' || q || train || q || '), SERIES_COLNAME => ' || q || 'SERIES' || q
+          || ', TIMESTAMP_COLNAME => ' || q || 'TS' || q || ', TARGET_COLNAME => ' || q || 'Y' || q || ', LABEL_COLNAME => ' || q || q || ')';
+        created := ARRAY_APPEND(created, model_id);
+        -- the mapping relation -> model, a span event with bound values (the relation is data, never SQL)
+        events := ARRAY_APPEND(events, OBJECT_CONSTRUCT_KEEP_NULL(
+          'name', 'icecore.cortex_model',
+          'attrs', OBJECT_CONSTRUCT_KEEP_NULL(
+            'dbt.node.relation', r.relation,
+            'icecore.cortex.model', model_id,
+            'icecore.schema_version', 1,
+            'icecore.level', 'info',
+            'icecore.message', 'icecore: Cortex model ' || model_id || ' refreshed')));
+      EXCEPTION
+        WHEN OTHER THEN failed := ARRAY_APPEND(failed, model_id || ': ' || SQLCODE || ': ' || SQLERRM);
+      END;
+    END IF;
   END FOR;
-  IF (ARRAY_SIZE(failed) > 0) THEN
-    RETURN 'icecore-error ' || ARRAY_SIZE(created) || ' models, ' || ARRAY_SIZE(failed) || ' failed: ' || ARRAY_TO_STRING(failed, '; ');
+  IF (ARRAY_SIZE(events) > 0) THEN
+    BEGIN
+      CALL {{ emit }}(:events) INTO :emitted;
+    EXCEPTION
+      WHEN OTHER THEN failed := ARRAY_APPEND(failed, 'mapping event: ' || SQLCODE || ': ' || SQLERRM);
+    END;
   END IF;
-  RETURN 'ok ' || ARRAY_SIZE(created) || ' models';
+  IF (ARRAY_SIZE(failed) > 0) THEN
+    RETURN 'icecore-error ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped, ' || ARRAY_SIZE(failed) || ' failed: ' || ARRAY_TO_STRING(failed, '; ');
+  END IF;
+  RETURN 'ok ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped';
 EXCEPTION
   WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
 END;
@@ -97,7 +129,7 @@ END;
     printed}: status ok, skipped (Cortex off) or the guarded error. Created SUSPENDED: var icecore.cortex_refresh_task_resume:
     true resumes it. Schedule: var icecore.cortex_refresh_days (default 7) as minutes. Warehouse: var
     cortex_refresh_task_warehouse, else the target's. `printed` holds what an admin must run: CREATE TASK, EXECUTE TASK
-    to resume, and the USAGE grant on the model instances for the role that runs dbt (it scores with the models). -#}
+    to resume, and the USAGE grant on ICECORE_SCORE for the role that runs dbt (models are never granted). -#}
 {% macro create_refresh_cortex_task(schema=none, capabilities=none, source=none, warehouse=none, resume=none, days=none, min_points=14) %}
   {%- set out = {'task': none, 'status': 'skipped', 'resumed': false, 'printed': []} -%}
   {%- if not execute -%}{{ return(out) }}{%- endif -%}
@@ -118,13 +150,15 @@ END;
   {%- set ddl = icecore._icecore_refresh_task_ddl(task, body, warehouse, days * 1440) -%}
   {%- set status = icecore._icecore_guarded_ddl(ddl) -%}
   {%- do out.update({'task': task, 'status': status}) -%}
-  {%- do out['printed'].append('GRANT USAGE ON ALL SNOWFLAKE.ML.ANOMALY_DETECTION IN SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
-  {%- do out['printed'].append('GRANT USAGE ON FUTURE SNOWFLAKE.ML.ANOMALY_DETECTION IN SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
-  {%- do log('icecore: the role that runs dbt needs USAGE on the Cortex models (it scores with them); an admin must run: '
-      ~ (out['printed'] | join('; ')), info=True) -%}
+  {#- Models cannot be shared across roles: they are trained and scored in setup's role, through ICECORE_SCORE. The dbt role needs
+      only USAGE on that procedure, never on a model. -#}
+  {%- do out['printed'].append('GRANT USAGE ON PROCEDURE ' ~ icecore._icecore_procedure('ICECORE_SCORE', schema)
+      ~ '(STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE ' ~ target.role) -%}
+  {%- do log('icecore: the role that runs dbt scores with Cortex through ICECORE_SCORE and needs only USAGE on it; an admin must run: '
+      ~ out['printed'][0], info=True) -%}
   {%- if status != 'ok' -%}
-    {%- do out['printed'].insert(0, 'GRANT CREATE TASK ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
-    {%- do log('icecore: warning: could not create ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][0], info=True) -%}
+    {%- do out['printed'].append('GRANT CREATE TASK ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
+    {%- do log('icecore: warning: could not set up ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][-1], info=True) -%}
     {{ return(out) }}
   {%- endif -%}
   {%- if resume is sameas true or (resume | string | lower) == 'true' -%}
@@ -132,8 +166,8 @@ END;
     {%- if resumed == 'ok' -%}
       {%- do out.update({'resumed': true}) -%}
     {%- else -%}
-      {%- do out['printed'].insert(0, 'GRANT EXECUTE TASK ON ACCOUNT TO ROLE ' ~ target.role) -%}
-      {%- do log('icecore: warning: could not resume ' ~ task ~ ' (' ~ resumed ~ '); it stays suspended. An admin must run: ' ~ out['printed'][0], info=True) -%}
+      {%- do out['printed'].append('GRANT EXECUTE TASK ON ACCOUNT TO ROLE ' ~ target.role) -%}
+      {%- do log('icecore: warning: could not resume ' ~ task ~ ' (' ~ resumed ~ '); it stays suspended. An admin must run: ' ~ out['printed'][-1], info=True) -%}
     {%- endif -%}
   {%- endif -%}
   {{ return(out) }}

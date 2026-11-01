@@ -182,10 +182,19 @@ def test_only_the_named_training_file_creates_snowflake_ml_objects():
     assert found == ML_CREATORS
 
 
+ML_ALLOWED = r"(create\s+(or\s+replace\s+)?(snowflake\.ml\.anomaly_detection|task)|alter\s+task)\b"  # the models, the task that trains them, and resuming it
+
+
 def test_the_training_file_writes_nothing_else():
     for name in ML_CREATORS:
         (path,) = (REPO / "macros").rglob(name)
-        assert [w for w in writes_in(path.read_text()) if w != WRITE_STATEMENTS[0]] == [], name
+        assert writes_in(re.sub(ML_ALLOWED, " ", path.read_text(), flags=re.I)) == [], name
+
+
+def test_the_allowance_is_by_name_only():
+    text = "create or replace snowflake.ml.anomaly_detection m(input_data => x)"
+    assert writes_in(text), "a file that is not on the list gets no allowance"
+    assert writes_in(re.sub(ML_ALLOWED, " ", text, flags=re.I)) == []  # only the training file's text is passed through the allowance
 
 
 def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():

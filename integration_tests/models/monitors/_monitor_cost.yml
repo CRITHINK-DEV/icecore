@@ -24,3 +24,6 @@ sources:
                   name: it_cost_column_anomaly
                   metrics: [null_rate, avg, max]
                   since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_cost_column_history
+                  metrics: [window_rows]

@@ -1,0 +1,143 @@
+"""UC3 Cortex engine: scoring from an existing per-table SNOWFLAKE.ML.ANOMALY_DETECTION model (spec section 6).
+
+Offline tests check rendering and the mapping of DETECT_ANOMALIES rows to the contract. Sandbox tests create
+at most one tiny model per run (named with the run_id, in SPIKES), drop it afterwards, and are skipped with the
+recorded reason when the capabilities say Cortex is not available to the role.
+"""
+import pytest
+
+from helpers.macros import MacroFailed, call_macro
+
+DATABASE, SCHEMA = "ICECORE_SANDBOX", "SPIKES"
+SERIES_SQL = "select observed_at, value from t"
+
+
+def detect_sql(sensitivity="medium", min_consecutive=1, model="DB.S.M", series="k", current=5, observed_at="2026-10-29 06:00:00"):
+    return call_macro("cortex__detect_sql", model=model, series=series, series_sql=SERIES_SQL, current_value=current,
+                      sensitivity=sensitivity, min_consecutive=min_consecutive, observed_at=observed_at)
+
+
+# --- rendering (offline) ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sensitivity,interval", [("low", 0.99), ("medium", 0.95), ("high", 0.9)])
+def test_prediction_interval_follows_sensitivity(sensitivity, interval):
+    assert call_macro("_cortex_prediction_interval", sensitivity=sensitivity) == interval
+    assert f"'prediction_interval': {interval}" in detect_sql(sensitivity)
+
+
+def test_detect_sql_calls_the_existing_model_inside_a_catching_block():
+    sql = detect_sql(model="OBS.ICECORE_OBS.CX_ORDERS").lower()
+    assert "call obs.icecore_obs.cx_orders!detect_anomalies(" in sql
+    assert "exception" in sql and "when other" in sql
+    assert "create " not in sql  # models are refreshed by a task, never trained here
+
+
+def test_detect_sql_scores_the_previous_points_for_min_consecutive():
+    assert "<= 0" in detect_sql(min_consecutive=1)
+    assert "<= 2" in detect_sql(min_consecutive=3)
+
+
+def test_model_name_is_validated():
+    with pytest.raises(MacroFailed, match="identifier"):
+        call_macro("cortex__detect_sql", model="m; drop table x", series="k", series_sql=SERIES_SQL, current_value=1,
+                   sensitivity="medium", min_consecutive=1)
+    with pytest.raises(MacroFailed, match="identifier"):
+        call_macro("_cortex_check_model_name", model="a.b.c.d")
+    call_macro("_cortex_check_model_name", model='DB."My Schema".M')
+
+
+def row(y, forecast, lower, upper, is_anomaly):
+    return {"Y": y, "FORECAST": forecast, "LOWER_BOUND": lower, "UPPER_BOUND": upper, "IS_ANOMALY": is_anomaly}
+
+
+def test_result_maps_the_six_fields_above_the_band():
+    out = call_macro("_cortex_result", rows=[row(120, 100, 90, 110, True)], min_consecutive=1)
+    assert out == {"engine": "cortex", "expected": 100.0, "lower": 90.0, "upper": 110.0, "score": 10.0, "is_anomaly": True}
+
+
+def test_result_scores_zero_inside_the_band_and_negative_below():
+    inside = call_macro("_cortex_result", rows=[row(100, 100, 90, 110, False)], min_consecutive=1)
+    assert inside["score"] == 0 and inside["is_anomaly"] is False
+    below = call_macro("_cortex_result", rows=[row(80, 100, 90, 110, True)], min_consecutive=1)
+    assert below["score"] == -10.0 and below["is_anomaly"] is True
+
+
+def test_result_requires_previous_points_outside_on_the_same_side():
+    current, outside, inside, other_side = row(120, 100, 90, 110, True), row(130, 100, 90, 110, True), row(100, 100, 90, 110, False), row(50, 100, 90, 110, True)
+    assert call_macro("_cortex_result", rows=[current, outside, outside], min_consecutive=3)["is_anomaly"] is True
+    assert call_macro("_cortex_result", rows=[current, outside, inside], min_consecutive=3)["is_anomaly"] is False
+    assert call_macro("_cortex_result", rows=[current, outside, other_side], min_consecutive=3)["is_anomaly"] is False
+
+
+def test_result_without_rows_is_an_error_not_a_crash():
+    assert "error" in call_macro("_cortex_result", rows=[], min_consecutive=1)
+
+
+# --- sandbox ----------------------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def cortex_model(sf):
+    """One tiny two-series model for the whole module, dropped afterwards; skipped when Cortex is unavailable."""
+    import uuid
+    caps = call_macro("detect_capabilities", record=False)
+    if not caps["cortex"]:
+        pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
+    rid = uuid.uuid4().hex[:10].upper()
+    table, model = f"CX_T_{rid}", f"CX_M_{rid}"
+    cur = sf.cursor()
+    cur.execute(f"""create table {SCHEMA}.{table} as
+        select 'a' as series, dateadd(day, seq4(), '2026-09-01'::timestamp_ntz) as ts, 100 + uniform(0, 5, random(1))::float as y
+        from table(generator(rowcount => 40))
+        union all select 'b', dateadd(day, seq4(), '2026-09-01'::timestamp_ntz), 10 + uniform(0, 2, random(2))::float
+        from table(generator(rowcount => 40))""")
+    try:
+        try:
+            cur.execute(f"""create snowflake.ml.anomaly_detection {SCHEMA}.{model}(
+                input_data => system$reference('TABLE', '{SCHEMA}.{table}'),
+                series_colname => 'SERIES', timestamp_colname => 'TS', target_colname => 'Y', label_colname => '')""")
+        except Exception as exc:
+            pytest.skip(f"the role cannot create a Cortex anomaly model: {exc}")
+        yield f"{DATABASE}.{SCHEMA}.{model}"
+    finally:
+        cur.execute(f"drop snowflake.ml.anomaly_detection if exists {SCHEMA}.{model}")
+        cur.execute(f"drop table if exists {SCHEMA}.{table}")
+
+
+def score(model, series, current, sensitivity="medium", min_consecutive=1):
+    return call_macro("cortex__score", model=model, series=series, series_sql=SERIES_SQL.replace("from t", "from (select '2026-10-01'::timestamp_ntz as observed_at, 100::float as value where false)"),
+                      current_value=current, sensitivity=sensitivity, min_consecutive=min_consecutive,
+                      observed_at="2026-10-12 00:00:00")
+
+
+@pytest.mark.sandbox
+def test_trained_model_returns_the_six_fields_with_engine_cortex(cortex_model):
+    out = score(cortex_model, "a", 500)
+    assert set(out) == {"engine", "expected", "lower", "upper", "score", "is_anomaly"}
+    assert out["engine"] == "cortex" and out["is_anomaly"] is True
+    assert out["lower"] < out["expected"] < out["upper"] < 500
+    assert out["score"] == pytest.approx(500 - out["upper"])
+
+
+@pytest.mark.sandbox
+def test_value_inside_the_band_is_not_an_anomaly(cortex_model):
+    out = score(cortex_model, "b", 11)
+    assert out["engine"] == "cortex" and out["is_anomaly"] is False and out["score"] == 0
+
+
+@pytest.mark.sandbox
+def test_series_are_scored_by_their_own_band(cortex_model):
+    assert score(cortex_model, "a", 11)["is_anomaly"] is True  # 11 is normal for series b, far below a
+
+
+@pytest.mark.sandbox
+def test_high_sensitivity_uses_the_narrower_interval_0_90(cortex_model):
+    low, high = score(cortex_model, "a", 103, "low"), score(cortex_model, "a", 103, "high")
+    assert high["upper"] - high["lower"] < low["upper"] - low["lower"]
+
+
+@pytest.mark.sandbox
+def test_a_missing_model_is_an_error_value_not_a_failure(cortex_model):
+    out = score(f"{DATABASE}.{SCHEMA}.CX_NO_SUCH_MODEL", "a", 1)
+    assert set(out) == {"error"} and out["error"]

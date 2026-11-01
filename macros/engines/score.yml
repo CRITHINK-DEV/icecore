@@ -69,3 +69,37 @@ macros:
       - name: observed_at
         type: string
         description: As for `score`.
+
+  - name: cortex__score
+    description: >
+      Cortex engine: scores one series with the SNOWFLAKE.ML.ANOMALY_DETECTION model trained per table
+      on all its series (models are refreshed by a task, never trained at test time). One
+      DETECT_ANOMALIES call on the existing model, inside a Snowflake Scripting block that catches every
+      error, so a missing model, privilege or region never fails a test. prediction_interval is 0.99
+      (low), 0.95 (medium) or 0.90 (high). Returns `engine` (cortex), `expected` (forecast), `lower`,
+      `upper`, `score` (signed distance outside the band, 0 inside, as native) and `is_anomaly` (Cortex
+      verdict, and the min_consecutive - 1 latest history points outside the band on the same side).
+      When the model cannot score it returns only `error` (code and message) and logs a warning. At parse
+      time it returns null. Not wired into the dispatcher yet.
+    arguments:
+      - name: model
+        type: string
+        description: The per-table model, a (qualified) identifier such as `DB.SCHEMA.MODEL`; anything else is refused.
+      - name: series
+        type: string
+        description: The series key as it was given to the model's SERIES_COLNAME at training.
+      - name: series_sql
+        type: string
+        description: As for `score`; only the latest min_consecutive - 1 points are read.
+      - name: current_value
+        type: number
+        description: As for `score`.
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high` (already resolved)."
+      - name: min_consecutive
+        type: integer
+        description: As for `score` (already resolved).
+      - name: observed_at
+        type: string
+        description: As for `score`.

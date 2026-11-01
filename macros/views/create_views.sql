@@ -30,6 +30,10 @@
   {{ return([
     {'name': 'METRICS', 'sql': icecore.metrics_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'SCHEMA_CHANGES', 'sql': icecore.schema_changes_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'TEST_RESULTS', 'sql': icecore.test_results_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'LINEAGE', 'sql': icecore.lineage_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'LINEAGE_LATEST', 'sql': icecore.lineage_latest_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'CAPABILITIES', 'sql': icecore.capabilities_view_sql(event_table=event_table, obs_schema=obs)},
   ]) }}
 {% endmacro %}
 

@@ -27,8 +27,8 @@ def views(schema=None) -> dict:
 
 # --- offline: rendering only, no connection ------------------------------------------------------
 
-def test_create_views_has_one_list_of_two_views():
-    assert list(views()) == ["METRICS", "SCHEMA_CHANGES"]
+def test_create_views_lists_metrics_and_schema_changes_first():
+    assert list(views())[:2] == ["METRICS", "SCHEMA_CHANGES"]
 
 
 def test_every_view_selects_from_base_events():
@@ -129,8 +129,8 @@ def _query(sf, seeded, view: str, relation_like: str) -> list:
 
 @pytest.mark.sandbox
 def test_create_views_returns_both_qualified_names(seeded):
-    assert seeded["created"] == [f'"{DATABASE}"."{seeded["schema"]}"."METRICS"',
-                                 f'"{DATABASE}"."{seeded["schema"]}"."SCHEMA_CHANGES"']
+    assert seeded["created"][:2] == [f'"{DATABASE}"."{seeded["schema"]}"."METRICS"',
+                                     f'"{DATABASE}"."{seeded["schema"]}"."SCHEMA_CHANGES"']
 
 
 @pytest.mark.sandbox

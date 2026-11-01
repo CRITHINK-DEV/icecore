@@ -30,6 +30,7 @@
       {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
       {'name': 'samples', 'var': 'samples', 'default': false, 'macro': icecore.emit_samples},
       {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
+      {'name': 'cost', 'var': 'cost', 'default': false, 'macro': icecore.attach_cost},
   ]) }}
 {% endmacro %}
 

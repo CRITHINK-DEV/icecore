@@ -1,0 +1,26 @@
+version: 2
+
+macros:
+  - name: attach_cost
+    description: >
+      The end-of-run emitter `cost` of end_run (var `icecore.cost`, default false; one entry in
+      `_icecore_end_run_emitters()`), called as `attach_cost(results, batch)`. It joins the run's `snow.query.id`
+      values (the ones the query events carry) to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and, for each
+      node whose queries are all attributed, adds to the batch a LOG `icecore.kind = cost` with the node keys,
+      `dbt.cost.credits` (compute plus query acceleration credits, summed over the node's queries) and
+      `dbt.cost.warehouse` (warehouse names, sorted, comma separated), and sends one METRIC `credits` per node
+      (`icecore.metric` span events keyed by `dbt.node.relation`, or the unique id for a node without relation,
+      with `dbt.node.unique_id`; built by the builder of `emit_metric`, all in one guarded CALL of ICECORE_EMIT).
+      QUERY_ATTRIBUTION_HISTORY lags by hours, so at on-run-end the usual outcome is not available yet: the run
+      logs one `icecore: warning: cost: ...` line and writes nothing for those nodes, and `backfill_cost` fills
+      them on a later run. The attribution query runs inside a Snowflake Scripting block that catches every error,
+      so a missing privilege (grant `SNOWFLAKE.USAGE_VIEWER` to the role, or IMPORTED PRIVILEGES on the SNOWFLAKE
+      database) or an empty result is a warning, never a failed run. With var `cost` false nothing is read or
+      written. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
+    arguments:
+      - name: results
+        type: list
+        description: The node results of the run, as end_run passes them (hook operations already left out).
+      - name: batch
+        type: dict
+        description: end_run's batch; the cost logs are appended to its items.

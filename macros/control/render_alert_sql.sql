@@ -20,8 +20,9 @@
       action      one block: the message text is built IN SQL from the condition's result columns (RESULT_SCAN of the
                   condition query), never as SQL text, so a node name or message holding quotes, $$, ; or newlines is only
                   data; SYSTEM$SEND_SNOWFLAKE_NOTIFICATION sends it (named model, kind, root cause when present);
-                  then one `icecore.notified` span event per incident goes through ICECORE_EMIT (never an INSERT), so the
-                  incident is not sent again inside the dedup window. At most 50 incidents per run.
+                  then one CALL of ICECORE_NOTIFIED(incident_key, channel) per incident (never an INSERT, never ICECORE_EMIT, which
+                  refuses `icecore.notified`), so the incident is not sent again inside the dedup window. The alerts' owner
+                  role needs USAGE on ICECORE_NOTIFIED; the dbt role must not have it. At most 50 incidents per run.
     Alerts are created SUSPENDED (Snowflake's default) and stay so unless var icecore.alert_resume is true: nothing
     sends or costs anything without consent. Re-running setup replaces an alert and so suspends it again.
     Notification integrations need an admin: create_alerts prints the CREATE NOTIFICATION INTEGRATION statements and
@@ -205,11 +206,10 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   BEGIN
     LET qid STRING := {{ qid }};
     LET msg STRING := ({{ icecore.alert_message_sql(channel['type'], source) }});
-    LET events ARRAY := ({{ icecore.alert_events_sql(channel['name'], source) }});
     {% if send -%}
     CALL SYSTEM$SEND_SNOWFLAKE_NOTIFICATION({{ icecore._icecore_alert_payload_sql(channel) }}, {{ icecore._icecore_alert_config_sql(channel) }});
     {% endif -%}
-    CALL {{ icecore._icecore_procedure('ICECORE_EMIT', schema) }}(:events);
+    {{ icecore.alert_record_sql(channel['name'], source, schema) }}
   END
   {%- endset -%}
   {{ return(sql | trim) }}
@@ -234,11 +234,11 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
 {% endmacro %}
 
 
-{#- SELECT of the ICECORE_EMIT events array, one `icecore.notified` per incident of `source`, same 50 as the message.
-    Channel is a validated name, rendered as a literal. -#}
-{% macro alert_events_sql(channel_name, source) %}
-  {{ return("select array_agg(object_construct('name', 'icecore.notified', 'attrs', object_construct('icecore.notified.incident_key', incident_key, 'icecore.notified.channel', "
-      ~ icecore._icecore_sql_literal(channel_name) ~ ", 'icecore.level', 'info'))) from (select incident_key from " ~ source ~ " order by first_detected_at, incident_key limit 50)") }}
+{#- The loop that records each notified incident of `source` (the same 50 as the message) by CALLing ICECORE_NOTIFIED:
+    the incident key is a bound column of the loop row, the channel a validated name rendered as a literal. -#}
+{% macro alert_record_sql(channel_name, source, schema=none) %}
+  {{ return("LET k STRING := '';\n    LET rs RESULTSET := (select incident_key from " ~ source ~ " order by first_detected_at, incident_key limit 50);\n    LET c CURSOR FOR rs;\n    FOR r IN c DO\n      k := r.incident_key;\n      CALL "
+      ~ icecore._icecore_procedure('ICECORE_NOTIFIED', schema) ~ "(:k, " ~ icecore._icecore_sql_literal(channel_name) ~ ");\n    END FOR;") }}
 {% endmacro %}
 
 

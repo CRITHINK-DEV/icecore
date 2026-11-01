@@ -47,14 +47,15 @@ def test_email_alert_condition_is_the_dedup_select_and_action_sends_then_records
     sql = render(EMAIL, schema="my_obs")
     assert sql.startswith('CREATE OR REPLACE ALERT "' + DATABASE + '"."MY_OBS"."ICECORE_ALERT_EMAIL"')
     assert "WAREHOUSE = WH" in sql and "SCHEDULE = '5 MINUTE'" in sql and "IF (EXISTS (" in sql
-    assert f'"{DATABASE}"."MY_OBS"."ALERTS_FEED" as feed' in sql and "and notified.channel = 'email'" in sql
+    assert f'from "{DATABASE}"."MY_OBS"."ALERTS_FEED"' in sql and "and notified.channel = 'email'" in sql
     assert "where feed.acknowledged_at is null" in sql
     assert "SNOWFLAKE.ALERT.GET_CONDITION_QUERY_UUID()" in sql and "result_scan(:qid)" in sql
     assert ("SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG('ICECORE_EMAIL_INT', 'icecore alert', "
             "ARRAY_CONSTRUCT('data@example.com'), ARRAY_CONSTRUCT('data@example.com'), 'icecore: new incidents')") in sql
     assert "CALL SYSTEM$SEND_SNOWFLAKE_NOTIFICATION(SNOWFLAKE.NOTIFICATION.TEXT_PLAIN(:msg)" in sql
-    assert f'CALL "{DATABASE}"."MY_OBS"."ICECORE_EMIT"(:events);' in sql
-    assert sql.index("SEND_SNOWFLAKE_NOTIFICATION") < sql.index('"ICECORE_EMIT"(:events)')
+    assert f'CALL "{DATABASE}"."MY_OBS"."ICECORE_NOTIFIED"(:k, \'email\');' in sql
+    assert '"ICECORE_EMIT"' not in sql  # icecore.notified is refused by the emitters
+    assert sql.index("SEND_SNOWFLAKE_NOTIFICATION") < sql.index('"ICECORE_NOTIFIED"(:k')
     assert "insert" not in sql.lower() and "$$" not in sql and "execute immediate" not in sql.lower()
 
 
@@ -76,10 +77,12 @@ def test_message_names_node_kind_and_root_cause_in_each_format(type, marker):
     assert "**" in sql if type == "teams" else True
 
 
-def test_message_and_events_read_values_only_as_columns():
-    sql = call("alert_events_sql", {"channel_name": "email", "source": "pending"})
-    assert "object_construct('icecore.notified.incident_key', incident_key" in sql
-    assert "'icecore.notified.channel', 'email'" in sql and "'name', 'icecore.notified'" in sql and "limit 50" in sql
+def test_the_record_loop_binds_the_incident_key_and_names_a_literal_channel():
+    sql = call("alert_record_sql", {"channel_name": "email", "source": "pending"})
+    assert "LET rs RESULTSET := (select incident_key from pending order by first_detected_at, incident_key limit 50);" in sql
+    assert "LET c CURSOR FOR rs;" in sql
+    assert "FOR r IN c DO" in sql
+    assert "k := r.incident_key;" in sql and "ICECORE_NOTIFIED\"(:k, 'email');" in sql and "limit 50" in sql
 
 
 def test_routing_sends_a_claimed_node_to_its_channel_and_the_rest_to_the_default():
@@ -252,7 +255,8 @@ def test_action_records_notified_events_and_the_incidents_are_then_quiet(sf, see
         sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s and record:name::string = 'icecore.notified'",
         {"schema": seeded["schema"]}, min_rows=2, since=since, settle_s=5)
     assert {r["record_attributes"]["icecore.notified.channel"] for r in rows} == {"email"}
-    assert all(r["resource_attributes"]["snow.executable.name"].startswith("ICECORE_EMIT(") for r in rows)
+    assert all(r["resource_attributes"]["snow.executable.name"].startswith("ICECORE_NOTIFIED(") for r in rows)
+    assert len(rows) == 2
     assert _rows(sf.cursor(), _condition(_alert_sql(seeded, EMAIL))) == []          # notified: quiet inside the window
     assert len(_rows(sf.cursor(), _condition(_alert_sql(seeded, SLACK)))) == 0       # chat claims nothing
     assert sf.cursor().execute(f'show alerts in schema "{DATABASE}"."{seeded["schema"]}"').fetchall()

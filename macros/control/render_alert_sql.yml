@@ -38,8 +38,8 @@ macros:
       unacknowledged, not-yet-notified incidents of ALERTS_FEED) filtered to the incidents the channel owns through
       meta.alerts. The action builds the message in SQL from the condition's result columns (RESULT_SCAN), so a node name or
       message holding quotes, dollar signs, semicolons or newlines is only data; sends it with
-      SYSTEM$SEND_SNOWFLAKE_NOTIFICATION, naming the model, the kind and the root cause when present; then records one
-      `icecore.notified` span event per incident through ICECORE_EMIT. At most 50 incidents per run.
+      SYSTEM$SEND_SNOWFLAKE_NOTIFICATION, naming the model, the kind and the root cause when present; then records each
+      notified incident by calling `ICECORE_NOTIFIED`. At most 50 incidents per run.
     arguments:
       - name: channel
         type: mapping
@@ -89,10 +89,12 @@ macros:
         type: string
         description: The FROM item to read. Required.
 
-  - name: alert_events_sql
+  - name: alert_record_sql
     description: >
-      The SELECT of the ICECORE_EMIT events array, one `icecore.notified` span event per incident of the source, the same
-      50 as the message. The channel is a validated name rendered as a literal; incident keys are read as columns.
+      The FOR loop of the alert's action that records each notified incident of the source (the same 50 as the message)
+      by calling ICECORE_NOTIFIED(incident_key, channel). The incident key is a bound column of the loop row, never
+      text; the channel is a validated name rendered as a literal. ICECORE_EMIT refuses `icecore.notified`, so this procedure
+      is the only way a notification is recorded.
     arguments:
       - name: channel_name
         type: string
@@ -100,3 +102,6 @@ macros:
       - name: source
         type: string
         description: The FROM item to read. Required.
+      - name: schema
+        type: string
+        description: The obs schema holding ICECORE_NOTIFIED. Default the `obs_schema` var.

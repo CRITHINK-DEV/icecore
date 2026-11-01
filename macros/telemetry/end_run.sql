@@ -27,6 +27,7 @@
   {{ return([
       {'name': 'node_results', 'var': 'node_results', 'default': true, 'macro': icecore.emit_node_results},
       {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
+      {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
       {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
   ]) }}
 {% endmacro %}
@@ -108,10 +109,9 @@
       fixed     rows every run writes: invocation_span (1), node_spans (one per node), end (the invocation-end LOG);
       emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
       uncounted names of emitters in the list that have no count here.
-    root_cause is 0: it annotates the failed tests' node_result LOGs and adds no row while node_results is on.
-    An emitter added to the list needs its count in `per_emitter` below: a test fails until it has one.
-    Emitters sized from the graph rather than per node (lineage, samples) are listed in `graph_sized`: their
-    count is none here and the estimate sizes them from the graph and its own arguments. -#}
+    An emitter added to the list needs its count here: a test fails until it has one.
+    lineage    the records of the graph's edges split under the payload cap (0 with no edges).
+    root_cause is 0: it annotates the failed tests' node_result LOGs and adds no row while node_results is on. -#}
 {% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1) %}
   {%- set nodes = nodes | int -%}
   {%- set per_emitter = {
@@ -119,15 +119,17 @@
       'query_events': nodes * (query_events_per_node | int),
       'root_cause': 0,
   } -%}
-  {%- set graph_sized = ['lineage', 'samples'] -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}
-    {%- if emitter['name'] in per_emitter -%}
-      {%- do out['emitters'].update({emitter['name']: per_emitter[emitter['name']] if icecore._icecore_flag(emitter['var'], emitter['default']) else 0}) -%}
-    {%- elif emitter['name'] in graph_sized -%}
-      {%- do out['emitters'].update({emitter['name']: none}) -%}
+    {%- set name = emitter['name'] -%}
+    {%- if name not in per_emitter and name != 'lineage' -%}
+      {%- do out['uncounted'].append(name) -%}
+    {%- elif not icecore._icecore_flag(emitter['var'], emitter['default']) -%}
+      {%- do out['emitters'].update({name: 0}) -%}
+    {%- elif name in per_emitter -%}
+      {%- do out['emitters'].update({name: per_emitter[name]}) -%}
     {%- else -%}
-      {%- do out['uncounted'].append(emitter['name']) -%}
+      {%- do out['emitters'].update({name: icecore._icecore_lineage_parts(icecore._icecore_lineage_edges(graph)) | length}) -%}
     {%- endif -%}
   {%- endfor -%}
   {{ return(out) }}

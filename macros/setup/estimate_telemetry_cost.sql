@@ -8,8 +8,9 @@
       - one span per node (models, seeds, snapshots, tests), one node-result LOG per node (var node_results) and
         query_events_per_node query events per node (var query_events); these counts come from
         _icecore_end_run_row_counts, next to end_run's emitter list, and follow the vars;
-      - lineage: one record per run, one more per payload cap (64 KB by default) of edges, sized from the graph;
+      - lineage (var lineage): the records of the graph's edges split under the payload cap, as emit_lineage splits them;
       - samples: one LOG per failing test (failing_tests_per_run; off by default for warn tests);
+        the lineage count also comes from _icecore_end_run_row_counts and follows its var;
       - measured rows per CALL: one procedure SPAN per CALL (spikes/S3.md, finding 4) and about 3 untagged Snowpark
         LOG rows per ICECORE_EMIT_RUN CALL (spikes/S1.md, "Python noise"). ICECORE_EMIT_RUN takes at most 512 KB per
         CALL (GATE1.md), so its CALLs are the end-run bytes over 512 KB.
@@ -27,20 +28,19 @@
 {#- Returns {status, nodes, runs_per_day, days, records_per_run: {...}, rows_per_run, emit_run_calls, rows_per_month,
     gb_per_month: [low, high], credits_per_month: [low, high], credits_per_gb, message}; status is ok or
     needs_runs_per_day. Logs the message. Never fails. -#}
-{% macro estimate_telemetry_cost(runs_per_day=none, nodes=none, query_events_per_node=1, lineage=true,
+{% macro estimate_telemetry_cost(runs_per_day=none, nodes=none, query_events_per_node=1,
                                  failing_tests_per_run=0, days=30, bytes_per_record=1500) %}
   {%- set counted = icecore._icecore_graph_counts() -%}
   {%- set n = counted['nodes'] if nodes is none else nodes | int -%}
   {%- set cap = icecore._icecore_payload_cap_bytes() -%}
   {%- set rate = icecore._icecore_telemetry_ingest_rate() -%}
 
-  {%- set lineage_records = ([1, ((counted['edge_bytes'] / cap) | round(0, 'ceil') | int)] | max) if lineage else 0 -%}
   {#- what end_run writes per node, from the macro that sits next to its emitter list, honouring the vars -#}
   {%- set rows = icecore._icecore_end_run_row_counts(n, query_events_per_node) -%}
   {%- set r = {'start': 1, 'invocation_span': rows['fixed']['invocation_span'], 'end': rows['fixed']['end'],
                'node_spans': rows['fixed']['node_spans'], 'node_results': rows['emitters'].get('node_results', 0),
                'query_events': rows['emitters'].get('query_events', 0),
-               'lineage': lineage_records, 'samples': failing_tests_per_run | int} -%}
+               'lineage': rows['emitters'].get('lineage', 0), 'samples': failing_tests_per_run | int} -%}
   {%- set end_run_records = r['end'] + r['invocation_span'] + r['node_spans'] + r['node_results'] + r['query_events']
       + r['lineage'] + r['samples'] -%}
   {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 524288) | round(0, 'ceil') | int)] | max -%}
@@ -94,18 +94,15 @@
 {% endmacro %}
 
 
-{#- Nodes that get a span (models, seeds, snapshots, tests) and the bytes of their lineage edges as emitted. -#}
+{#- Nodes that get a span (models, seeds, snapshots, tests). -#}
 {% macro _icecore_graph_counts() %}
-  {%- set ns = namespace(nodes=0, edge_bytes=0) -%}
+  {%- set ns = namespace(nodes=0) -%}
   {%- if graph is defined and graph.nodes is defined -%}
     {%- for node in graph.nodes.values() if node.resource_type in ('model', 'seed', 'snapshot', 'test') -%}
       {%- set ns.nodes = ns.nodes + 1 -%}
-      {%- for parent in (node.depends_on or {}).get('nodes') or [] -%}
-        {%- set ns.edge_bytes = ns.edge_bytes + (tojson([parent, node.unique_id]) | length) + 1 -%}
-      {%- endfor -%}
     {%- endfor -%}
   {%- endif -%}
-  {{ return({'nodes': ns.nodes, 'edge_bytes': ns.edge_bytes}) }}
+  {{ return({'nodes': ns.nodes}) }}
 {% endmacro %}
 
 

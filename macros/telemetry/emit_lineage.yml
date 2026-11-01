@@ -1,0 +1,21 @@
+version: 2
+
+macros:
+  - name: emit_lineage
+    description: >
+      End-of-run emitter `lineage` of `end_run`, on when `var('icecore').lineage` is true (the default). Adds
+      LOG records with `icecore.kind = lineage` that carry the project's DAG edges, written through
+      ICECORE_EMIT_RUN. An edge is a [parent, child] pair of unique ids read from `graph.nodes` `depends_on`,
+      between models, seeds, snapshots and sources. Tests are left out, because a test is not a lineage edge.
+      The whole current graph is sent on every run, not only the selected nodes. `dbt.lineage.edges` is a JSON
+      list of the pairs, sorted. Edges that do not fit `payload_cap_kb` are split across as many records as
+      needed, in order, with `dbt.lineage.part` and `dbt.lineage.parts`, `dbt.lineage.edge_count` (edges in this
+      record) and `dbt.lineage.edges_total`. No edge is dropped and no lineage record is truncated. A graph
+      without edges adds no record. Returns nothing.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results`. Not read; the edges come from the graph.
+      - name: batch
+        type: dict
+        description: "`end_run`'s batch: `items` is appended to."

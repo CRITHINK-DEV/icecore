@@ -13,7 +13,7 @@ import pytest
 
 from helpers.macros import run_macro, run_macro_with_logs
 
-COUNTED_BY_THE_ESTIMATE = {"node_results", "query_events"}
+COUNTED_BY_THE_ESTIMATE = {"node_results", "query_events", "lineage"}
 
 
 def with_vars(settings: dict) -> list[str]:
@@ -53,7 +53,7 @@ def test_counts_for_n_nodes():
 
 
 def test_the_estimate_counts_the_invocation_span_and_node_results():
-    out = estimate(nodes=100, runs_per_day=24, lineage=False)
+    out = estimate({"lineage": False}, nodes=100, runs_per_day=24)
     r = out["records_per_run"]
     assert (r["invocation_span"], r["node_spans"], r["node_results"], r["query_events"], r["end"]) == (1, 100, 100, 100, 1)
 
@@ -65,18 +65,24 @@ def test_the_estimate_counts_the_invocation_span_and_node_results():
     ({"node_results": "false", "query_events": False}, (0, 0)),
 ])
 def test_node_result_and_query_event_rows_follow_their_vars(settings, expected):
-    r = estimate(settings, nodes=100, runs_per_day=1, lineage=False)["records_per_run"]
+    r = estimate(settings, nodes=100, runs_per_day=1)["records_per_run"]
     assert (r["node_results"], r["query_events"]) == expected
 
 
-@pytest.mark.parametrize("settings", [{}, {"node_results": False}, {"query_events": False},
-                                      {"node_results": False, "query_events": False}])
+def test_lineage_count_follows_its_var_and_the_payload_cap():
+    assert run_macro("it_end_run_row_counts", {"nodes": 7})["emitters"]["lineage"] == 1  # the edges fit one record
+    off = run_macro("it_end_run_row_counts", {"nodes": 7}, with_vars({"lineage": False}))
+    assert off["emitters"]["lineage"] == 0
+    small = run_macro("it_end_run_row_counts", {"nodes": 7}, with_vars({"payload_cap_kb": 1}))
+    assert small["emitters"]["lineage"] > 1  # a 1 KB cap splits the edges
+
+
+@pytest.mark.parametrize("settings", [{}, {"node_results": False}, {"query_events": False}, {"lineage": False},
+                                      {"node_results": False, "query_events": False, "lineage": False}])
 def test_the_estimate_matches_the_rows_end_run_writes(settings):
     n = 3
-    # every other emitter (lineage, samples, ...) is off: the estimate sizes those from the graph, not per node
-    off = {e["var"]: False for e in emitters() if e["name"] not in COUNTED_BY_THE_ESTIMATE}
-    both = {**settings, **off}
-    written = run_macro("it_end_run_rows_written", {"results": [result(i) for i in range(n)]}, with_vars(both))
-    r = estimate(both, nodes=n, runs_per_day=1, lineage=False, failing_tests_per_run=0)["records_per_run"]
-    estimated = r["invocation_span"] + r["node_spans"] + r["node_results"] + r["query_events"] + r["end"]
+    written = run_macro("it_end_run_rows_written", {"results": [result(i) for i in range(n)]}, with_vars(settings))
+    r = estimate(settings, nodes=n, runs_per_day=1, failing_tests_per_run=0)["records_per_run"]
+    estimated = (r["invocation_span"] + r["node_spans"] + r["node_results"] + r["query_events"] + r["end"]
+                 + r["lineage"])
     assert estimated == written["rows"], (r, written)

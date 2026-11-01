@@ -1,6 +1,6 @@
 version: 2
 
-# UC1 hook fixtures. Every relation is a view named with var('run_id') in the target schema and dropped by the
+# UC1 hook fixtures. Every relation is a view (hooks_msg is a table) named with var('run_id') in the target schema and dropped by the
 # test. Tagged icecore_hooks, which the default selector leaves out (selectors.yml), so a plain dbt build in
 # another suite never touches them. hooks_c has 4 rows and accepts only id 1: its test warns with 3 failures.
 

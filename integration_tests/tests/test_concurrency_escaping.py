@@ -123,6 +123,7 @@ def test_two_invocations_at_once_each_land_all_their_records_and_none_is_mixed(s
             for m in ("hooks_a", "hooks_b", "hooks_c", "hooks_msg"):
                 sf.cursor().execute(f'drop {"table" if m == "hooks_msg" else "view"} if exists "{DATABASE}"."{os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES").upper()}"."{m.upper()}_{run_id.upper()}{suffix.upper()}"')
     ids = {k: v["metadata"]["invocation_id"] for k, v in runs.items()}
+    ranges = {}
     assert ids["a"] != ids["b"]
     expected = {k: sorted(r["unique_id"] for r in node_results(v)) for k, v in runs.items()}
     assert len(expected["a"]) > len(expected["b"]) == 1
@@ -135,6 +136,10 @@ def test_two_invocations_at_once_each_land_all_their_records_and_none_is_mixed(s
         assert spans == expected[k], k
         assert len(run_end_logs(rows)) == 1
         assert {r["record_attributes"]["dbt.invocation_id"] for r in rows} == {ids[k]}
+        inv, = [r for r in rows if r["record_type"] == "SPAN" and r["record"]["name"] == "icecore.invocation"]
+        ranges[k] = (inv["start_timestamp"], inv["timestamp"])
+    # the invocation spans (run start to end hook, dbt's own times) overlap: the builds really ran at the same time
+    assert ranges["a"][0] < ranges["b"][1] and ranges["b"][0] < ranges["a"][1], ranges
 
 
 # --- escaping round trip ------------------------------------------------------------------------------
@@ -208,12 +213,13 @@ def test_run_query_decimals_dates_and_nested_values_land_through_both_procedures
     kept = {r["record_type"]: {k: v for k, v in r["record_attributes"].items() if k in ("it.nested", "it.list")}
             for r in rows}
     assert json.loads(emit_row["it.nested"])["dec"] == 1.5 and json.loads(emit_row["it.list"])[0] == 1.5  # JSON text
-    # Finding (1 Nov 2026): through ICECORE_EMIT_RUN a LOG keeps a nested mapping and list (Decimal as a number, dates
-    # as ISO text); a SPAN and a SPAN_EVENT silently drop them, (ICECORE_EMIT sends nested values as JSON text for that reason).
+    # A LOG keeps nested values natively (Decimal as number, dates as ISO text); a SPAN and a SPAN_EVENT, which
+    # Snowflake drops them from silently, get them as JSON text.
     log = kept["LOG"]
     assert log["it.list"][0] == 1.5 and log["it.nested"]["dec"] == 1.5
     assert log["it.nested"]["when"][:4].isdigit() and "T" in log["it.nested"]["when"]
-    assert kept["SPAN"] == {} and kept["SPAN_EVENT"] == {}
+    for kind in ("SPAN", "SPAN_EVENT"):
+        assert json.loads(kept[kind]["it.nested"])["dec"] == 1.5 and json.loads(kept[kind]["it.list"])[0] == 1.5, kind
 
 
 # --- payload cap and chunk size ------------------------------------------------------------------------

@@ -122,21 +122,29 @@ def test_a_model_calling_score_parses():
     assert invoke(["parse", "--no-partial-parse"]).success
 
 
+# Any create (table of any kind, stage, dynamic table, snowflake.ml object...), any insert (into, overwrite, all), truncate,
+# alter, copy into, merge into, drop, delete, update. A word after a dot is a Jinja or Python method (`result.update(...)`).
 WRITE_STATEMENTS = [
-    r"create\s+(or\s+replace\s+)?(snowflake\.ml|table|stage)", r"insert\s+into", r"merge\s+into",
-    r"(?<!\.)\bdrop\b", r"(?<!\.)\bdelete\b", r"(?<!\.)\bupdate\b",  # not Jinja dict.update(...)
+    r"(?<!\.)\bcreate\b", r"\binsert\b", r"\btruncate\b", r"\balter\b", r"copy\s+into", r"merge\s+into",
+    r"(?<!\.)\bdrop\b", r"(?<!\.)\bdelete\b", r"(?<!\.)\bupdate\b",
 ]
 
 
 def writes_in(sql: str) -> list[str]:
-    """The write statements found in macro text, ignoring Jinja comments, case and whitespace."""
-    sql = re.sub(r"\{#.*?#\}", "", sql, flags=re.S).lower()
+    """The write statements found in macro text, ignoring Jinja comments, SQL comments, case and whitespace."""
+    sql = re.sub(r"\{#.*?#\}", " ", sql, flags=re.S)          # Jinja comments
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)           # SQL block comments: create/**/table is create table
+    sql = re.sub(r"--[^\n]*", " ", sql).lower()                 # SQL line comments
     return [pattern for pattern in WRITE_STATEMENTS if re.search(pattern, sql)]
 
 
 @pytest.mark.parametrize("sql", [
     "create or replace snowflake.ml.anomaly_detection m(...)", "create  or  replace table t as select 1", "CREATE STAGE s",
-    "insert  into t values (1)", "merge into t using s", "drop table t", "delete from t", "update t set a = 1",
+    "create transient table t (a int)", "create temp table t as select 1", "create temporary table t (a int)",
+    "create dynamic table t target_lag = '1 minute' as select 1", "create/**/table t (a int)", "create /* x */ or replace table t (a int)",
+    "insert  into t values (1)", "insert overwrite into t select 1", "insert all into t select 1", "truncate table t",
+    "copy into t from @s", "alter table t add column c int", "merge into t using s", "drop table t", "delete from t",
+    "update t set a = 1",
 ])
 def test_the_no_write_check_catches_what_a_substring_match_missed(sql):
     assert writes_in(sql), sql
@@ -146,6 +154,7 @@ def test_the_no_write_check_ignores_reads_and_comments():
     assert writes_in("select updated_at from t") == []
     assert writes_in("{% do result.update({1: 2}) %}") == []  # a Jinja dict method, not SQL
     assert writes_in("{#- never trained here: no create table, no drop -#} select 1") == []
+    assert writes_in("select 1 -- no create table here\n/* nor alter or truncate */") == []
 
 
 def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():

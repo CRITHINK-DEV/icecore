@@ -25,7 +25,8 @@
       {#- the window end is taken before the read and recorded on every metric, so the next window starts from it -#}
       {%- set until = icecore._icecore_now_iso() -%}
       {%- set since = icecore._icecore_window_since(model, 'all_columns', none, since, lookback_hours) -%}
-      {%- set window = icecore.get_change_window(model, since, timestamp_column) -%}
+      {%- set window = icecore.get_change_window(model, since, timestamp_column, until) -%}
+      {%- set to_emit = [] -%}
       {%- for c in signature if c['name'] not in excluded -%}
         {#- the exact stored name, quoted, so a case-sensitive column is read as it is -#}
         {%- set values = icecore.compute_column_metrics(model, '"' ~ (c['name'] | replace('"', '""')) ~ '"', window, names) -%}
@@ -34,8 +35,9 @@
         {%- else -%}
           {%- for metric, value in values.items() -%}
             {#- UC3 scoring hook: icecore.score(<history of this metric>, value) plugs in here and its result goes
-                to emit_metric as `anomaly=`. Not called at this stage (engine none). -#}
-            {%- do icecore.emit_metric(model, metric, value, column=c['name'], attributes={'dbt.window.until': until}) -%}
+                to emit_metrics as `anomaly` of the entry. Not called at this stage (engine none). -#}
+            {%- do to_emit.append({'metric': metric, 'value': value, 'column': c['name'],
+                'attributes': {'dbt.window.until': until, 'dbt.window.monitor': 'all_columns_anomaly'}}) -%}
             {%- if icecore._icecore_outside(value, bounds.get(metric)) -%}
               {%- set limit = bounds.get(metric) -%}
               {%- do breaches.append({'column': c['name'], 'metric': metric, 'value': value, 'min': limit.get('min'), 'max': limit.get('max')}) -%}
@@ -43,6 +45,8 @@
           {%- endfor -%}
         {%- endif -%}
       {%- endfor -%}
+      {#- one CALL for the whole test (emit_events chunks at 100 events) -#}
+      {%- do icecore.emit_metrics(model, to_emit) -%}
     {%- endif -%}
   {%- endif -%}
 

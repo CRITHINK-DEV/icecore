@@ -8,7 +8,7 @@ macros:
       not cover the window), counts them per value of the column, and writes one `window_rows` metric per value
       through `icecore.emit_metric` with the dimension `<column>=<value>`. At most `max_values` values are written
       (default `vars: icecore: dimension_max_values`, 20, the most frequent ones); the rest are grouped in one
-      `<column>=other` metric, and a null value is written as `<column>=<null>`. It fails when a count is outside the
+      `<column>=<other>` metric, and a null value is written as `<column>=<null>`. It fails when a count is outside the
       static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are the only verdict, and the
       scoring hook is marked in the test body and not called. The previous observation is the newest dimension metric
       record of the column, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago,

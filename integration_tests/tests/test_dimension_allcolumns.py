@@ -111,7 +111,7 @@ def test_one_metric_per_country_value_lands(monitored):
 @pytest.mark.sandbox
 def test_values_past_max_values_are_grouped_as_other_and_bounds_decide(monitored):
     got = {r["metric_dimension"]: r["metric_value"] for r in metrics_of(monitored, "cap")}
-    assert got == {"country=FR": 60.0, "country=other": 40.0}
+    assert got == {"country=FR": 60.0, "country=<other>": 40.0}
     assert monitored["statuses"]["it_dimension_capped"] == "pass"  # both counts are at least 20
 
 
@@ -125,6 +125,15 @@ def test_default_metrics_land_for_all_five_columns(monitored):
     assert len(rows) == 10 and all(r["metric_dimension"] is None for r in rows)
     assert all(got[(c, "window_rows")] == 100.0 for c in COLUMNS)
     assert got[("AMOUNT", "null_rate")] == pytest.approx(0.2) and got[("ID", "null_rate")] == 0.0
+
+
+@pytest.mark.sandbox
+def test_each_test_writes_its_metrics_in_one_call_and_tags_its_monitor(monitored):
+    for key, monitor in (("dim", "dimension_anomaly"), ("cap", "dimension_anomaly"), ("all", "all_columns_anomaly"),
+                         ("excl", "all_columns_anomaly")):
+        rows = metrics_of(monitored, key)
+        assert len({r["emit_query_id"] for r in rows}) == 1, key  # 3, 2, 10 and 6 metrics, one CALL each
+        assert {json.loads(r["attributes"])["dbt.window.monitor"] for r in rows} == {monitor}
 
 
 @pytest.mark.sandbox

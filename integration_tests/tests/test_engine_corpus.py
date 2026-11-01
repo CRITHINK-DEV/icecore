@@ -69,8 +69,8 @@ def corpus_model(sf):
     caps = call_macro("detect_capabilities", record=False)
     if not caps["cortex"]:
         pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
-    rid = uuid.uuid4().hex[:10].upper()
-    table, model = f"CX_CORPUS_T_{rid}", f"CX_CORPUS_M_{rid}"
+    run_id = uuid.uuid4().hex.upper()
+    table, model = f"ICECORE_CORPUS_T_{run_id}", f"ICECORE_CORPUS_M_{run_id}"
     cur = sf.cursor()
     cur.execute(f"create table {SCHEMA}.{table} (series varchar, ts timestamp_ntz, y float)")
     try:

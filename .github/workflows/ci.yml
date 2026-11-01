@@ -77,7 +77,9 @@ jobs:
     # One run at a time (max-parallel 1): the sandbox is shared. A failure opens an issue, or comments on the open one.
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.nightly)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # The full sandbox suite takes about 2h12m per leg on a runner (run 41308369096: 2h11m43s on the floor), so 120 cancelled
+    # both legs. 200 keeps a margin of about 50% and stays far below GitHub's 6 h job limit; the two legs run one after the other.
+    timeout-minutes: 200
     concurrency:
       group: icecore-sandbox
       cancel-in-progress: false

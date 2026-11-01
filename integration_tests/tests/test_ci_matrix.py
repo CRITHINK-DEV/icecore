@@ -32,6 +32,11 @@ def test_the_nightly_job_runs_the_sandbox_suite_on_floor_and_latest_one_at_a_tim
     assert "pytest -m sandbox" in runs
 
 
+def test_the_nightly_timeout_covers_the_full_suite():
+    # The full sandbox suite takes about 2h12m (run 41308369096); 120 cancelled both legs. GitHub's job limit is 360.
+    assert 180 <= CI["jobs"]["nightly-sandbox"]["timeout-minutes"] <= 360
+
+
 def test_the_sandbox_jobs_never_run_on_a_pull_request_and_never_together():
     nightly, single = CI["jobs"]["nightly-sandbox"], CI["jobs"]["sandbox"]
     for job in (nightly, single):

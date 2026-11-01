@@ -191,6 +191,8 @@
 {#- true when a node of age_hours (hours since its run) is settled. -#}
 {% macro _icecore_cost_settled(age_hours) %}
   {{ return((age_hours or 0) >= icecore._icecore_cost_settle_hours()) }}
+{% endmacro %}
+
 
 {#- Backfill ---------------------------------------------------------------------------------------- -#}
 
@@ -206,6 +208,14 @@
     How to join a backfilled cost back to its node: on (`invocation_id`, `node_unique_id`), never on `command` or
     `target`, which describe the run that backfilled it. node_executions takes `credits` as the maximum of
     `cost_credits` over the rows of its (invocation_id, node_unique_id).
+    Time: the cost LOG and the metric are written when the cost becomes known, so their TIMESTAMP is the backfilling
+    run's, hours after the node ran. The node's own time rides along as `dbt.cost.node_at` (its first record's time,
+    ISO-8601 UTC). The history reader orders a series by the METRICS view's observed_at, which is the write time, so a
+    backfilled `credits` point sits at the time the cost was known, not when the node ran: a documented drift of the
+    attribution lag (hours), the same for every point of the series.
+    A node older than cost_settle_hours (default 24) whose queries still have no attribution row is settled at what
+    was attributed (0 when nothing was), `dbt.cost.settled = no_attribution`, with no metric: that record also takes
+    the node out of the pending set, so statements Snowflake never attributes do not fill the cost_backfill_limit.
     No duplicates: a node with a cost record of any invocation in the window (written by attach_cost or by an
     earlier backfill) is left out, checked through icecore.base_events(). A record written less than the ingestion
     lag (about 20 s, S3) ago is not seen yet; the backfill of runs that start within that lag can write it twice.
@@ -221,7 +231,13 @@
   {%- endfor -%}
   {%- set days = (icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7) | int -%}
   {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node), days + 1) -%}
-  {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs']) -%}
+  {%- set settled = {} -%}
+  {%- for node in pending -%}
+    {%- if icecore._icecore_cost_settled(node.get('age_hours')) -%}
+      {%- do settled.update({node['invocation_id'] ~ '|' ~ node['unique_id']: true}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled) -%}
   {%- set now_ns = (batch.get('timing') or {}).get('completed_ns') or icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
   {%- for node in pending -%}
     {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
@@ -247,6 +263,7 @@
   {%- endfor -%}
   {%- set explicit = {'dbt.invocation_id': node['invocation_id'], 'icecore.backfill': true,
                       'icecore.backfilled_by': backfilled_by} -%}
+  {%- do icecore._icecore_put(explicit, 'dbt.cost.node_at', node.get('node_at')) -%}
   {%- set span_events = [] -%}
   {%- for event in icecore._icecore_cost_metric_events(attrs, cost) -%}
     {%- set event_attrs = {'icecore.level': event['level']} -%}
@@ -257,10 +274,11 @@
   {%- set span_attrs = {} -%}
   {%- do span_attrs.update(attrs) -%}
   {%- do span_attrs.update(explicit) -%}
-  {{ return([
-      icecore._icecore_cost_log(attrs, cost, explicit),
-      {'name': 'icecore.cost_backfill', 'start_ns': now_ns, 'end_ns': now_ns, 'attrs': span_attrs, 'events': span_events},
-  ]) }}
+  {%- set items = [icecore._icecore_cost_log(attrs, cost, explicit)] -%}
+  {%- if span_events -%}
+    {%- do items.append({'name': 'icecore.cost_backfill', 'start_ns': now_ns, 'end_ns': now_ns, 'attrs': span_attrs, 'events': span_events}) -%}
+  {%- endif -%}
+  {{ return(items) }}
 {% endmacro %}
 
 
@@ -268,7 +286,12 @@
     The SELECT reads base_events (record attributes, including the node results' and query events' snow.query.id);
     a node is pending when it has a query id and no row with cost_credits in the window. -#}
 {% macro _icecore_pending_cost_nodes() %}
-  {%- set rows = run_query("show parameters like 'EVENT_TABLE' in database " ~ icecore._icecore_identifier(target.database)).rows -%}
+  {%- set shown = icecore._icecore_try_show("show parameters like 'EVENT_TABLE' in database " ~ icecore._icecore_identifier(target.database)) -%}
+  {%- if 'error' in shown -%}
+    {%- do log('icecore: warning: cost backfill: the event table could not be looked up (' ~ shown['error'] ~ ')', info=True) -%}
+    {{ return([]) }}
+  {%- endif -%}
+  {%- set rows = shown.get('rows') or [] -%}
   {%- set table = icecore.event_table_to_read(rows[0]['value'] if rows | length > 0 else none) -%}
   {%- if table is none -%}
     {%- do log('icecore: warning: cost backfill: the database has no active event table, nothing to backfill', info=True) -%}
@@ -305,7 +328,8 @@ pending as (
   select w.invocation_id, w.node_unique_id,
          max(w.node_type) as node_type, max(w.node_name) as node_name,
          max(w.node_materialization) as node_materialization, max(w.node_relation) as node_relation,
-         array_agg(distinct w.node_query_id) as query_ids, min(w.event_at) as first_at
+         array_agg(distinct w.node_query_id) as query_ids, min(w.event_at) as first_at,
+         datediff('hour', min(w.event_at), convert_timezone('UTC', current_timestamp())::timestamp_ntz) as age_hours
   from window_events w
   left join costed c on c.invocation_id = w.invocation_id and c.node_unique_id = w.node_unique_id
   where c.node_unique_id is null
@@ -316,7 +340,8 @@ pending as (
 )
 select array_agg(object_construct('invocation_id', invocation_id, 'unique_id', node_unique_id, 'type', node_type,
        'name', node_name, 'materialization', node_materialization, 'relation', node_relation,
-       'query_ids', query_ids))
+       'query_ids', query_ids, 'age_hours', age_hours,
+       'node_at', to_char(first_at, 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')))
 from pending
   {%- endset -%}
   {{ return(sql | trim) }}

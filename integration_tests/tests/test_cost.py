@@ -112,7 +112,8 @@ def test_lookup_sql_reads_attribution_history_for_the_ids_and_escapes_them():
 
 
 BACKFILL_NODE = {"invocation_id": "inv-old", "unique_id": "model.p.a", "type": "model", "name": "a",
-                 "materialization": "view", "relation": '"DB"."S"."A"', "query_ids": ["q1"]}
+                 "materialization": "view", "relation": '"DB"."S"."A"', "query_ids": ["q1"],
+                 "node_at": "2026-10-31T12:00:00.000Z", "age_hours": 5}
 
 
 def test_backfilled_cost_keeps_the_original_invocation_on_every_record():
@@ -131,6 +132,22 @@ def test_backfilled_cost_keeps_the_original_invocation_on_every_record():
     assert metric["attrs"]["dbt.invocation_id"] == "inv-old"
     assert metric["attrs"]["dbt.metric.name"] == "credits" and metric["attrs"]["dbt.metric.value"] == 0.5
     assert metric["attrs"]["dbt.node.relation"] == '"DB"."S"."A"' and metric["attrs"]["dbt.node.unique_id"] == "model.p.a"
+
+
+def test_backfilled_items_carry_the_original_node_time():
+    out = run_macro("it_backfill_items", {"node": BACKFILL_NODE, "cost": {"credits": 0.5, "warehouse": "WH"},
+                                          "backfilled_by": "inv-new", "now_ns": 1762000000000000000})
+    log, span = out["records"]
+    assert log["attrs"]["dbt.cost.node_at"] == "2026-10-31T12:00:00.000Z"
+    assert span["events"][0]["attrs"]["dbt.cost.node_at"] == "2026-10-31T12:00:00.000Z"
+
+
+def test_settled_backfill_is_a_cost_log_without_metric_span():
+    cost = {"credits": 0.0, "warehouse": None, "settled": "no_attribution"}
+    out = run_macro("it_backfill_items", {"node": BACKFILL_NODE, "cost": cost, "backfilled_by": "inv-new",
+                                          "now_ns": 1762000000000000000})
+    log, = out["records"]
+    assert log["attrs"]["dbt.cost.settled"] == "no_attribution" and log["attrs"]["dbt.invocation_id"] == "inv-old"
 
 
 def test_pending_sql_skips_costed_nodes_and_the_current_invocation_and_is_bounded():
@@ -273,10 +290,10 @@ def earlier_run(sf, obs, old_queries):
     return {"inv": inv, "since": since, "queries": old_queries, "ids": [q1, q2, q3, q4]}
 
 
-def build_with_cost(sf, obs, since):
+def build_with_cost(sf, obs, since, **settings):
     run_id = uuid.uuid4().hex
     try:
-        res, run_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, obs, cost=True)
+        res, run_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, obs, cost=True, **settings)
         assert res.success, res.exception
         return run_results["metadata"]["invocation_id"]
     finally:
@@ -320,3 +337,17 @@ def test_next_run_backfills_earlier_nodes_once_without_duplicates(sf, obs, earli
     logs, metrics = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2)
     assert sorted(a["dbt.node.unique_id"] for a in logs) == ["model.p.n1", "model.p.n2", "model.p.n3"]
     assert len([m for m in metrics if m["dbt.metric.name"] == "credits"]) == 2
+
+    # n4's query never gets an attribution row: once settled (cost_settle_hours 0 here, 24 by default) it is closed
+    # at 0 credits with its reason, has no metric, and the next run leaves it alone
+    settling = build_with_cost(sf, obs, since, cost_settle_hours=0)
+    logs, metrics = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2 + 1)
+    settled = [a for a in logs if a["dbt.node.unique_id"] == "model.p.n4"]
+    assert len(settled) == 1 and settled[0]["dbt.cost.credits"] == 0.0
+    assert settled[0]["dbt.cost.settled"] == "no_attribution" and settled[0]["icecore.backfilled_by"] == settling
+    assert settled[0]["dbt.cost.node_at"].endswith("Z")
+    assert not [m for m in metrics if m["dbt.node.unique_id"] == "model.p.n4"]
+    build_with_cost(sf, obs, since, cost_settle_hours=0)
+    time.sleep(60)
+    logs, _ = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2 + 1)
+    assert len([a for a in logs if a["dbt.node.unique_id"] == "model.p.n4"]) == 1

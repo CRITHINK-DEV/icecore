@@ -25,6 +25,7 @@
 
 {% macro it_cost_settled(age_hours) %}
   {% do _it_result({'settled': icecore._icecore_cost_settled(age_hours), 'hours': icecore._icecore_cost_settle_hours()}) %}
+{% endmacro %}
 
 {#- The items backfill_cost adds for one node, and how emit_run records them (the original invocation id must win
     over the base attribute of this run). -#}

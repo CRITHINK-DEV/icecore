@@ -170,10 +170,10 @@ def params(obs, tag: str) -> dict:
 
 
 @pytest.mark.sandbox
-def test_create_emit_procedures_creates_both(sf, obs):
+def test_create_emit_procedures_creates_all_three(sf, obs):
     rows = sf.cursor().execute(f'show user procedures in schema "{DATABASE}"."{obs["schema"]}"').fetchall()
     names = sorted(r[1] for r in rows)
-    assert names == ["ICECORE_EMIT", "ICECORE_EMIT_RUN"]
+    assert names == ["ICECORE_EMIT", "ICECORE_EMIT_RUN", "ICECORE_SCORE"]
 
 
 @pytest.mark.sandbox

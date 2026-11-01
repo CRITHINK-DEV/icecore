@@ -205,4 +205,5 @@ Run `dbt run-operation icecore.doctor` first. A failed check names the missing p
 ## Next
 
 - [Configuration](configuration.md): every var, argument and view, including how much of dbt's result message is stored.
-- The monitor tests (`icecore.freshness`, `icecore.volume`) and the app are coming.
+- To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests).
+- The other monitor tests and the app are coming.

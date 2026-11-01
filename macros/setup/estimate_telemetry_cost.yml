@@ -11,7 +11,7 @@ macros:
       `query_events_per_node` query events per node (only when the `query_events` var is on; both counts come from the
       macro next to end_run's emitter list, so a new emitter cannot be left out unnoticed), the lineage records (only when
       the `lineage` var is on: the graph's edges split under the payload cap, as `emit_lineage` splits them), one sample per
-      failing test, plus the rows the procedures write themselves:
+      failing test with `store_failures` (only when the `samples` var is on, which is not the default), plus the rows the procedures write themselves:
       one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL
       (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag,
       not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5:
@@ -35,7 +35,7 @@ macros:
         description: Queries per node, one query event each. Default 1.
       - name: failing_tests_per_run
         type: integer
-        description: Failing tests per run that send a sample. Default 0 (samples are off for warn tests by default).
+        description: Failing tests per run with `store_failures` that send a sample; counted only when the `samples` var is on. Default 0 (warn-severity tests send none unless `samples_on_warn` is on).
       - name: days
         type: integer
         description: Days per month. Default 30.

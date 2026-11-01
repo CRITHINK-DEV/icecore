@@ -44,6 +44,9 @@
   {%- set before = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
   {%- set was_started = (before | length) > 0 and (before[0]['state'] | string | lower) == 'started' -%}
   {#- the procedure first: static code, no SLA value. The task body is a CALL carrying the SLA as one JSON literal. -#}
+  {#- Snowflake keys procedures by signature: CREATE OR REPLACE of (VARIANT) leaves an older (VARIANT, VARCHAR, VARCHAR, VARCHAR)
+      overload in place, the one that took relation names from its caller. Drop it first. -#}
+  {%- do icecore._icecore_guarded_ddl('DROP PROCEDURE IF EXISTS ' ~ icecore._icecore_procedure('ICECORE_SILENCE_CHECK', schema) ~ '(VARIANT, VARCHAR, VARCHAR, VARCHAR)') -%}
   {%- set made = icecore._icecore_guarded_ddl(icecore._icecore_silence_procedure_ddl(schema, source or 'NODE_EXECUTIONS')) -%}
   {%- set status = made -%}
   {%- if made == 'ok' -%}

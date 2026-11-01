@@ -221,6 +221,9 @@ def silence(dbt, sf):
         entries = [entry(ids["late"], 60, 1, channel="data-platform", severity="error"), entry(ids["ok"], 60, 1),
                    entry(ids["failed"], 60, 1), entry(ids["evil"], 60, 1, channel=EVIL, severity="warn")]
         since = cur.execute(f"select dateadd(minute, -2, {NOW})").fetchone()[0]
+        # an overload left by the first version of this procedure, which took relation names from its caller
+        cur.execute(f"""create procedure {qs}."ICECORE_SILENCE_CHECK"(sla variant, source varchar, silence varchar, emit varchar)
+            returns varchar language sql as $$ begin return 'old'; end; $$""")
         created = run_macro("it_create_silence_task",
                             {"schema": schema, "entries": entries, "source": "STANDIN_NODES"}, obs_vars)
         yield {"schema": schema, "qs": qs, "ids": ids, "created": created, "since": since, "cur": cur, "sf": sf,
@@ -338,6 +341,13 @@ def test_hostile_sla_text_is_data_end_to_end(silence):
     assert not [o for o in objects if o[1] not in ("ICECORE_SILENCE", "STANDIN_NODES")
                 and o[1] not in {"METRICS", "SCHEMA_CHANGES", "INVOCATIONS", "NODE_EXECUTIONS", "SILENCE_EVENTS", "TEST_RESULTS",
                                  "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"}]
+
+
+@pytest.mark.sandbox
+def test_creating_the_task_drops_the_old_four_argument_overload(silence):
+    rows = silence["sf"].cursor(DictCursor).execute(
+        f'show procedures like \'ICECORE_SILENCE_CHECK\' in schema {silence["qs"]}').fetchall()
+    assert len(rows) == 1, [r["arguments"] for r in rows]  # exactly one overload: the (VARIANT) one
 
 
 @pytest.mark.sandbox

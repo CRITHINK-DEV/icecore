@@ -9,10 +9,11 @@
     {%- set shadow = icecore.shadow_score(history_sql, value, result, model=model, series=series) -%}
     {%- do icecore.emit_shadow(relation, 'row_count', value, shadow, result) -%}
 
-  Costs nothing when shadow is off. When Cortex is off and the caller passes `capabilities` (a detect_capabilities result),
-  no Cortex query runs; without it the first guarded Cortex call fails and detect_capabilities is run once to confirm, then
-  one warning is logged and nothing is emitted. The dispatcher's rules apply to the shadow too (no model: no query; history
-  count; model state; detect), so a working Cortex shadow costs 3 queries.
+  Costs nothing when shadow is off. When Cortex is off, queries still run unless the caller passes `capabilities` (a
+  detect_capabilities result): without it the history count and the guarded call of ICECORE_SCORE run, fail, and
+  detect_capabilities is run once to confirm; then one warning is logged and nothing is emitted. The dispatcher's rules apply
+  to the shadow too (no model: no query; history count; one ICECORE_SCORE call), so a working Cortex shadow costs 2 queries.
+  min_points applies to a native shadow only; the Cortex path ignores it.
 -#}
 
 
@@ -20,19 +21,20 @@
 
 {#- Returns the shadow engine's fields {engine, expected, lower, upper, score, is_anomaly, fallback_reason}, or none when
     there is nothing to compare: shadow disabled, the shadow engine is the one that scored, or Cortex is not available
-    (then no Cortex call is made and one warning is logged). A Cortex shadow that cannot score (no or stale model, short
+    (one warning is logged; queries still run unless the caller passes `capabilities` saying so: without it the first guarded
+    Cortex call fails and detect_capabilities confirms). A Cortex shadow that cannot score (no or stale model, short
     history, error) returns engine cortex with null bands and the fallback_reason, so the gap is visible, and never
     falls back to native (native against native compares nothing). `primary` is the dispatcher's result; it is only read. -#}
-{% macro shadow_score(series_sql, current_value, primary, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, shadow_engine=none, capabilities=none) %}
+{% macro shadow_score(series_sql, current_value, primary, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, shadow_engine=none, capabilities=none, min_points=7, schema=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set shadow = icecore._shadow_engine(shadow_engine) -%}
   {%- if shadow == 'none' or shadow == (primary or {}).get('engine') -%}{{ return(none) }}{%- endif -%}
   {%- set settings = icecore._anomaly_settings(shadow, sensitivity, min_consecutive) -%}
   {%- if shadow == 'native' -%}
-    {%- set scored = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at) -%}
+    {%- set scored = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at, min_points) -%}
     {{ return(icecore._shadow_fields(scored, none)) }}
   {%- endif -%}
-  {%- set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities) -%}
+  {%- set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities, schema) -%}
   {%- if attempt.get('fallback_reason') == 'cortex_unavailable' -%}
     {% do log('icecore: warning: shadow_engine is cortex but Cortex is not available (' ~ attempt.get('detail') ~ '): no shadow scoring', info=True) %}
     {{ return(none) }}

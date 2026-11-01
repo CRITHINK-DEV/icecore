@@ -70,6 +70,12 @@ def test_a_cortex_shadow_that_cannot_score_keeps_its_reason_and_null_bands():
     assert all(fields[k] is None for k in ("expected", "lower", "upper", "score", "is_anomaly"))
 
 
+def test_min_points_reaches_a_native_shadow():
+    # offline the native query cannot run, but the argument is validated before it: a bad value is refused
+    with pytest.raises(MacroFailed, match="min_points"):
+        shadow("native", primary={"engine": "cortex"}, min_points=0)
+
+
 # --- rendering (offline) ----------------------------------------------------------------------------
 
 CORTEX_RESULT = {"engine": "cortex", "expected": 100.5, "lower": 95.0, "upper": 106.0, "score": 394.0, "is_anomaly": True,
@@ -118,7 +124,7 @@ def test_native_decides_and_cortex_is_the_shadow(cortex_model):
     primary = real_primary()
     out, _ = run_macro_with_logs("it_call", {"name": "shadow_score", "kwargs": {
         "series_sql": HISTORY, "current_value": 500, "primary": primary, "shadow_engine": "cortex",
-        "observed_at": "2026-10-29 06:00:00", "model": cortex_model, "series": "a"}})
+        "observed_at": "2026-10-29 06:00:00", "model": cortex_model, "series": "a", "schema": cortex_model.schema}})
     assert primary["engine"] == "native" and primary["is_anomaly"] is True  # the verdict is native's
     assert out["engine"] == "cortex" and out["fallback_reason"] is None
     assert out["lower"] < out["expected"] < out["upper"] and out["score"] > 0 and out["is_anomaly"] is True
@@ -129,7 +135,7 @@ def test_native_decides_and_cortex_is_the_shadow(cortex_model):
 def test_a_cortex_shadow_without_a_model_reports_model_missing(cortex_model):
     out, _ = run_macro_with_logs("it_call", {"name": "shadow_score", "kwargs": {
         "series_sql": HISTORY, "current_value": 500, "primary": NATIVE, "shadow_engine": "cortex",
-        "model": f"{DATABASE}.SPIKES.CX_NO_SUCH_MODEL", "series": "a"}})
+        "model": f"{DATABASE}.{cortex_model.schema}.CX_NO_SUCH_MODEL", "series": "a", "schema": cortex_model.schema}})
     assert out["engine"] == "cortex" and out["fallback_reason"] == "model_missing" and out["lower"] is None
 
 

@@ -64,7 +64,7 @@ def test_setup_steps_add_compat_views_and_the_app_on_request():
     steps = call_macro("_icecore_setup_steps", compat="elementary", app=True)
     names = [s["name"] for s in steps]
     assert names.index("create_views") < names.index("create_compat_views") < names.index("deploy_app")
-    assert not any(s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app"))
+    assert [s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app")] == [True, False]
 
 
 def test_schema_argument_overrides_the_obs_schema_var():

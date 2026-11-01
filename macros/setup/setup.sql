@@ -10,7 +10,9 @@
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
-      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      8. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
+         views of step 7 (macros/compat/create_compat_views.sql);
+         create_alerts, create_tasks, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -66,7 +68,7 @@
       {'name': 'create_views', 'ready': true, 'detail': 'the core views over base_events'},
   ] -%}
   {%- if (compat or 'none') | string | lower != 'none' -%}
-    {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
+    {%- do steps.append({'name': 'create_compat_views', 'ready': true, 'detail': 'the ' ~ compat ~ ' compat views'}) -%}
   {%- endif -%}
   {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
   {%- do steps.append({'name': 'create_tasks', 'ready': false, 'detail': 'Snowflake tasks'}) -%}
@@ -114,6 +116,10 @@
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- elif name == 'create_views' -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
+  {%- elif name == 'create_compat_views' -%}
+    {%- set compat_schema = icecore._icecore_compat_schema(state['schema']) -%}
+    {%- do state.update({'compat_schema': compat_schema}) -%}
+    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

@@ -2,8 +2,9 @@
 
 Native verdicts are asserted exactly (verdict, baseline, sign of the score): any engine change that flips one fails
 here, so a change is made on purpose, with the table below updated in the same PR. Cortex cases run in the sandbox
-only, on one tiny model trained on the series (run_id-named in SPIKES, dropped afterwards); the verdicts are recorded
-and the differences from native are listed in the test output; a drift from the recorded Cortex verdicts is a warning.
+only, on one tiny model trained on the series (named ICECORE_M_<16 hex>, in the schema ICECORE_OBS_<run_id> that is dropped
+afterwards); the verdicts are recorded and the differences from native are listed in the test output. A drift from the
+recorded Cortex verdicts is a warning; a series that had a recorded verdict and now returns an error fails.
 """
 import hashlib
 import json
@@ -53,6 +54,36 @@ def test_corpus_is_deterministic():
     assert values_sql(CORPUS["seasonal"]["points"]) == values_sql(importlib.reload(engine_corpus).CORPUS["seasonal"]["points"])
 
 
+def cortex_findings(observed, errors, expected=None):
+    """(broke, drift). broke: series that had a recorded verdict and now return an error (a failure). drift: series whose
+    verdict changed (a warning: Cortex is ML output); an error is never drift, and a series whose recorded value is None
+    (no band) that errors is as recorded."""
+    expected = CORTEX_EXPECTED if expected is None else expected
+    broke = {k: errors[k][:120] for k in errors if expected[k] is not None}
+    drift = {k: (expected[k], v) for k, v in observed.items() if k not in errors and expected[k] != v}
+    return broke, drift
+
+
+def test_an_error_on_a_series_with_a_recorded_verdict_fails_and_is_not_drift():
+    broke, drift = cortex_findings({"flat": None, "sparse": None}, {"flat": "no model"})
+    assert list(broke) == ["flat"] and drift == {}
+
+
+def test_a_changed_verdict_is_drift_not_a_failure():
+    broke, drift = cortex_findings({"flat": False, "sparse": None}, {})
+    assert broke == {} and drift == {"flat": (True, False)}
+
+
+def test_an_error_on_a_series_recorded_without_a_band_is_as_recorded():
+    broke, drift = cortex_findings({"sparse": None}, {"sparse": "no band"})
+    assert broke == {} and drift == {}
+
+
+def test_a_verdict_where_none_was_recorded_is_drift():
+    broke, drift = cortex_findings({"sparse": True}, {})
+    assert broke == {} and drift == {"sparse": (None, True)}
+
+
 def native_verdict(name):
     case = CORPUS[name]
     return call_macro("native__score", series_sql=values_sql(case["points"]), current_value=case["value"],
@@ -100,21 +131,24 @@ def corpus_model(sf):
 @pytest.mark.sandbox
 def test_cortex_verdicts_are_recorded_and_differences_listed(corpus_model, capsys):
     model, schema = corpus_model
-    observed, diffs = {}, []
+    observed, errors, diffs = {}, {}, []
     for name, case in sorted(CORPUS.items()):
         out = call_macro("cortex__score", model=model, series=name, series_sql=values_sql(case["points"]),
                          current_value=case["value"], sensitivity="medium", min_consecutive=1,
                          observed_at=case["at"].isoformat(sep=" "), schema=schema)
-        observed[name] = out.get("is_anomaly") if "error" not in out else None
+        if "error" in out:
+            observed[name], errors[name] = None, out["error"]
+        else:
+            observed[name] = out.get("is_anomaly")
         if observed[name] != NATIVE_EXPECTED[name][0]:
             diffs.append(f"{name}: native {NATIVE_EXPECTED[name][0]}, cortex {observed[name]}"
-                         + (f" ({out['error'][:80]})" if "error" in out else ""))
+                         + (f" ({errors[name][:80]})" if name in errors else ""))
     with capsys.disabled():
         print("\nengine corpus, cortex verdicts:", observed)
         print("engine corpus, differences native vs cortex:", diffs or "none")
-    # Cortex verdicts are ML output: a drift from the recorded ones is a warning to review, not a failure. Native is exact.
-    drift = {k: (CORTEX_EXPECTED[k], v) for k, v in observed.items() if CORTEX_EXPECTED.get(k) != v}
+    assert set(observed) == set(CORTEX_EXPECTED)
+    broke, drift = cortex_findings(observed, errors)
+    assert not broke, f"Cortex returned an error for series that had a recorded verdict: {broke}"
     if drift:
         warnings.warn(f"engine corpus: Cortex verdicts drifted from the recorded ones (recorded, now): {drift}; "
                       "review and update CORTEX_EXPECTED if intended", stacklevel=1)
-    assert set(observed) == set(CORTEX_EXPECTED)  # every series was scored (a verdict or none), nothing raised

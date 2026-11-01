@@ -18,5 +18,7 @@ models:
               values: [1]
               quote: false
               config: {severity: warn, tags: ["icecore_hooks"]}
+  - name: hooks_msg
+    config: {tags: ["icecore_hooks"]}
   - name: hooks_fail
     config: {tags: ["icecore_hooks"]}

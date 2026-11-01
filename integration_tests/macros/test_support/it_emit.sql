@@ -58,3 +58,25 @@
 {% macro it_emit_run(items) %}
   {% do _it_result(icecore._icecore_guarded_call(icecore._icecore_procedure('ICECORE_EMIT_RUN'), items)) %}
 {% endmacro %}
+
+{#- The whole run emitter (chunks, caps, guard) for arbitrary items, as end_run uses it. -#}
+{% macro it_emit_run_full(items) %}
+  {% do _it_result(icecore.emit_run(items)) %}
+{% endmacro %}
+
+{#- dbt reads --args as YAML, which cannot carry every character (lone surrogates, odd escapes), so the special-
+    character tests hand the text over in the environment variable IT_WEIRD. -#}
+{% macro it_emit_weird(run_id) %}
+  {% set weird = env_var('IT_WEIRD') %}
+  {% do _it_result(icecore.emit('it_esc', weird, {'it.run_id': run_id, 'it.value': weird, 'it.nested': {'k': weird}})) %}
+{% endmacro %}
+
+{% macro it_emit_run_weird(run_id, start_ns) %}
+  {% set weird = env_var('IT_WEIRD') %}
+  {% do _it_result(icecore.emit_run([
+      {'name': 'icecore.node', 'start_ns': start_ns - 3000000000, 'end_ns': start_ns - 2000000000,
+       'attrs': {'it.run_id': run_id, 'it.value': weird},
+       'events': [{'name': 'icecore.query', 'ts_ns': start_ns - 3000000000, 'attrs': {'it.run_id': run_id, 'it.value': weird}}]},
+      {'type': 'log', 'level': 'warn', 'message': weird, 'attrs': {'it.run_id': run_id, 'it.value': weird}},
+  ])) %}
+{% endmacro %}

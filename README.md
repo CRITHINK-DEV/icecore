@@ -89,6 +89,7 @@ vars:
     telemetry: true          # false: start_run and end_run write nothing
     node_results: true       # end_run: one record per node result (status, rows, time, message, test failures)
     query_events: true       # end_run: the node's Snowflake query id, as an event on the node's span
+    lineage: true            # end_run: the DAG's edges (parent, child unique ids) as LOG records
     result_message: redacted # redacted, full or none
 ```
 

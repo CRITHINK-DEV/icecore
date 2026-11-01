@@ -27,6 +27,7 @@
   {{ return([
       {'name': 'node_results', 'var': 'node_results', 'default': true, 'macro': icecore.emit_node_results},
       {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
+      {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
   ]) }}
 {% endmacro %}
 

@@ -86,7 +86,7 @@
 
 
 {#- Run a one-value SELECT inside a Snowflake Scripting block that catches every error:
-    returns {'value': <value>} or {'error': <Snowflake message>}, never raises. -#}
+    returns {'value': <value>} or {'error': <Snowflake message>, 'code': <SQLCODE>}, never raises. -#}
 {% macro _icecore_try_scalar(select_sql) %}
   {%- set block -%}
 declare
@@ -95,7 +95,7 @@ begin
   select x into :v from (select ({{ select_sql }})::variant as x);
   return object_construct('value', v);
 exception
-  when other then return object_construct('error', sqlerrm);
+  when other then return object_construct('error', sqlerrm, 'code', sqlcode);
 end;
   {%- endset -%}
   {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}

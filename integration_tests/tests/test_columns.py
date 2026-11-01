@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from helpers.macros import run_macro, run_macro_with_logs
+from helpers.macros import MacroFailed, run_macro, run_macro_with_logs
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES")
@@ -103,8 +103,8 @@ def test_timestamp_window_compares_in_the_column_type(ts_type, cast):
     out = render({"mode": "timestamp_column", "since": SINCE, "timestamp_column": "updated_at", "timestamp_type": ts_type})
     sql = " ".join(out["metrics_sql"].split())
     assert "changes (" not in sql.lower()
-    op = ">=" if ts_type == "DATE" else ">"
-    assert f'"UPDATED_AT" {op} {cast}(\'{SINCE}\')' in sql, sql
+    # at or after since, like CHANGES AT(TIMESTAMP => since): both paths count rows at since
+    assert f'"UPDATED_AT" >= {cast}(\'{SINCE}\')' in sql, sql
 
 
 def test_column_and_since_are_quoted_and_escaped():
@@ -118,8 +118,8 @@ def test_column_and_since_are_quoted_and_escaped():
 def test_numeric_metrics_render_avg_min_max():
     sql = " ".join(render({"mode": "changes", "since": SINCE}, metrics=["avg", "min", "max"])["metrics_sql"].split())
     assert """'avg', avg("AMOUNT")::float""" in sql
-    assert """'min', min("AMOUNT")::float""" in sql
-    assert """'max', max("AMOUNT")::float""" in sql
+    assert """'min', min("AMOUNT")""" in sql and """'max', max("AMOUNT")""" in sql
+    assert "min(\"AMOUNT\")::float" not in sql and "max(\"AMOUNT\")::float" not in sql  # native type: exact above 2^53
     assert "'null_rate'" not in sql and "'window_rows'" not in sql
 
 
@@ -139,7 +139,23 @@ def test_column_name_forms(name, ref):
     window = {"mode": "timestamp_column", "since": SINCE, "timestamp_column": name, "timestamp_type": "TIMESTAMP_NTZ"}
     sql = render(window, column=name)["metrics_sql"]
     assert f"select {ref} from" in sql, sql
-    assert f"where {ref} > to_timestamp_ntz(" in sql, sql
+    assert f"where {ref} >= to_timestamp_ntz(" in sql, sql
+
+
+def test_changes_and_timestamp_paths_both_include_since():
+    changes = " ".join(render({"mode": "changes", "since": SINCE})["changes_source"].split()).lower()
+    assert f"at (timestamp => to_timestamp_tz('{SINCE.lower()}'))" in changes  # AT includes since
+    for ts_type in ("TIMESTAMP_NTZ", "TIMESTAMP_LTZ", "TIMESTAMP_TZ", "DATE"):
+        sql = render({"mode": "timestamp_column", "since": SINCE, "timestamp_column": "updated_at",
+                      "timestamp_type": ts_type})["metrics_sql"]
+        assert '"UPDATED_AT" >= ' in sql and '"UPDATED_AT" > t' not in sql, sql
+
+
+@pytest.mark.parametrize("macro,arg", [("it_compute_column_metrics", "column_name"), ("it_compute_dimension_metrics", "dimension_column")])
+def test_none_column_is_a_compile_error_naming_the_model(macro, arg):
+    window = {"mode": "changes", "since": SINCE}
+    with pytest.raises(MacroFailed, match=r'"ICECORE_SANDBOX"."SPIKES"."FCT_ORDERS"'):
+        run_macro(macro, {"rel": rel("fct_orders"), arg: None, "window": window})
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -422,5 +438,68 @@ def test_missing_metric_column_does_not_trigger_the_timestamp_fallback(dbt, sf, 
         assert got["metrics"] is None, got
         assert any("compute_column_metrics could not read" in m and "column no_such_column not found" in m for m in logs), logs
         assert not any("CHANGES query failed" in m or "using timestamp column" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_timestamp_window_counts_rows_at_since(dbt, sf, run_id):
+    # the timestamp path is inclusive at since, like CHANGES AT(TIMESTAMP => since)
+    name = f"UC2_COLS_BOUND_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=False)
+    try:
+        since = "2026-10-31T08:00:00.000000Z"
+        sf.cursor().execute(
+            f"insert into {table} (id, amount, updated_at, loaded_at) values "
+            "(1, 1, '2026-10-31 07:59:59.999999', '2026-10-31 07:59:59.999999 +0000'), "
+            "(2, 1, '2026-10-31 08:00:00.000000', '2026-10-31 08:00:00.000000 +0000'), "
+            "(3, 1, '2026-10-31 08:00:00.000001', '2026-10-31 08:00:00.000001 +0000')")
+        for ts_column in ("updated_at", "loaded_at"):
+            got = run_macro("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount",
+                                                  "since": since, "timestamp_column": ts_column})
+            assert got["window"]["mode"] == "timestamp_column", got
+            assert got["metrics"]["window_rows"] == 2, (ts_column, got)
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_fallback_happens_once_per_window(dbt, sf, run_id):
+    # table re-created after since: the first call falls back, the window remembers it, later calls skip CHANGES
+    name = f"UC2_COLS_ONCE_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 5)
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        sf.cursor().execute(
+            f"create or replace transient table {table} change_tracking = true as "
+            "select seq4() as id, 1 as amount, null::varchar as note, "
+            "convert_timezone('UTC', current_timestamp())::timestamp_ntz as updated_at, current_timestamp() as loaded_at "
+            "from table(generator(rowcount => 12))")
+        got, logs = run_macro_with_logs("it_column_metrics_repeat", {
+            "rel": rel(name.lower()), "column_name": "amount", "since": since, "timestamp_column": "updated_at", "times": 3})
+        assert [m["window_rows"] for m in got["metrics"]] == [12, 12, 12], got
+        assert got["window"]["mode"] == "timestamp_column", got
+        assert sum("CHANGES query failed" in m for m in logs) == 1, logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_min_max_stay_exact_above_2_pow_53(dbt, sf, run_id):
+    name = f"UC2_COLS_BIG_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        time.sleep(2)
+        since = utc_now(sf)
+        sf.cursor().execute(f"insert into {table} (id, amount) values (1, 9007199254740993), (2, 9007199254740995)")
+        got = run_macro("it_column_metrics", {"rel": rel(name.lower()), "column_name": "amount", "since": since,
+                                              "metrics": ["min", "max"]})
+        assert got["metrics"] == {"min": 9007199254740993, "max": 9007199254740995}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")

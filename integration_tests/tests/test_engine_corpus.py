@@ -78,7 +78,7 @@ def corpus_model(sf):
         pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
     run_id = uuid.uuid4().hex.upper()
     schema = f"ICECORE_OBS_{run_id}"
-    table, model = f"ICECORE_CORPUS_T_{run_id}", f"ICECORE_CORPUS_M_{run_id}"
+    table, model = f"ICECORE_CORPUS_T_{run_id}", f"ICECORE_M_{run_id[:16]}"
     cur = sf.cursor()
     cur.execute(f'create schema "{DATABASE}"."{schema}"')
     try:
@@ -92,7 +92,7 @@ def corpus_model(sf):
                 series_colname => 'SERIES', timestamp_colname => 'TS', target_colname => 'Y', label_colname => '')""")
         except Exception as exc:
             pytest.skip(f"the role cannot create a Cortex anomaly model on the corpus: {exc}")
-        yield f"{DATABASE}.{schema}.{model}", schema
+        yield model, schema
     finally:
         cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
 

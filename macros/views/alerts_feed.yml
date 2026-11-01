@@ -9,7 +9,7 @@ macros:
       uc6-silence, and cost_regressions, filled later) that select zero rows with the signal columns. Columns
       `incident_key` (md5 of node_key, kind and window_start), `kind` (test_failure, anomaly, schema_change, silence or
       cost), `node_key`, `window_start`, `severity`, `title`, `first_detected_at`, `last_detected_at`, `occurrences`,
-      `last_invocation_id`, `acknowledged_at` and `acknowledged_by` (the earliest `icecore.ack` event of the key
+      `last_invocation_id`, `root_cause_unique_id` and `root_cause_kind` (test failures with a root-cause attribution, else null), `acknowledged_at` and `acknowledged_by` (the earliest `icecore.ack` event of the key
       written by ICECORE_ACK at or after the incident's first detection, null when none). The window is var icecore.alert_window_hours, default 24 hours, so the same failure on two runs
       inside one window is one key and the next window alerts again.
     arguments:

@@ -4,7 +4,7 @@
     Everything reads icecore.base_events(). A node result is a test's when its dbt.node.unique_id starts with
     `test.` (singular and generic tests, and unit tests of the same prefix). Keys, as attributes.sql writes them:
     dbt.test.name / type / column / severity, dbt.result.status, dbt.result.message (redacted by default, var
-    icecore.result_message), dbt.test.failures, dbt.result.execution_time_s and, when a scored test wrote them, the
+    icecore.result_message), dbt.root_cause.unique_id / kind (when root-cause attribution wrote them), dbt.test.failures, dbt.result.execution_time_s and, when a scored test wrote them, the
     dbt.anomaly.* keys. A retried or duplicated record collapses to the latest one per (invocation, test).
     executed_at is the event's TIMESTAMP: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3).
     model_unique_id of the spec is not a column: no emitter writes the tested model's id on the node result. -#}
@@ -30,6 +30,8 @@ select
     test_failures as failures,
     result_message as message,
     result_execution_time_s as execution_time_s,
+    root_cause_unique_id,
+    root_cause_kind,
     anomaly_engine as engine,
     anomaly_expected as expected,
     anomaly_lower as lower,

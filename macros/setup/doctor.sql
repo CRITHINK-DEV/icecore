@@ -6,10 +6,12 @@
       1. event_table       re-detects the capabilities (detect_capabilities, reads only): an active event table;
       2. levels            the database's LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS
                            (telemetry_levels_plan); the fix is printed, never run;
-      3. ICECORE_EMIT, ICECORE_EMIT_RUN
+      3. ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK
                            one guarded test CALL of each, tagged icecore.doctor.probe = true (an
                            icecore.doctor_probe span event and an INFO LOG record): a missing procedure or grant
-                           shows here;
+                           shows here. ICECORE_ACK is called with a key that is no incident: the expected answer is
+                           the refusal `not_an_open_incident`, which proves the procedure and the ALERTS_FEED view it
+                           reads exist and are callable (nothing is written);
       4. records           icecore records of the last 24 hours, counted through base_events() on Snowflake's clock,
                            without doctor's probes and the icecore.capabilities records of setup and doctor.
     The likely cause of "no records in 24 h" is the first failed check of 1-3, else the telemetry hooks.
@@ -63,7 +65,26 @@
       'ICECORE_EMIT': icecore._icecore_emit_in_schema(schema, 'doctor_probe', 'icecore doctor probe', tag) | string,
       'ICECORE_EMIT_RUN': icecore._icecore_guarded_call(icecore._icecore_procedure('ICECORE_EMIT_RUN', schema),
           [{'type': 'log', 'level': 'info', 'message': 'icecore doctor probe', 'attrs': log_attrs}]) | string,
+      'ICECORE_ACK': icecore._icecore_ack_probe(schema) | string,
   }) }}
+{% endmacro %}
+
+
+{#- One guarded CALL of ICECORE_ACK with a key that is no incident (32 zeros, a constant, no record value): the status. -#}
+{% macro _icecore_ack_probe(schema) %}
+  {%- set sql -%}
+EXECUTE IMMEDIATE $$
+DECLARE
+  r STRING;
+BEGIN
+  CALL {{ icecore._icecore_procedure('ICECORE_ACK', schema) }}('00000000000000000000000000000000') INTO :r;
+  RETURN r;
+EXCEPTION
+  WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
+END;
+$$
+  {%- endset -%}
+  {{ return(run_query(sql | trim).columns[0].values()[0] | string) }}
 {% endmacro %}
 
 
@@ -100,9 +121,10 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
       ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS on the database; an admin can run: '
       ~ (plan['attempt'] | join('; '))}) -%}
 
-  {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
+  {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_ACK'] if name in (probes or {}) or name != 'ICECORE_ACK' -%}
     {%- set status = (probes or {}).get(name) or 'not called' -%}
-    {%- set ok = status.startswith('ok') -%}
+    {#- ICECORE_ACK is probed with a key that is no incident: its refusal is the healthy answer -#}
+    {%- set ok = status.startswith('ok') or (name == 'ICECORE_ACK' and 'not_an_open_incident' in status) -%}
     {%- do checks.append({'name': name, 'ok': ok, 'detail': 'test CALL: ' ~ status if ok else 'test CALL: ' ~ status
         ~ '; run icecore.setup, and grant USAGE on the database, the schema and the procedure to the role that runs dbt'}) -%}
   {%- endfor -%}
@@ -123,7 +145,7 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
 
   {%- if count == 0 or (count is none and not count_error and failed) -%}
     {%- set first = failed[0]['name'] if failed else 'hooks' -%}
-    {%- set cause = 'procedures' if first in ('ICECORE_EMIT', 'ICECORE_EMIT_RUN') else first -%}
+    {%- set cause = 'procedures' if first in ('ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_ACK') else first -%}
     {%- if cause == 'hooks' -%}
       {%- set why = 'the telemetry hooks: check that dbt_project.yml has on-run-start: icecore.start_run() and on-run-end: icecore.end_run(results), '
           ~ 'and that a dbt command has run since (on dbt 1.8, source freshness fires them only with flags: source_freshness_run_project_hooks: true)' -%}

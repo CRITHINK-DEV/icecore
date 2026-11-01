@@ -10,7 +10,9 @@
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
-      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      8. create_alerts           one suspended ALERT per channel of var icecore.alert_channels (icecore.create_alerts);
+                                 prints the notification integrations and grants an admin must run;
+      9. create_compat_views (compat), create_tasks, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -30,7 +32,7 @@
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
-      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
+      'capabilities': none, 'procedures': [], 'alerts': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
   {% do log('icecore: setup in ' ~ icecore.obs_schema(state['schema']) ~ ' (' ~ steps | length ~ ' steps)', info=True) %}
@@ -68,7 +70,7 @@
   {%- if (compat or 'none') | string | lower != 'none' -%}
     {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
   {%- endif -%}
-  {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
+  {%- do steps.append({'name': 'create_alerts', 'ready': true, 'detail': 'one suspended alert per channel'}) -%}
   {%- do steps.append({'name': 'create_tasks', 'ready': false, 'detail': 'Snowflake tasks'}) -%}
   {%- if app is sameas true -%}
     {%- do steps.append({'name': 'deploy_app', 'ready': false, 'detail': 'the Streamlit app'}) -%}
@@ -114,6 +116,15 @@
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- elif name == 'create_views' -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
+  {%- elif name == 'create_alerts' -%}
+    {%- set made = icecore.create_alerts(state['schema']) -%}
+    {%- do state.update({'alerts': made}) -%}
+    {%- if not made -%}
+      {{ return('no alert channel configured (var icecore.alert_channels)') }}
+    {%- endif -%}
+    {%- set names = [] -%}
+    {%- for a in made -%}{%- do names.append(a['channel'] ~ ': ' ~ a['status'] ~ (', resumed' if a['resumed'] else ', suspended')) -%}{%- endfor -%}
+    {{ return('CREATE OR REPLACE ALERT ' ~ (names | join('; '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

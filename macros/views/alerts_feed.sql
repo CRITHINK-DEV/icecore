@@ -19,7 +19,8 @@
     it), attributes icecore.ack.incident_key and icecore.ack.by (the caller's CURRENT_USER, recorded by the procedure).
     Only acks whose executable is ICECORE_ACK (Snowflake reports it with its signature, `ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR`) count (ICECORE_EMIT refuses the name; a forged one from another
     writer is ignored), and only those at or after the incident's first detection, so a key acknowledged in
-    advance suppresses nothing. acknowledged_at / acknowledged_by are the earliest such ack (null when none). detected times are event TIMESTAMPs: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3). -#}
+    advance suppresses nothing. root_cause_unique_id / root_cause_kind (test failures only, else null) are the latest
+    dbt.root_cause.* attribution of the test. acknowledged_at / acknowledged_by are the earliest such ack (null when none). detected times are event TIMESTAMPs: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3). -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -116,13 +117,24 @@ acknowledged as (
     from incidents
     join acks on acks.incident_key = incidents.incident_key and acks.event_at >= incidents.first_detected_at
     group by incidents.incident_key
+),
+root_causes as (
+    select
+        test_unique_id as node_key,
+        max_by(root_cause_unique_id, executed_at) as root_cause_unique_id,
+        max_by(root_cause_kind, executed_at) as root_cause_kind
+    from failed_tests
+    group by test_unique_id
 )
 select
     incidents.*,
     acknowledged.acknowledged_at,
-    acknowledged.acknowledged_by
+    acknowledged.acknowledged_by,
+    root_causes.root_cause_unique_id,
+    root_causes.root_cause_kind
 from incidents
 left join acknowledged on acknowledged.incident_key = incidents.incident_key
+left join root_causes on root_causes.node_key = incidents.node_key and incidents.kind = 'test_failure'
   {%- endset -%}
   {{ return(sql) }}
 {% endmacro %}

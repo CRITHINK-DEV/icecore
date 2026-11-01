@@ -117,6 +117,10 @@ def test_emit_writes_nested_values_as_json_text_and_emit_run_keeps_them_native()
     assert emit_rec["a"] == '{"k": [1, {"d": "x"}]}' and emit_rec["b"] == "[1, 2]" and emit_rec["c"] == "text" and emit_rec["d"] == 5
     run_rec = run_macro("it_emit_run_render", {"items": [{"type": "log", "message": "m", "attrs": attrs}]})["records"][0]["attrs"]
     assert run_rec["a"] == {"k": [1, {"d": "x"}]} and run_rec["b"] == [1, 2]
+    span, = run_macro("it_emit_run_render", {"items": [{"name": "s", "start_ns": 1, "end_ns": 2, "attrs": attrs,
+                                                         "events": [{"name": "e", "ts_ns": 1, "attrs": attrs}]}]})["records"]
+    for a in (span["attrs"], span["events"][0]["attrs"]):  # spans and span events drop objects: JSON text
+        assert a["a"] == '{"k": [1, {"d": "x"}]}' and a["b"] == "[1, 2]" and a["d"] == 5
 
 
 def test_dates_are_iso_and_nested_values_are_cleaned_recursively():

@@ -6,7 +6,8 @@
     procedures.sql), which the alert's own action calls (macros/control/render_alert_sql.sql; never an INSERT). ICECORE_EMIT
     and ICECORE_EMIT_RUN refuse the name, only the alerts' owner role has USAGE on the procedure, and only records whose
     executable is ICECORE_NOTIFIED and whose time is at or after the incident's first detection count, so a forged or
-    pre-written record suppresses nothing. dedup_window_sql(channel) is the SELECT of the rows that channel's alert may notify now:
+    pre-written record suppresses nothing. That separation holds only when the alert owner is not the dbt role: a dbt role
+    that owns the alerts, or holds USAGE on ICECORE_NOTIFIED, can record a notification and so suppress an incident. dedup_window_sql(channel) is the SELECT of the rows that channel's alert may notify now:
       - an incident acknowledged in the feed (acknowledged_at set) is never notified, however long ago or often it
         recurs;
       - an incident already notified (by ICECORE_NOTIFIED, after its first detection) on this channel inside the window is not notified again;
@@ -25,7 +26,7 @@
     notified on this channel). schema is the obs schema holding ALERTS_FEED, which is also the schema the base filter
     reads. Without event_table it is resolved when the macro executes. -#}
 {% macro dedup_window_sql(channel, schema=none, event_table=none, database=none, window_minutes=none) %}
-  {%- set window = window_minutes if window_minutes is not none else icecore.dedup_window_minutes() -%}
+  {%- set window = (window_minutes if window_minutes is not none else icecore.dedup_window_minutes()) | int -%}
   {%- set sql -%}
 with feed as (
     select * from {{ icecore._icecore_procedure('ALERTS_FEED', schema) }}

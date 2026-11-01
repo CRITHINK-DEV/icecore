@@ -5,7 +5,7 @@ macros:
     description: >
       Installs icecore in one command: `dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none,
       app: false, runs_per_day: 24}'`. Runs one ordered list of steps: detect_capabilities (reads only), `CREATE SCHEMA IF NOT EXISTS`
-      for the obs schema, create_emit_procedures (`ICECORE_EMIT` and `ICECORE_EMIT_RUN`, `CREATE OR REPLACE ... COPY
+      for the obs schema, create_emit_procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN` and `ICECORE_ACK`, `CREATE OR REPLACE ... COPY
       GRANTS`, so grants made by an admin survive a re-run), set_telemetry_levels (the database's levels only; what
       the role cannot run is printed for an admin), records the capabilities as an `icecore.capabilities` span
       event through the new `ICECORE_EMIT`, then prints the telemetry cost estimate (`estimate_telemetry_cost`) and creates the views (`create_views`: `CREATE OR REPLACE VIEW ... COPY

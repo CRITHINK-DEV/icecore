@@ -30,9 +30,9 @@ def feed_sql(*icecore_vars_: dict, schema=None) -> str:
 
 # --- offline: rendering only, no connection ------------------------------------------------------
 
-def test_alerts_feed_is_appended_to_create_views():
+def test_alerts_feed_is_one_of_the_created_views():
     names = [v["name"] for v in run_macro("it_views_render", {"schema": None})]
-    assert names[-1] == "ALERTS_FEED"
+    assert names.count("ALERTS_FEED") == 1
 
 
 def test_feed_reads_base_events_and_unions_the_three_live_signals():

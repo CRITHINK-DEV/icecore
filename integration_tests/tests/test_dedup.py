@@ -211,3 +211,29 @@ def test_08_new_incident_key_after_an_acknowledgement_is_notified(sf, seeded):
     rows = _pending(sf, seeded["schema"], "email", seeded["table"])
     assert len(rows) == 1 and rows[0]["node_key"].endswith("|C")
     assert rows[0]["incident_key"] not in seeded["keys"].values()
+
+
+@pytest.mark.sandbox
+def test_09_the_same_node_returning_in_a_later_window_gets_a_new_key(sf, seeded):
+    """Node B was acknowledged (test_06). It fails again: the new detection is in a later alert window when the
+    new one is moved 3 days on in a copy of the event table, so the feed holds two incidents for B with distinct keys,
+    and the ack of the first does not cover the second."""
+    rel = f'"{DATABASE}"."SPIKES"."it_dedup_{seeded["run_id"]}"'
+    run_macro("it_emit_events", {"events": [_change(rel, "B")]}, seeded["obs_vars"])
+    wait_for_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
+                        " and record:name::string = 'icecore.schema_change'", {"schema": seeded["schema"]},
+                    min_rows=4, since=seeded["since"], settle_s=5)
+    cur = sf.cursor()
+    copy = seeded["copy"]
+    cur.execute(f"create or replace table {copy} as select * from {seeded['table']}"
+                " where RESOURCE_ATTRIBUTES:\"snow.schema.name\"::string = %s", (seeded["schema"],))
+    b_events = ("RECORD:name::string = 'icecore.schema_change' and RECORD_ATTRIBUTES:\"dbt.schema.column\"::string = 'B'")
+    cur.execute(f"update {copy} set TIMESTAMP = dateadd(day, 3, TIMESTAMP) where {b_events}"
+                f" and TIMESTAMP = (select max(TIMESTAMP) from {copy} where {b_events})")
+    views = run_macro_with_logs("it_views_render", {"schema": seeded["schema"], "event_table": copy}, seeded["obs_vars"])[0]
+    feed = {v["name"]: v["sql"] for v in views}["ALERTS_FEED"]
+    rows = [{k.lower(): v for k, v in r.items()} for r in sf.cursor(DictCursor).execute(feed).fetchall()]
+    b = sorted((r for r in rows if r["node_key"].endswith("|B")), key=lambda r: r["first_detected_at"])
+    assert len(b) == 2 and b[0]["incident_key"] != b[1]["incident_key"], b
+    assert b[0]["incident_key"] == seeded["keys"]["B"] and b[0]["acknowledged_at"] is not None
+    assert b[1]["acknowledged_at"] is None

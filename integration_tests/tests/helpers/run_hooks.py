@@ -21,7 +21,7 @@ from helpers.macros import IT_DIR, invoke, run_macro_with_logs
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES").upper()
-FIXTURE_MODELS = ["hooks_a", "hooks_b", "hooks_c", "hooks_fail", "hooks_dup"]
+FIXTURE_MODELS = ["hooks_a", "hooks_b", "hooks_c", "hooks_fail", "hooks_dup", "hooks_weird"]
 
 BASE_FILTER = ("resource_attributes:\"snow.database.name\"::string = %(db)s"
                " and resource_attributes:\"snow.schema.name\"::string = %(schema)s"

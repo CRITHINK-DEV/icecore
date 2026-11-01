@@ -43,3 +43,21 @@ models:
           - unique:
               name: hooks_dup_unique_big
               config: {store_failures: true, alias: "hooks_dup_unique_big_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+  - name: hooks_weird
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      - name: k
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_k
+              config: {store_failures: true, alias: "hooks_weird_unique_k_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: d
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_d
+              config: {store_failures: true, alias: "hooks_weird_unique_d_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: v
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_v
+              config: {store_failures: true, alias: "hooks_weird_unique_v_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}

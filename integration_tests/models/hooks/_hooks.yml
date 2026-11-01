@@ -22,3 +22,44 @@ models:
     config: {tags: ["icecore_hooks"]}
   - name: hooks_fail
     config: {tags: ["icecore_hooks"]}
+  - name: hooks_dup
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      # The tests keep their failures in <schema>_dbt_test__audit under an alias with the run_id (the test
+      # drops them). unique_id: error severity, 10 failed rows. unique_code: warn severity. unique_big: wide rows.
+      - name: id
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_id
+              config: {store_failures: true, alias: "hooks_dup_unique_id_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: code
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_code
+              config: {store_failures: true, severity: warn, alias: "hooks_dup_unique_code_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+          - not_null:
+              name: hooks_dup_code_not_null
+              config: {store_failures: true, alias: "hooks_dup_code_not_null_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: big
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_big
+              config: {store_failures: true, alias: "hooks_dup_unique_big_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+  - name: hooks_weird
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      - name: k
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_k
+              config: {store_failures: true, alias: "hooks_weird_unique_k_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: d
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_d
+              config: {store_failures: true, alias: "hooks_weird_unique_d_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: v
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_v
+              config: {store_failures: true, alias: "hooks_weird_unique_v_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}

@@ -75,7 +75,7 @@ The tests do not score anomalies yet. These keys are read today by the scoring m
 | `anomaly_mad_floor_abs` | `0` | number | Smallest band half-width as an absolute value. | None. |
 | `shadow_engine` | `none` | string | Recorded on each run's start and end records. Shadow scoring is **coming**. | None. |
 | `history_delay_minutes` | `1` | number | Metric history leaves out the newest minutes, because of ingestion lag. Spike S3 measured a p95 lag of about 8 s and a worst case of 20 s. | None. |
-| `metadata_fallback_kinds` | `[iceberg]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
+| `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |
 
 ### Declared, not read yet
@@ -232,7 +232,7 @@ Each accepts any non-negative number, not only integers. `min_rows` above `max_r
 Sometimes the test has nothing to measure:
 
 - `freshness`: the relation was never written, or its last change time is not readable.
-- `volume`: the relation is a view, an external table or an Iceberg table, or its row count is missing or not readable. (The `metadata_fallback_kinds` var sets which kinds are not trusted.)
+- `volume`: the relation is a view, an external table, an Iceberg table or a materialized view, or its row count is missing or not readable. (The `metadata_fallback_kinds` var sets which kinds are not trusted: by default Iceberg, which is unmeasured, and materialized views, whose metadata total lags the data. A volume test with `min_rows` or `max_rows` on a materialized view therefore fails as `unmeasured` instead of judging a stale count; without a threshold it passes and writes no metric.)
 
 In that case no metric is written, and the test logs a warning. What happens next depends on the threshold:
 

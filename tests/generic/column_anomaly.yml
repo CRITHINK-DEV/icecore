@@ -7,8 +7,10 @@ macros:
       or `timestamp_column` when change tracking does not cover the window), computes the requested metrics over
       them, writes each as a metric span event through `icecore.emit_metric` (one per metric, with the column), and
       fails when a value is outside its static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are
-      the only verdict, and the scoring hook is marked in the test body and not called. The previous observation is
-      the newest metric record of the tested column, read through `icecore.base_events()`; with none the window
+      the only verdict, and the scoring hook is marked in the test body and not called. The window end is read from Snowflake's
+      clock before the read and recorded on every metric (`dbt.window.until`), and the next run starts its window there, so
+      no row falls between two runs. The previous observation is the newest metric record of the tested column, read
+      through `icecore.base_events()`; with none the window
       starts `lookback_hours` ago, and `since` overrides both. A value that is null (an empty window, or no
       non-null values) is not written and not checked. When no window can be read (no change tracking and no usable
       timestamp column, a missing column) the readers log why, no metric is written and the test passes. A failed

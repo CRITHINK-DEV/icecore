@@ -43,3 +43,8 @@ macros:
         description: >
           The anomaly result for this value, as `icecore.score` returns it (`engine`, `expected`, `lower`, `upper`,
           `score`, `is_anomaly`; other keys are ignored). Default none: no `dbt.anomaly.*` key is written.
+      - name: attributes
+        type: dict
+        description: >
+          Extra attributes written on the metric record (and on the anomaly record), for example `dbt.window.until`,
+          the end of the window a column monitor measured. A key that is already a metric key is ignored. Default none.

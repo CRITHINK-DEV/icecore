@@ -92,6 +92,12 @@ def test_null_anomaly_fields_are_left_out():
     assert anomaly_keys(record["attrs"]) == set()
 
 
+def test_extra_attributes_are_written_but_never_replace_metric_keys():
+    (record,) = render(attributes={"dbt.window.until": "2026-11-01T10:00:00.000000Z", "dbt.metric.name": "evil"})["records"]
+    assert record["attrs"]["dbt.window.until"] == "2026-11-01T10:00:00.000000Z"
+    assert record["attrs"]["dbt.metric.name"] == "row_count"
+
+
 def test_quoted_relation_keeps_its_case_and_doubles_quotes():
     rel = {"database": "icecore_sandbox", "schema": "spikes", "identifier": 'My "Odd" Table', "quoted": True}
     (record,) = render(rel=rel)["records"]

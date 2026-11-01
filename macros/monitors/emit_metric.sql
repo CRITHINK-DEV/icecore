@@ -17,8 +17,8 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{% macro emit_metric(relation, metric, value, column=none, dimension=none, anomaly=none) %}
-  {{ return(icecore.emit_events(icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly))) }}
+{% macro emit_metric(relation, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
+  {{ return(icecore.emit_events(icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly, attributes))) }}
 {% endmacro %}
 
 
@@ -26,7 +26,7 @@
 
 {#- The events emit_metric sends, as emit_events takes them ({kind, message, attributes, level}); [] when value is
     not a number. -#}
-{% macro _icecore_metric_events(relation, metric, value, column=none, dimension=none, anomaly=none) %}
+{% macro _icecore_metric_events(relation, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set number = icecore._icecore_metric_number(value) -%}
   {%- if number is none -%}
@@ -37,6 +37,9 @@
   {%- set attrs = {'dbt.metric.name': metric | string, 'dbt.metric.value': number, 'dbt.node.relation': name} -%}
   {%- do icecore._icecore_put(attrs, 'dbt.metric.column', none if column is none else column | string) -%}
   {%- do icecore._icecore_put(attrs, 'dbt.metric.dimension', none if dimension is none else dimension | string) -%}
+  {%- for key, extra in (attributes or {}).items() -%}
+    {%- if key not in attrs -%}{%- do icecore._icecore_put(attrs, key, extra) -%}{%- endif -%}
+  {%- endfor -%}
   {%- set get = icecore._icecore_get -%}
   {%- if anomaly is not none -%}
     {%- do icecore._icecore_put(attrs, 'dbt.anomaly.engine', none if get(anomaly, 'engine') is none else get(anomaly, 'engine') | string) -%}

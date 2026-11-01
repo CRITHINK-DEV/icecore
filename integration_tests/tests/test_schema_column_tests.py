@@ -53,6 +53,8 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
     {"it_bad_bounds": {"avg": {"mean": 1}}},           # unknown limit key
     {"it_bad_bounds": {"avg": {}}},                    # no limit at all
     {"it_bad_bounds": "avg<5"},                        # not a mapping
+    {"it_bad_bounds": {"avg": {"max": "ten"}}},        # limit is not a number
+    {"it_bad_bounds": {"avg": {"min": True}}},         # nor a boolean
 ])
 def test_invalid_bounds_fail_at_parse(var_args):
     assert invoke(["deps"]).success
@@ -191,6 +193,15 @@ def test_three_metrics_land_with_their_column(columns):
     by_name = {r["metric_name"]: r["metric_value"] for r in rows if r["metric_name"] in ("null_rate", "avg", "max")}
     assert by_name["null_rate"] == pytest.approx(N_NULL / N_ROWS)
     assert by_name["avg"] == pytest.approx(59.5) and by_name["max"] == 99.0
+
+
+@pytest.mark.sandbox
+def test_every_metric_records_the_window_end_and_the_next_window_starts_there(columns):
+    rows = metric_rows(columns)
+    until = {json.loads(r["attributes"])["dbt.window.until"] for r in rows if r["metric_name"] != "window_rows"}
+    assert until and all(u.endswith("Z") for u in until)  # taken before the read, one per test run
+    (history,) = [r for r in rows if r["metric_name"] == "window_rows"]
+    assert json.loads(history["attributes"])["dbt.window.until"] > max(until)  # and the second run's end is later
 
 
 @pytest.mark.sandbox

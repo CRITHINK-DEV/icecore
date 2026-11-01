@@ -13,21 +13,7 @@
     {%- if current is none -%}
       {%- do log('icecore: warning: schema_changes of ' ~ name ~ ' could not be measured: its columns are not readable; the test passes', info=True) -%}
     {%- else -%}
-      {#- baseline: the newest signature record of this relation; any failure here means "no baseline" -#}
-      {%- set previous = none -%}
-      {%- set parameter_rows = run_query("show parameters like 'EVENT_TABLE' in database " ~ icecore._icecore_identifier(target.database)).rows -%}
-      {%- set event_table = icecore.event_table_to_read(parameter_rows[0]['value'] if parameter_rows | length > 0 else none) -%}
-      {%- if event_table is not none -%}
-        {%- set baseline_sql -%}
-          select attributes:"dbt.schema.columns"::string
-          from ({{ icecore.base_events(event_table=event_table) }})
-          where record_name = 'icecore.schema_signature' and node_relation = {{ icecore._icecore_sql_literal(name) }}
-          order by event_at desc
-          limit 1
-        {%- endset -%}
-        {%- set raw = icecore._icecore_safe_scalar(baseline_sql, 'schema_changes baseline', model) -%}
-        {%- set previous = fromjson(raw) if raw is string else none -%}
-      {%- endif -%}
+      {%- set previous = icecore._icecore_previous_signature(model) -%}
       {%- set diff = icecore.diff_schema(previous, current) -%}
       {%- for c in diff['added'] -%}
         {%- do changes.append({'kind': 'added', 'column': c['name'], 'from_type': none, 'to_type': c['data_type']}) -%}

@@ -16,6 +16,7 @@ import time
 import uuid
 
 import pytest
+from snowflake.connector.errors import ProgrammingError
 
 from helpers.findings import record_finding
 from helpers.macros import call_macro, run_macro, run_macro_with_logs
@@ -94,8 +95,14 @@ def kinds(sf):
         time.sleep(60)  # metadata settles (S5: correct within seconds; the materialized view maintains itself)
         yield out
     finally:
-        for statement in reversed(made):
-            cur.execute(statement)
+        failed = []
+        for statement in reversed(made):  # every drop is attempted, whatever the others do
+            try:
+                cur.execute(statement)
+            except Exception as exc:
+                failed.append(f"{statement}: {str(exc).splitlines()[-1][:120]}")
+        if failed:
+            raise RuntimeError("fixture objects not dropped: " + "; ".join(failed))
 
 
 KINDS = ["standard", "transient", "quoted", "dynamic", "view", "materialized_view"]
@@ -114,7 +121,7 @@ def read(kinds, kind, since=True):
 
 @pytest.mark.sandbox
 @pytest.mark.parametrize("kind", KINDS)
-def test_row_count_and_last_change_per_kind(dbt, kinds, kind):
+def test_row_count_and_last_change_per_kind(dbt, sf, kinds, kind):
     got, logs = read(kinds, kind, since=False)
     assert got["last_change"] is not None, (kind, got, logs)
     if kind == "view":
@@ -122,11 +129,16 @@ def test_row_count_and_last_change_per_kind(dbt, kinds, kind):
         assert got["row_count"] is None
         assert sum("is a view" in m and "not supported" in m for m in logs) == 1, logs
     elif kind == "materialized_view":
-        # Snowflake maintains a materialized view in the background: 60 s after the insert its metadata total can still be
-        # the old one (30 observed). Recorded, not trusted: a monitor reading it may see a stale total.
-        assert got["row_count"] in (BEFORE, BEFORE + ADDED), (kind, got)
+        # Snowflake maintains a materialized view in the background: its metadata total was still the old one 60 s after
+        # the insert (30 of 55). So the kind is a default fallback kind: no total, and the monitor falls back to counting.
+        assert got["row_count"] is None, (kind, got)
+        assert any("is a materialized_view table" in m and "not trusted" in m for m in logs), logs
+        stale = sf.cursor().execute(
+            "select row_count from information_schema.tables where table_schema = %s and table_name = %s",
+            (SCHEMA, kinds[kind]["name"])).fetchone()[0]
+        assert stale in (BEFORE, BEFORE + ADDED), stale
         record_finding("uc2_table_kinds", "materialized_view_row_count", {
-            "row_count_60s_after_insert": got["row_count"], "true_count": BEFORE + ADDED})
+            "metadata_row_count_60s_after_insert": stale, "true_count": BEFORE + ADDED})
     else:
         assert got["row_count"] == BEFORE + ADDED, (kind, got)
 
@@ -142,7 +154,7 @@ def test_rows_added_over_changes_per_kind(dbt, kinds, kind):
 def test_materialized_view_has_no_changes_and_says_so(dbt, kinds):
     # CHANGES is unsupported on materialized views: none, with the error carried in a warning, never a failure
     got, logs = read(kinds, "materialized_view")
-    assert got["rows_added"] is None and got["row_count"] in (BEFORE, BEFORE + ADDED), got
+    assert got["rows_added"] is None and got["row_count"] is None, got  # a default fallback kind: no metadata total
     assert any("get_row_count_changes could not read" in m for m in logs), logs
 
 
@@ -171,8 +183,8 @@ def test_view_without_change_tracking_returns_none_then_works_once_enabled(dbt, 
 
 
 @pytest.mark.sandbox
-def test_default_fallback_kinds_name_iceberg_only():
-    assert call_macro("_icecore_metadata_fallback_kinds") == ["iceberg"]
+def test_default_fallback_kinds_are_iceberg_and_materialized_view():
+    assert call_macro("_icecore_metadata_fallback_kinds") == ["iceberg", "materialized_view"]
 
 
 @pytest.mark.sandbox
@@ -261,7 +273,9 @@ def test_external_table_cannot_be_created_and_the_readers_say_so(dbt, sf):
     try:
         try:
             cur.execute(f"create external table {table} with location = @{stage} file_format = (type = parquet)")
-        except Exception as exc:  # an external table needs an external stage (cloud storage), which the sandbox lacks
+        except ProgrammingError as exc:  # an external table needs an external stage (cloud storage), which the sandbox lacks
+            if exc.errno != 91080:
+                raise
             error = str(exc).splitlines()[-1][:200]
         else:
             cur.execute(f"drop external table if exists {table}")

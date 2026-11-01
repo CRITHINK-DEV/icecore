@@ -55,7 +55,7 @@
     (vars: icecore: metadata_fallback_kinds). A project that overrides the icecore var replaces the whole dict,
     so the same default is applied when the key is absent, until a shared config accessor merges defaults. -#}
 {% macro _icecore_metadata_fallback_kinds() %}
-  {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg'])) }}
+  {{ return(var('icecore', {}).get('metadata_fallback_kinds', ['iceberg', 'materialized_view'])) }}
 {% endmacro %}
 
 

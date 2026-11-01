@@ -79,6 +79,21 @@ dbt run-operation icecore.doctor
 - `doctor` never fails. It checks the event table, the database's levels, makes one test `CALL` of each procedure, and counts icecore records of the last 24 hours. It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, most often the hooks above.
 - The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema) and CREATE PROCEDURE on the schema ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
 
+### Configuration
+
+Run telemetry reads these keys of the `icecore` var in your `dbt_project.yml`. The values shown are the defaults:
+
+```yaml
+vars:
+  icecore:
+    telemetry: true          # false: start_run and end_run write nothing
+    node_results: true       # end_run: one record per node result (status, rows, time, message, test failures)
+    query_events: true       # end_run: the node's Snowflake query id, as an event on the node's span
+    result_message: redacted # redacted, full or none
+```
+
+`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
+
 The pre-releases are tagged 0.1.0-alpha, 0.2.0-beta and 0.3.0-beta, before 1.0.0. Naming a prerelease in the range lets `dbt deps` install them; with the range above it picks the newest one below 1.0.0 (checked against dbt-core 1.8.10's resolver).
 
 ## How it works

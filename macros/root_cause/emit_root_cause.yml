@@ -8,8 +8,8 @@ macros:
       from the obs-schema views and writes `dbt.root_cause.unique_id`, `dbt.root_cause.kind` and
       `dbt.root_cause.distance` on that test's node_result LOG (or on a LOG of its own, `icecore.kind = root_cause`,
       when node_results is off). Signals: `SCHEMA_CHANGES` rows detected in the lookback (var
-      `icecore.root_cause_lookback_hours`, default 24) and nodes whose latest `freshness_lag_s` in `METRICS` is an
-      anomaly; upstream failures come from this run's results. The graph is the invocation's own dbt graph, not
+      `icecore.root_cause_lookback_hours`, default 24) and nodes whose latest `freshness_lag_seconds` in `METRICS` is an
+      anomaly (nothing scores freshness yet) or whose `icecore.freshness` test failed or warned in this run; upstream failures come from this run's results. The graph is the invocation's own dbt graph, not
       `LINEAGE_LATEST`, which at on-run-end still holds the previous invocation's edges. Records written by this run
       are not yet in the views (ingestion lag), so a signal must have been recorded before it. A view that cannot be
       read logs one warning and that signal stays empty; the run never fails. Nothing is queried when no test failed.

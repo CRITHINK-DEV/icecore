@@ -127,13 +127,14 @@
       uncounted names of emitters in the list that have no count here.
     An emitter added to the list needs its count here: a test fails until it has one.
     lineage    the records of the graph's edges split under the payload cap (0 with no edges).
-    root_cause is 0: it annotates the failed tests' node_result LOGs and adds no row while node_results is on. -#}
+    root_cause is 0 while node_results is on (it annotates the failed tests' node_result LOGs); with node_results off it
+    writes one LOG per explained test, at most one per node, so `nodes` is the upper bound used. -#}
 {% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1) %}
   {%- set nodes = nodes | int -%}
   {%- set per_emitter = {
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
-      'root_cause': 0,
+      'root_cause': 0 if icecore._icecore_flag('node_results', true) else nodes,
   } -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}

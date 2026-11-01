@@ -9,7 +9,9 @@
 
     Signals (lookback: var icecore.root_cause_lookback_hours, default 24):
       schema_diffs        SCHEMA_CHANGES rows detected in the lookback, per node;
-      freshness_breaches  METRICS: nodes whose latest `freshness_lag_s` observation in the lookback is an anomaly.
+      freshness_breaches  the nodes of icecore.freshness tests that failed or warned in this run (nothing scores
+                          freshness yet), and METRICS nodes whose latest `freshness_lag_seconds` in the lookback is an
+                          anomaly (empty until a scorer writes one).
     Failures come from this run's results (upstream_failure). The graph is the invocation's own dbt graph: the
     LINEAGE_LATEST view is not read here, because at on-run-end it holds the previous invocation's edges (ingestion
     lag, S3), which can differ from the graph that just ran.
@@ -22,7 +24,7 @@
 {% macro emit_root_cause(results, batch, signals=none) %}
   {%- set failed = icecore._root_cause_failed_tests(results) -%}
   {%- if failed | length == 0 -%}{{ return(none) }}{%- endif -%}
-  {%- set signals = signals if signals is not none else icecore._root_cause_signals() -%}
+  {%- set signals = signals if signals is not none else icecore._root_cause_signals(results) -%}
   {%- for test_id in failed -%}
     {%- set cause = icecore.walk_upstream(test_id, results, signals) -%}
     {%- if cause is not none -%}
@@ -62,7 +64,7 @@
 
 
 {#- {'schema_diffs': {unique_id: [changes]}, 'freshness_breaches': {unique_id: detail}} from the obs views. -#}
-{% macro _root_cause_signals() %}
+{% macro _root_cause_signals(results=[]) %}
   {%- set hours = var('icecore', {}).get('root_cause_lookback_hours', 24) | int -%}
   {%- set signals = {'schema_diffs': {}, 'freshness_breaches': {}} -%}
   {%- set changes = icecore._root_cause_read_view('SCHEMA_CHANGES',
@@ -77,10 +79,15 @@
           'from_type': row.get('from_type'), 'to_type': row.get('to_type')}) -%}
     {%- endif -%}
   {%- endfor -%}
+  {#- A failed (or warned) icecore.freshness test of this run is a breach on the node it is attached to: nothing scores
+      freshness yet, so the test's own threshold is the verdict. -#}
+  {%- for uid in icecore._root_cause_freshness_failures(results) -%}
+    {%- do signals['freshness_breaches'].update({uid: {'source': 'icecore.freshness test of this run'}}) -%}
+  {%- endfor -%}
   {%- set breaches = icecore._root_cause_read_view('METRICS',
       "select array_agg(object_construct('relation', relation, 'unique_id', node_unique_id, 'value', value, "
       ~ "'observed_at', to_varchar(observed_at))) from (select * from " ~ icecore._icecore_procedure('METRICS')
-      ~ " where metric = 'freshness_lag_s' and observed_at >= dateadd(hour, -" ~ hours ~ ", sysdate()) "
+      ~ " where metric = 'freshness_lag_seconds' and observed_at >= dateadd(hour, -" ~ hours ~ ", sysdate()) "
       ~ "qualify row_number() over (partition by coalesce(node_unique_id, relation) order by observed_at desc) = 1) "
       ~ "where anomaly_is_anomaly") -%}
   {%- for row in breaches -%}
@@ -90,6 +97,26 @@
     {%- endif -%}
   {%- endfor -%}
   {{ return(signals) }}
+{% endmacro %}
+
+
+{#- The unique_ids that failed or warned icecore.freshness tests of these results are attached to. -#}
+{% macro _root_cause_freshness_failures(results) %}
+  {%- set out = [] -%}
+  {%- for result in results or [] -%}
+    {%- set node = icecore._icecore_get(result, 'node') -%}
+    {%- set uid = icecore._icecore_get(result, 'unique_id') or icecore._icecore_get(node, 'unique_id') -%}
+    {%- set status = icecore._icecore_get(result, 'status') | string | lower -%}
+    {%- set gnode = graph.nodes.get(uid) if uid else none -%}
+    {%- if gnode is not none and status in ['fail', 'warn', 'error'] -%}
+      {%- set meta = gnode.get('test_metadata') or {} -%}
+      {%- if meta.get('name') == 'freshness' and meta.get('namespace') == 'icecore' -%}
+        {%- set attached = gnode.get('attached_node') or ((gnode.get('depends_on') or {}).get('nodes') or [none])[0] -%}
+        {%- if attached -%}{%- do out.append(attached) -%}{%- endif -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(out) }}
 {% endmacro %}
 
 

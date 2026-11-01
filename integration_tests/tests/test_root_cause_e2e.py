@@ -7,7 +7,8 @@ schema of its own, with `root_cause: true`, where the signal is read back from t
   schema_change   rce_a gains a column (a real change of its columns signature, turned into icecore.schema_change
                   events as the schema monitor will), then the not_null test on rce_c fails. The node_result LOG of
                   that test must name rce_a, kind schema_change, distance 3.
-  stale_source    a freshness_lag_s anomaly recorded for rce_a (the shape emit_metric writes) is read from METRICS.
+  stale_source    the real icecore.freshness test on rce_a breaches in the same build (nothing scores freshness yet, so a
+                  failed or warned freshness test of the run is the signal).
 
 upstream_failure is covered offline: in one dbt build a failed model skips its tests, so a failed upstream and a failed
 downstream test only meet across runs.
@@ -112,9 +113,9 @@ def failed_test_log(sf, schema, run_results, since):
     invocation_id = run_results["metadata"]["invocation_id"]
     rows = invocation_records(sf, schema, invocation_id, min_rows=4, since=since)
     logs = [r for r in rows if r["record_type"] == "LOG" and r["record_attributes"].get("icecore.kind") == "node_result"
-            and r["record_attributes"].get("dbt.node.unique_id", "").startswith("test.")]
+            and r["record_attributes"].get("dbt.node.unique_id", "").startswith("test.")
+            and r["record_attributes"].get("dbt.result.status") == "fail"]
     assert len(logs) == 1, [r["record_attributes"] for r in rows]
-    assert logs[0]["record_attributes"]["dbt.result.status"] == "fail"
     return logs[0]["record_attributes"]
 
 
@@ -159,25 +160,24 @@ def test_upstream_schema_change_is_named_as_the_root_cause_of_a_failed_test(sf, 
 
 
 @pytest.mark.sandbox
-def test_upstream_freshness_breach_in_metrics_is_named_as_stale_source(sf, chain):
+def test_a_failed_freshness_test_of_the_run_is_named_as_stale_source(sf, chain):
+    # the real icecore.freshness test on rce_a (max_lag 0, severity warn) breaches in the same build in which the
+    # not_null test on rce_c fails: nothing scores freshness yet, so the test's own verdict is the signal
     run_id = chain
     with obs_schema(sf) as schema:
-        vars_ = ["--vars", json.dumps(icecore_vars(schema))]
-        run_macro_with_logs("it_create_views", {"schema": schema}, vars_)
-        res1, _ = run_with_hooks(["build", "--select", "rce_a"], run_id, schema, root_cause=False, telemetry=False)
-        assert res1.success, res1.exception
-        ident = f"rce_a_{run_id}"
-        run_macro("it_emit_metric", {"rel": {"database": DATABASE, "schema": SCHEMA, "identifier": ident},
-                                     "metric": "freshness_lag_s", "value": 7200,
-                                     "anomaly": {"engine": "native", "expected": 60, "lower": 0, "upper": 300,
-                                                 "score": 9.5, "is_anomaly": True}}, vars_)
-        assert view_rows(sf, schema, "METRICS", "metric = 'freshness_lag_s' and anomaly_is_anomaly",
-                         ()), "the breach never landed"
-
+        run_macro_with_logs("it_create_views", {"schema": schema}, ["--vars", json.dumps(icecore_vars(schema))])
         since = snowflake_since(sf)
-        res3, run_results = run_with_hooks(["build", "--select", "rce_b+"], run_id, schema, root_cause=True)
-        assert not res3.success
-        attrs = failed_test_log(sf, schema, run_results, since)
+        res, run_results = run_with_hooks(["build", "--select", "rce_a", "rce_b+"], run_id, schema, root_cause=True)
+        assert not res.success
+        by_status = {r["unique_id"].split(".")[2]: r["status"] for r in run_results["results"] if r["unique_id"].startswith("test.")}
+        assert any(n.startswith("icecore_freshness") and st == "warn" for n, st in by_status.items()), by_status
+        invocation_id = run_results["metadata"]["invocation_id"]
+        rows = invocation_records(sf, schema, invocation_id, min_rows=6, since=since)
+        logs = [r["record_attributes"] for r in rows if r["record_type"] == "LOG"
+                and r["record_attributes"].get("icecore.kind") == "node_result"
+                and r["record_attributes"].get("dbt.result.status") == "fail"]
+        assert len(logs) == 1, logs
+        attrs = logs[0]
         assert attrs["dbt.root_cause.unique_id"] == RCE_A and attrs["dbt.root_cause.kind"] == "stale_source", attrs
 
 

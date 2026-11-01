@@ -152,9 +152,10 @@ end;
     on the view and its base tables, covering the whole window.
     Cost (S5): only the new micro-partitions for insert-only windows; old and new versions of every rewritten
     micro-partition after DELETE / UPDATE / MERGE, about 1.9 times a full scan in S5. -#}
-{% macro _icecore_changes_source(relation, since) %}
+{% macro _icecore_changes_source(relation, since, until=none) %}
   {{ return(icecore._icecore_quoted_name(relation)
-      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))') }}
+      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))'
+      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(until) ~ '))')) }}
 {% endmacro %}
 
 

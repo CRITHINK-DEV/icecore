@@ -28,7 +28,9 @@ macros:
       micro-partition, and CHANGES then reads that partition twice (2.7 MB against 3.6 MB for a full scan).
       The timestamp fallback costs whatever the filter prunes, which depends on the table's clustering.
       The time of the previous run is passed in as `since`: reading it from the metric history comes with the
-      monitors that emit metrics (after Gate 1).
+      monitors that emit metrics (after Gate 1). `until`, when given, ends the window: CHANGES gets an `end` timestamp
+      and the timestamp-column fallback an upper bound, so rows committed after `until` are left for the next window
+      and a monitor that records `until` as its window end counts no row twice.
     arguments:
       - name: relation
         type: Relation
@@ -49,6 +51,11 @@ macros:
           its case kept (inner `""` stand for one `"`); a plain name (letters, digits, `_`, `$`, such as `amount` or
           `Mixed`) resolves to upper case like an unquoted identifier; any other name is taken as the exact,
           case-preserved column name.
+      - name: until
+        type: string
+        description: >
+          Optional, default none. ISO 8601 UTC end of the window: CHANGES `end` and an upper bound on the timestamp column.
+          Rows committed after it belong to the next window.
 
   - name: compute_dimension_metrics
     description: >

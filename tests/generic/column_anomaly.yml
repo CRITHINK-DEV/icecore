@@ -1,0 +1,47 @@
+version: 2
+
+macros:
+  - name: test_column_anomaly
+    description: >
+      Incremental column metrics test. Reads only the rows that changed since the previous observation (CHANGES,
+      or `timestamp_column` when change tracking does not cover the window), computes the requested metrics over
+      them, writes each as a metric span event through `icecore.emit_metric` (one per metric, with the column), and
+      fails when a value is outside its static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are
+      the only verdict, and the scoring hook is marked in the test body and not called. The window end is read from Snowflake's
+      clock before the read and recorded on every metric (`dbt.window.until`), and the next run starts its window there, so
+      no row falls between two runs. The previous observation is the newest metric record of the tested column, read
+      through `icecore.base_events()`; with none the window
+      starts `lookback_hours` ago, and `since` overrides both. A value that is null (an empty window, or no
+      non-null values) is not written and not checked. When no window can be read (no change tracking and no usable
+      timestamp column, a missing column) the readers log why, no metric is written and the test passes. A failed
+      telemetry CALL is a logged warning and never changes the verdict. CHANGES is cheap for insert-only windows and
+      can cost more than a full scan after deletes, updates or merges (spike S5). Example, `columns: [{name: amount,
+      data_tests: [icecore.column_anomaly: {metrics: [null_rate, avg, max], bounds: {null_rate: {max: 0.05}}}]}]`.
+    arguments:
+      - name: model
+        type: relation
+        description: The relation under test, filled in by dbt.
+      - name: column_name
+        type: string
+        description: The tested column, filled in by dbt.
+      - name: metrics
+        type: list
+        description: >
+          Metrics to compute, from window_rows, null_rate, avg, min and max (avg, min and max need a numeric column).
+          Default `[window_rows, null_rate]`.
+      - name: bounds
+        type: dictionary
+        description: >
+          Static limits per metric, `{metric: {min: n, max: n}}` with at least one of the two. Every metric named here
+          must be in `metrics`. Optional; without it the test only records the metrics and passes.
+      - name: since
+        type: string
+        description: >
+          ISO 8601 start of the window, for example `2026-10-31T08:00:00.000000Z`. Optional; overrides the previous
+          observation.
+      - name: timestamp_column
+        type: string
+        description: Date or timestamp column used when CHANGES is unavailable. Optional.
+      - name: lookback_hours
+        type: number
+        description: Window length when there is no previous observation and no `since`. Default 24.

@@ -29,6 +29,7 @@
       {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
       {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
       {'name': 'samples', 'var': 'samples', 'default': false, 'macro': icecore.emit_samples},
+      {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
   ]) }}
 {% endmacro %}
 
@@ -126,14 +127,17 @@
       emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
       uncounted names of emitters in the list that have no count here.
     An emitter added to the list needs its count here: a test fails until it has one.
-    lineage  the records of the graph's edges split under the payload cap (0 with no edges);
-    samples  one per failing test with store_failures, failing_tests of them (the caller knows; the graph does
-             not), 0 when var samples is off (the default). Warn-severity failures count only if the caller counts them. -#}
+    lineage    the records of the graph's edges split under the payload cap (0 with no edges);
+    samples    one per failing test with store_failures, failing_tests of them (the caller knows; the graph does
+               not), 0 when var samples is off (the default). Warn-severity failures count only if the caller counts them.
+    root_cause is 0 while node_results is on (it annotates the failed tests' node_result LOGs); with node_results off it
+               writes one LOG per explained test, at most one per node, so `nodes` is the upper bound used. -#}
 {% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1, failing_tests=0) %}
   {%- set nodes = nodes | int -%}
   {%- set per_emitter = {
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
+      'root_cause': 0 if icecore._icecore_flag('node_results', true) else nodes,
   } -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}

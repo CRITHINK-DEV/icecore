@@ -2,7 +2,7 @@
 
 setup runs one ordered list of steps: detect_capabilities, CREATE SCHEMA IF NOT EXISTS for the obs schema,
 create_emit_procedures, set_telemetry_levels, then records the capabilities through the new ICECORE_EMIT. The
-steps that do not exist yet (create_alerts, create_tasks, deploy_app, compat views) keep their place
+steps that do not exist yet (create_alerts, deploy_app, compat views) keep their place
 in the list and are reported as planned. The `schema` argument overrides the obs_schema var.
 
 doctor re-detects, checks the database's levels (LOG_LEVEL at least INFO, TRACE_LEVEL ON_EVENT or ALWAYS), makes
@@ -57,14 +57,14 @@ def test_setup_steps_keep_one_ordered_list():
         "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
-        "estimate_telemetry_cost", "create_views"]
+        "estimate_telemetry_cost", "create_views", "create_tasks"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():
     steps = call_macro("_icecore_setup_steps", compat="elementary", app=True)
     names = [s["name"] for s in steps]
     assert names.index("create_views") < names.index("create_compat_views") < names.index("deploy_app")
-    assert not any(s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app"))
+    assert [s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app")] == [True, False]
 
 
 def test_schema_argument_overrides_the_obs_schema_var():
@@ -210,7 +210,7 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
         assert out["levels"]["executed"] == [] and out["levels"]["levels_ok"] is True, out["levels"]
         assert [s["name"] for s in out["steps"] if s["status"] == "done"] == [
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-            "record_capabilities", "estimate_telemetry_cost", "create_views"], out["steps"]
+            "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks"], out["steps"]
         assert out["recorded"] == "ok 1"
     assert first["levels"] == second["levels"]
     assert first["steps"] == second["steps"]

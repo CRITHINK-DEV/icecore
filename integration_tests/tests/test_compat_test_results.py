@@ -72,6 +72,20 @@ def test_compat_schema_is_separate_from_the_obs_schema_and_configurable():
     assert run_macro("it_compat_schema", {"compat_schema": "x"}).endswith('."X"')
 
 
+@pytest.mark.parametrize("name", ['x"; drop schema y; --', "a.b", "a b", "x'y", "é"])
+def test_compat_schema_name_outside_letters_digits_underscore_is_a_compile_error(name):
+    from helpers.macros import MacroFailed
+    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+        run_macro("it_compat_schema", {"compat_schema": name})
+    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+        run_macro("it_compat_schema", {}, ["--vars", json.dumps({"icecore": {"compat_schema": name}})])
+
+
+def test_severity_is_dbts_configured_value_not_lower_cased():
+    sql = run_macro("it_compat_test_results", {})["sql"]
+    assert "lower(t.severity)" not in sql and "t.severity" in sql
+
+
 def test_setup_creates_compat_views_only_when_asked():
     names = lambda steps: [s["name"] for s in steps]  # noqa: E731
     assert "create_compat_views" not in names(call_macro("_icecore_setup_steps"))
@@ -86,6 +100,12 @@ def test_only_elementary_is_a_compat_target():
     from helpers.macros import MacroFailed
     with pytest.raises(MacroFailed):
         run_macro("it_create_compat_views", {"compat": "datafold"})
+
+
+def test_setup_refuses_an_unsupported_compat_before_any_step():
+    from helpers.macros import MacroFailed
+    with pytest.raises(MacroFailed, match="no step was run"):
+        run_macro("icecore.setup", {"compat": "datafold"})
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -137,7 +157,7 @@ def test_views_are_created_in_the_compat_schema_with_elementarys_types_and_the_c
             by_test = {r[names.index("test_unique_id")]: dict(zip(names, r)) for r in rows.fetchall()}
             assert len(by_test) == core == 3
             fail = by_test["test.p.unique_a_id"]
-            assert fail["status"] == "fail" and fail["severity"] == "error" and fail["failures"] == 3
+            assert fail["status"] == "fail" and fail["severity"] == "ERROR" and fail["failures"] == 3
             assert fail["failed_row_count"] == 3 and fail["test_type"] == "dbt_test" and fail["test_sub_type"] == "generic"
             assert fail["column_name"] == "id" and fail["id"] == f"{inv}.test.p.unique_a_id" and fail["detected_at"] is not None
             assert fail["model_unique_id"] is None and fail["other"] is None

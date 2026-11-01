@@ -26,6 +26,9 @@
     status, detail}]}; status is done or planned. Nothing at parse time. -#}
 {% macro setup(schema=none, compat='none', app=false, runs_per_day=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- if (compat or 'none') | string | lower not in ['none', 'elementary'] -%}
+    {{ exceptions.raise_compiler_error("icecore: setup compat must be 'none' or 'elementary', got " ~ compat ~ "; no step was run") }}
+  {%- endif -%}
   {%- set state = {
       'database': target.database | string | upper,
       'schema': icecore.obs_schema_name(schema),

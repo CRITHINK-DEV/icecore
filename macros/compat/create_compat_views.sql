@@ -52,10 +52,15 @@
 
 
 {#- The compat schema, fully qualified and quoted: "<TARGET_DB>"."<COMPAT_SCHEMA>". An explicit name or the var
-    icecore.compat_schema wins; the default is <obs schema name>_ELEMENTARY. -#}
+    icecore.compat_schema wins; the default is <obs schema name>_ELEMENTARY. The name goes into DDL text, so it is
+    attacker data: anything outside [A-Za-z0-9_] is a compile error, then it is quoted.
+    TODO(#75): icecore._sql(..., 'ident') replaces this check and the quoting. -#}
 {% macro _icecore_compat_schema(schema=none, compat_schema=none) %}
-  {%- set name = compat_schema or var('icecore', {}).get('compat_schema') or (icecore.obs_schema_name(schema) ~ '_ELEMENTARY') -%}
-  {{ return('"' ~ (target.database | string | upper | replace('"', '""')) ~ '"."' ~ (name | string | upper | replace('"', '""')) ~ '"') }}
+  {%- set name = (compat_schema or var('icecore', {}).get('compat_schema') or (icecore.obs_schema_name(schema) ~ '_ELEMENTARY')) | string | upper -%}
+  {%- if not modules.re.fullmatch('[A-Za-z0-9_]+', name) -%}
+    {{ exceptions.raise_compiler_error("icecore: the compat schema name (var icecore.compat_schema) may only contain letters, digits and underscores, got '" ~ name ~ "'") }}
+  {%- endif -%}
+  {{ return('"' ~ (target.database | string | upper | replace('"', '""')) ~ '"."' ~ name ~ '"') }}
 {% endmacro %}
 
 

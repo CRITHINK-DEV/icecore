@@ -29,7 +29,7 @@ macros:
         description: >
           Default `none`: no compat views. `elementary` adds the `create_compat_views` step, which creates the
           Elementary-compatible views in the compat schema (var `icecore.compat_schema`, default the obs schema name plus
-          `_ELEMENTARY`). Any other value is refused when that step runs.
+          `_ELEMENTARY`). Any other value is refused before any step runs.
       - name: app
         type: boolean
         description: Default false. True adds the deploy_app step, reported as planned until the app can be deployed.

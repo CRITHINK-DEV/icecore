@@ -12,7 +12,8 @@
       test_sub_type              the core test_type (generic or singular) for dbt_test, NULL for anomaly_detection
       test_results_description   message (redacted by default, var icecore.result_message)
       test_name, test_short_name test_name
-      severity, status           lower case, as Elementary writes dbt's values (warn, error; pass, fail, warn, error)
+      severity                   dbt's configured value as it is (default ERROR), the way Elementary keeps it
+      status                     lower case, as Elementary writes dbt's result status (pass, fail, warn, error)
       failures, failed_row_count failures
       other                      for scored tests a JSON object {engine, expected, lower, upper, score}, else NULL
     Typed NULLs (icecore has no source for them): data_issue_id, model_unique_id, database_name, schema_name,
@@ -58,7 +59,7 @@
     {'name': 'other', 'type': 'string', 'expr': "iff(" ~ scored ~ ", to_json(object_construct_keep_null('engine', t.engine, 'expected', t.expected, 'lower', t.lower, 'upper', t.upper, 'score', t.score)), null)"},
     {'name': 'test_name', 'type': 'long_string', 'expr': 't.test_name'},
     {'name': 'test_params', 'type': 'long_string', 'expr': none},
-    {'name': 'severity', 'type': 'string', 'expr': 'lower(t.severity)'},
+    {'name': 'severity', 'type': 'string', 'expr': 't.severity'},
     {'name': 'status', 'type': 'string', 'expr': 'lower(t.status)'},
     {'name': 'failures', 'type': 'bigint', 'expr': 't.failures'},
     {'name': 'test_short_name', 'type': 'string', 'expr': 't.test_name'},

@@ -195,6 +195,7 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
+- [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 
 ## Develop icecore

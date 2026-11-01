@@ -100,3 +100,32 @@
   {%- endfor -%}
   {{ return(counts) }}
 {% endmacro %}
+
+
+{#- The rows end_run writes for `nodes` nodes, read by the cost estimate (icecore.estimate_telemetry_cost), kept
+    next to _icecore_end_run_emitters() so the two change together.
+      fixed     rows every run writes: invocation_span (1), node_spans (one per node), end (the invocation-end LOG);
+      emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
+      uncounted names of emitters in the list that have no count here.
+    An emitter added to the list needs its count in `per_emitter` below: a test fails until it has one.
+    Emitters sized from the graph rather than per node (lineage, samples) are listed in `graph_sized`: their
+    count is none here and the estimate sizes them from the graph and its own arguments. -#}
+{% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1) %}
+  {%- set nodes = nodes | int -%}
+  {%- set per_emitter = {
+      'node_results': nodes,
+      'query_events': nodes * (query_events_per_node | int),
+  } -%}
+  {%- set graph_sized = ['lineage', 'samples'] -%}
+  {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
+  {%- for emitter in icecore._icecore_end_run_emitters() -%}
+    {%- if emitter['name'] in per_emitter -%}
+      {%- do out['emitters'].update({emitter['name']: per_emitter[emitter['name']] if icecore._icecore_flag(emitter['var'], emitter['default']) else 0}) -%}
+    {%- elif emitter['name'] in graph_sized -%}
+      {%- do out['emitters'].update({emitter['name']: none}) -%}
+    {%- else -%}
+      {%- do out['uncounted'].append(emitter['name']) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(out) }}
+{% endmacro %}

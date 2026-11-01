@@ -62,7 +62,7 @@
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
-      {'name': 'create_views', 'ready': false, 'detail': 'the core views over base_events'},
+      {'name': 'create_views', 'ready': true, 'detail': 'the core views over base_events'},
   ] -%}
   {%- if (compat or 'none') | string | lower != 'none' -%}
     {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
@@ -111,6 +111,8 @@
           ~ '%.4f' | format(e['credits_per_month'][1]) ~ ' credits per month') }}
     {%- endif -%}
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
+  {%- elif name == 'create_views' -%}
+    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

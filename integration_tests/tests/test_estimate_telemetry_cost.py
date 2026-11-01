@@ -90,7 +90,7 @@ def test_nodes_default_to_the_graph():
 
 def test_setup_runs_the_estimate_after_recording_capabilities():
     names = [s["name"] for s in call_macro("_icecore_setup_steps") if s["ready"]]
-    assert names[-2:] == ["record_capabilities", "estimate_telemetry_cost"]
+    assert names.index("record_capabilities") + 1 == names.index("estimate_telemetry_cost")
 
 
 # --- sandbox --------------------------------------------------------------------------------------

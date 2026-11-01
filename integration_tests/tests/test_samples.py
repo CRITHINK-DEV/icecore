@@ -16,8 +16,8 @@ import yaml
 
 from helpers.macros import IT_DIR, run_macro
 from helpers.run_hooks import (
-    assert_no_invocation_records, drop_fixture_views, drop_stored_failures, invocation_records, obs_schema,
-    run_with_hooks, snowflake_since,
+    DATABASE, SCHEMA, assert_no_invocation_records, drop_fixture_views, drop_stored_failures, invocation_records,
+    obs_schema, run_with_hooks, snowflake_since,
 )
 
 REPO = IT_DIR.parent

@@ -33,7 +33,7 @@ def daily_series_sql(values: list[float], end: datetime = datetime(2026, 10, 29,
 
 
 def test_macro_bridge_leaves_no_placeholder_behind():
-    call_macro("_cortex_unavailable_reason")
+    call_macro("_select_engine", engine="native", cortex_unavailable_reason=None, history_days=None)
     assert all(os.environ.get(key) != value for key, value in PLACEHOLDER_ENV.items() if value != "/dev/null")
 
 
@@ -82,8 +82,9 @@ def test_cortex_requested_with_short_history_falls_back():
     assert choice == {"engine": "native", "fallback_reason": "history_too_short"}
 
 
-def test_cortex_is_reported_unavailable_in_this_version():
-    assert call_macro("_cortex_unavailable_reason") == "cortex_unavailable"
+def test_cortex_availability_comes_from_detect_capabilities():
+    assert call_macro("_cortex_unavailable_reason", capabilities={"cortex": True, "cortex_reason": None}) is None
+    assert call_macro("_cortex_unavailable_reason", capabilities={"cortex": False, "cortex_reason": "no class"}) == "cortex_unavailable"
 
 
 def test_unknown_engine_is_rejected():
@@ -199,14 +200,15 @@ def test_native_returns_the_contract_fields():
 
 
 @pytest.mark.sandbox
-def test_auto_without_cortex_scores_native_and_records_fallback():
+def test_auto_without_a_model_scores_native_and_records_fallback():
+    # Cortex is available in the sandbox (detect_capabilities), but no model is given for the series.
     result = call_macro(
         "score", series_sql=daily_series_sql([100] * 20 + [101, 99]),
         current_value=500, engine="auto", sensitivity="medium", min_consecutive=1,
     )
     assert CONTRACT_FIELDS <= set(result)
     assert result["engine"] == "native"
-    assert result["fallback_reason"] == "cortex_unavailable"
+    assert result["fallback_reason"] == "model_missing"
     assert result["is_anomaly"] is True and result["score"] > 0
 
 

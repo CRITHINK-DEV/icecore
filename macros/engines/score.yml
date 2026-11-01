@@ -7,17 +7,25 @@ macros:
       returns a dict with the same fields whatever engine scored: `engine` (native or cortex),
       `expected`, `lower`, `upper` (acceptance band), `score` (signed distance outside the band,
       0 inside), `is_anomaly` (boolean, after the min_consecutive rule) and `fallback_reason`
-      (null, or why the requested engine did not score: `cortex_unavailable`, `history_too_short`).
+      (null, or why the requested engine did not score: `cortex_unavailable`, `history_too_short`, `model_missing`, `model_stale`, `cortex_error`), plus `fallback_detail` (the message behind it) when native scored for a model reason.
       Selection: `native` never calls Cortex; `cortex` falls back to native when Cortex is unavailable
-      or the series covers fewer than 14 days; `auto` uses Cortex only if it is detected and the series
-      covers at least 14 days, else native. The Cortex engine is not shipped yet, so every request
-      scores with native and records `cortex_unavailable`. Computes and returns values only; emitting
-      them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
+      (`icecore.detect_capabilities`, read without recording), the series covers fewer than 14 days, no
+      `model` is given or it does not exist (`model_missing`), it is older than `var('icecore').cortex_refresh_days`
+      (default 7, the refresh task's period: `model_stale`), or any Cortex call fails (`cortex_error`: a
+      privilege or region problem never fails a test); `auto` uses Cortex under the same conditions, else
+      native. A fallback is logged and recorded in `fallback_reason`. Computes and returns values only;
+      emitting them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
       keys are returned with null values, so a model or test calling score always parses.
     arguments:
       - name: series_sql
         type: string
         description: A SELECT returning the history as columns `observed_at` (timestamp) and `value` (number).
+      - name: model
+        type: string
+        description: The table's Cortex model as a (qualified) identifier. Default none, which means `model_missing` when Cortex was to score.
+      - name: series
+        type: string
+        description: The series key the model was trained with. Required with `model`.
       - name: current_value
         type: number
         description: The value observed in this run. Null scores 0 and is never an anomaly.
@@ -80,7 +88,7 @@ macros:
       `upper`, `score` (signed distance outside the band, 0 inside, as native) and `is_anomaly` (Cortex
       verdict, and the min_consecutive - 1 latest history points outside the band on the same side).
       When the model cannot score it returns only `error` (code and message) and logs a warning. At parse
-      time it returns null. Not wired into the dispatcher yet.
+      time it returns null. Called by `score`, which falls back to native when it returns `error`.
     arguments:
       - name: model
         type: string

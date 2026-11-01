@@ -104,3 +104,50 @@ end;
     'is_anomaly': side != 0 and streak >= previous and (cur['IS_ANOMALY'] is sameas true),
   }) }}
 {% endmacro %}
+
+
+{#-
+  Fallbacks. A model that is missing, older than the refresh period, or unreadable never fails a test: the
+  dispatcher scores with native and records why (fallback_reason).
+-#}
+
+{#- 'fresh', 'missing', 'stale' or 'error' for the per-table model, read with SHOW SNOWFLAKE.ML.ANOMALY_DETECTION inside a
+    catching block. Stale: created more than var icecore.cortex_refresh_days (default 7) days ago, the period of the
+    task that refreshes the models. Returns {'state', 'age_days', 'error'}; never raises. -#}
+{% macro _cortex_model_state(model, refresh_days=none) %}
+  {% do icecore._cortex_check_model_name(model) %}
+  {% set refresh_days = var('icecore', {}).get('cortex_refresh_days', 7) if refresh_days is none else refresh_days %}
+  {% set parts = [] %}
+  {% for part in model.split('.') %}
+    {% do parts.append(part[1:-1] if part.startswith('"') else part | upper) %}
+  {% endfor %}
+  {% set name = parts[-1] %}
+  {% set schema = parts[-2] if parts | length > 1 else target.schema | upper %}
+  {% set database = parts[-3] if parts | length > 2 else target.database | upper %}
+  {% set block %}
+declare
+  res variant;
+begin
+  show snowflake.ml.anomaly_detection like {{ icecore._icecore_sql_literal(name) }} in schema "{{ database | replace('"', '""') }}"."{{ schema | replace('"', '""') }}";
+  select coalesce(array_agg(object_construct('age_s', datediff('second', "created_on", current_timestamp()))), array_construct()) into :res from table(result_scan(last_query_id()));
+  return object_construct('rows', res);
+exception
+  when other then return object_construct('error', sqlcode || ': ' || sqlerrm);
+end;
+  {% endset %}
+  {% set out = icecore._icecore_try_cortex(block) %}
+  {% if 'error' in out %}
+    {{ return({'state': 'error', 'age_days': none, 'error': out['error']}) }}
+  {% endif %}
+  {{ return(icecore._cortex_state_of(out['rows'], refresh_days)) }}
+{% endmacro %}
+
+
+{#- Pure: the model state from the SHOW rows (age in seconds). -#}
+{% macro _cortex_state_of(rows, refresh_days) %}
+  {% if not rows %}
+    {{ return({'state': 'missing', 'age_days': none, 'error': none}) }}
+  {% endif %}
+  {% set age_days = rows[0]['age_s'] / 86400 %}
+  {{ return({'state': 'stale' if age_days > refresh_days else 'fresh', 'age_days': age_days, 'error': none}) }}
+{% endmacro %}

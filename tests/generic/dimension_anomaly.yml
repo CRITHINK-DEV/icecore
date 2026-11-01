@@ -25,7 +25,8 @@ macros:
         description: The dimension column, filled in by dbt.
       - name: bounds
         type: dictionary
-        description: Static limits for the count of changed rows of each value, `{min: n, max: n}` with at least one. Optional.
+        description: >
+          Static limits for the count of changed rows of each value, a mapping with min and or max numbers. Optional.
       - name: max_values
         type: integer
         description: Number of distinct values written before the rest are grouped as other. Optional.

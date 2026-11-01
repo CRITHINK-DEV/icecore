@@ -10,7 +10,9 @@
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
-      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      8. create_tasks            every task of icecore._icecore_task_entries (one list), created suspended; the Cortex
+         refresh task only when Cortex is available;
+      9. create_compat_views (compat), create_alerts, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -30,6 +32,7 @@
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
+      'tasks': none,
       'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
@@ -69,7 +72,7 @@
     {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
   {%- endif -%}
   {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
-  {%- do steps.append({'name': 'create_tasks', 'ready': false, 'detail': 'Snowflake tasks'}) -%}
+  {%- do steps.append({'name': 'create_tasks', 'ready': true, 'detail': 'Snowflake tasks'}) -%}
   {%- if app is sameas true -%}
     {%- do steps.append({'name': 'deploy_app', 'ready': false, 'detail': 'the Streamlit app'}) -%}
   {%- endif -%}
@@ -114,6 +117,18 @@
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- elif name == 'create_views' -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
+  {%- elif name == 'create_tasks' -%}
+    {%- set t = icecore.create_tasks(state['schema'], state['capabilities']) -%}
+    {%- do state.update({'tasks': t}) -%}
+    {%- set parts = [] -%}
+    {%- for task in t['tasks'] -%}
+      {%- do parts.append(task['name'] ~ ': ' ~ ((task['task'] ~ (' (resumed)' if task['resumed'] else ' (suspended)')) if task['status'] == 'ok'
+          else ('not created, Cortex is not available' if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
+    {%- endfor -%}
+    {%- for statement in t['printed'] -%}
+      {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
+    {%- endfor -%}
+    {{ return(parts | join('; ')) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

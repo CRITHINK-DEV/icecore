@@ -57,7 +57,7 @@ def test_setup_steps_keep_one_ordered_list():
         "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
-        "estimate_telemetry_cost", "create_views"]
+        "estimate_telemetry_cost", "create_views", "create_tasks"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():

@@ -172,6 +172,22 @@ def test_the_no_write_check_ignores_reads_and_comments():
     assert writes_in("select 1 -- no create table here\n/* nor alter or truncate */") == []
 
 
+ML_CREATORS = {"refresh_cortex_models.sql"}  # training is the only place icecore creates SNOWFLAKE.ML objects
+CREATE_ML = r"create\s+(or\s+replace\s+)?snowflake\.ml"
+
+
+def test_only_the_named_training_file_creates_snowflake_ml_objects():
+    found = {p.name for p in (REPO / "macros").rglob("*.sql")
+             if re.search(CREATE_ML, re.sub(r"\{#.*?#\}", "", p.read_text(), flags=re.S).lower())}
+    assert found == ML_CREATORS
+
+
+def test_the_training_file_writes_nothing_else():
+    for name in ML_CREATORS:
+        (path,) = (REPO / "macros").rglob(name)
+        assert [w for w in writes_in(path.read_text()) if w != WRITE_STATEMENTS[0]] == [], name
+
+
 def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():
     engines = REPO / "macros" / "engines"
     for path in engines.glob("*.sql"):

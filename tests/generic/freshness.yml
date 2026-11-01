@@ -1,0 +1,22 @@
+version: 2
+
+macros:
+  - name: test_freshness
+    description: >
+      Zero-scan freshness test. Reads the time of the last committed change of the tested relation from
+      SYSTEM$LAST_CHANGE_COMMIT_TIME (no data scan), measures the lag against Snowflake's clock, writes it as the
+      metric `freshness_lag_seconds` through `icecore.emit_metric`, and fails when the lag is above `max_lag`.
+      Without `max_lag` it only records the metric and always passes. The verdict comes only from that comparison:
+      a failed telemetry CALL is a logged warning and never changes the result. When no last change time can be read
+      (never written, or not readable) the reader logs why, no metric is written and the test passes. The scoring
+      hook for UC3 (`icecore.score`) is marked in the test body and not called yet. Use `severity: warn` in the
+      test config to warn instead of failing. Example, `data_tests: [icecore.freshness: {max_lag: 2h}]`.
+    arguments:
+      - name: model
+        type: relation
+        description: The relation under test, filled in by dbt.
+      - name: max_lag
+        type: string
+        description: >
+          Largest accepted lag, a number of seconds or a number with a unit s, m, h or d, for example 30m, 2h or 1d.
+          Optional.

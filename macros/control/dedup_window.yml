@@ -1,0 +1,33 @@
+version: 2
+
+macros:
+  - name: dedup_window_sql
+    description: >
+      The SELECT of the incidents a channel's alert may notify now, computed over the `ALERTS_FEED` view and the
+      `icecore.notified` span events (written by the alert's action through ICECORE_EMIT, never an INSERT). Columns
+      are those of `ALERTS_FEED` plus `last_notified_at`. An acknowledged incident is never returned. An incident
+      notified on this channel inside the window is not returned again; after the window it is, while unacknowledged
+      (a reminder). A new incident_key has no record and is returned. Another channel's notification does not
+      suppress this one.
+    arguments:
+      - name: channel
+        type: string
+        description: The channel name the notifications are recorded under. Required.
+      - name: schema
+        type: string
+        description: The obs schema holding ALERTS_FEED, also the schema the base filter reads. Default the `obs_schema` var.
+      - name: event_table
+        type: string
+        description: The relation to read. Default none, resolved with `resolve_event_table` when the macro executes.
+      - name: database
+        type: string
+        description: The database whose procedures wrote the records. Default `target.database`.
+      - name: window_minutes
+        type: integer
+        description: The dedup window in minutes. Default `dedup_window_minutes()`.
+
+  - name: dedup_window_minutes
+    description: >
+      The dedup window in whole minutes: var `icecore.alert_dedup_minutes` when a positive number, else the incident
+      window of `alerts_feed` (var `icecore.alert_window_hours`, 24 hours by default), so an incident is notified
+      once per channel.

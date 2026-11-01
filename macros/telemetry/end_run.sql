@@ -3,8 +3,10 @@
 
   One orchestrator. It builds one batch for the run and sends it with icecore.emit_run to ICECORE_EMIT_RUN, in
   as many guarded CALLs of at most 512 KB as needed (spikes/GATE1.md, "Consequences for the build"). In order:
-    1. each emitter of _icecore_end_run_emitters() whose var is on adds its items to the batch;
-    2. the invocation-end LOG: dbt.invocation.status (success, warn or error) and the node counts.
+    1. the invocation span and one span per node, with dbt's own timings (spans.sql);
+    2. each emitter of _icecore_end_run_emitters() whose var is on adds its items to the batch;
+    3. the invocation-end LOG: dbt.invocation.status (success, warn or error), the node counts and the
+       invocation's times.
   Renders '' so the hook itself runs no SQL. A no-op at parse time and when var('icecore').telemetry is false.
 -#}
 
@@ -18,33 +20,43 @@
 
 {#- The extension point: one entry per end-of-run emitter, {name, var, default, macro}. The emitter runs when
     var('icecore')[var] is true (default `default`); it is called as macro(results, batch) and appends its
-    items to batch['items'] (the ICECORE_EMIT_RUN shapes of emit_run.sql). Later stories add theirs here:
-    lineage, samples, cost, root cause. -#}
+    items to batch['items'] (the ICECORE_EMIT_RUN shapes of emit_run.sql), or events to a node's span in
+    batch['node_spans'][unique_id]['events']. batch['timing'] holds the invocation's times. Later stories add
+    theirs here: lineage, samples, cost, root cause. -#}
 {% macro _icecore_end_run_emitters() %}
   {{ return([]) }}
 {% endmacro %}
 
 
-{#- The batch end_run sends for these results: the emitters' items, then the invocation-end LOG. -#}
+{#- The batch end_run sends for these results: the spans, the emitters' items, then the invocation-end LOG. -#}
 {% macro _icecore_end_run_items(results) %}
-  {%- set results = results or [] -%}
-  {%- set batch = {'items': []} -%}
+  {%- set results = icecore._icecore_node_results(results) -%}
+  {%- set timing = icecore._icecore_invocation_timing() -%}
+  {%- set batch = {'items': [icecore._icecore_invocation_span(timing)], 'node_spans': {}, 'timing': timing} -%}
+  {%- for result in results -%}
+    {%- set span = icecore._icecore_node_span(result) -%}
+    {%- if span is not none -%}
+      {%- do batch['items'].append(span) -%}
+      {%- do batch['node_spans'].update({span['attrs'].get('dbt.node.unique_id'): span}) -%}
+    {%- endif -%}
+  {%- endfor -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}
     {%- if icecore._icecore_flag(emitter['var'], emitter['default']) -%}
       {%- do emitter['macro'](results, batch) -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- do batch['items'].append(icecore._icecore_run_end_log(results)) -%}
+  {%- do batch['items'].append(icecore._icecore_run_end_log(results, timing)) -%}
   {{ return(batch['items']) }}
 {% endmacro %}
 
 
-{#- The invocation-end LOG: status and node counts, at level error, warn or info to match the status. -#}
-{% macro _icecore_run_end_log(results) %}
+{#- The invocation-end LOG: status, node counts and the invocation's times, at level error, warn or info to match the status. -#}
+{% macro _icecore_run_end_log(results, timing=none) %}
   {%- set counts = icecore._icecore_node_counts(results) -%}
   {%- set status = 'error' if counts['failed'] else ('warn' if counts['warned'] else 'success') -%}
   {%- set attrs = {'icecore.kind': 'run_end', 'dbt.invocation.status': status} -%}
   {%- do attrs.update(icecore._icecore_run_attributes()) -%}
+  {%- do attrs.update(timing['attrs'] if timing is not none else {}) -%}
   {%- for key in ['total', 'success', 'failed', 'warned', 'skipped'] -%}
     {%- do attrs.update({'dbt.invocation.nodes_' ~ key: counts[key]}) -%}
   {%- endfor -%}

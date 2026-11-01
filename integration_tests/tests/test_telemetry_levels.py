@@ -40,7 +40,7 @@ def test_standard_without_event_table_prints_alter_account_and_never_runs_it():
     assert "ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS" in joined(p["print"])
     assert "ALTER ACCOUNT" not in joined(p["attempt"])
     # the levels belong to the database; that statement may be attempted (guarded)
-    assert p["attempt"] == ["ALTER DATABASE OBS_DB SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"]
+    assert p["attempt"] == ["ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"]
 
 
 def test_standard_uses_the_account_table_even_when_a_dedicated_one_is_requested():
@@ -78,17 +78,18 @@ def test_account_table_note_names_events_viewer():
 
 
 @pytest.mark.parametrize("log_level,trace_level,expected", [
-    ("WARN", "ALWAYS", "ALTER DATABASE OBS_DB SET LOG_LEVEL = 'INFO'"),
-    ("INFO", "OFF", "ALTER DATABASE OBS_DB SET TRACE_LEVEL = 'ALWAYS'"),
-    ("off", "off", "ALTER DATABASE OBS_DB SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"),
-    (None, None, "ALTER DATABASE OBS_DB SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"),
+    ("WARN", "ALWAYS", "ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO'"),
+    ("INFO", "OFF", "ALTER SCHEMA OBS_DB.ICECORE_OBS SET TRACE_LEVEL = 'ALWAYS'"),
+    ("off", "off", "ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"),
+    (None, None, "ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"),
+    ("INFO", "ON_EVENT", "ALTER SCHEMA OBS_DB.ICECORE_OBS SET TRACE_LEVEL = 'ALWAYS'"),
 ])
 def test_insufficient_levels_set_only_what_is_missing(log_level, trace_level, expected):
     assert plan(caps(log_level=log_level, trace_level=trace_level))["attempt"] == [expected]
 
 
 @pytest.mark.parametrize("log_level,trace_level", [
-    ("INFO", "ALWAYS"), ("DEBUG", "ON_EVENT"), ("TRACE", "ALWAYS"), ("info", "on_event"),
+    ("INFO", "ALWAYS"), ("DEBUG", "ALWAYS"), ("TRACE", "ALWAYS"), ("info", "always"),
 ])
 def test_sufficient_levels_change_nothing(log_level, trace_level):
     out = call_macro("set_telemetry_levels", capabilities=caps(log_level=log_level, trace_level=trace_level),
@@ -97,17 +98,48 @@ def test_sufficient_levels_change_nothing(log_level, trace_level):
     assert out["executed"] == [] and out["printed"] == [], out
 
 
+def test_the_proposal_is_never_database_wide():
+    for levels in (caps(log_level="OFF", trace_level="OFF"), caps(trace_level="ON_EVENT"), caps(log_level=None)):
+        p = plan(levels)
+        assert p["attempt"] and all(s.startswith("ALTER SCHEMA ") for s in p["attempt"]), p
+        assert "ALTER DATABASE OBS_DB SET LOG_LEVEL" not in joined(p["attempt"] + p["print"])
+        assert "ALTER DATABASE OBS_DB SET TRACE_LEVEL" not in joined(p["attempt"] + p["print"])
+
+
+def test_the_schema_is_the_one_given():
+    p = call_macro("telemetry_levels_plan", capabilities=caps(log_level="OFF"), database="OBS_DB", schema="my_obs")
+    assert p["attempt"] == ["ALTER SCHEMA OBS_DB.MY_OBS SET LOG_LEVEL = 'INFO'"] and p["schema"] == "MY_OBS"
+
+
+def test_effective_levels_of_the_schema_win_over_the_database():
+    # measured (S12 levels matrix): the schema's value overrides the database's, in both directions
+    narrow = {"log_level": "INFO", "trace_level": "ALWAYS"}
+    p = call_macro("telemetry_levels_plan", capabilities=caps(log_level="OFF", trace_level="OFF"), database="OBS_DB",
+                   schema_levels=narrow)
+    assert p["levels_ok"] is True and p["attempt"] == []
+    silenced = {"log_level": "OFF", "trace_level": "OFF"}
+    p = call_macro("telemetry_levels_plan", capabilities=caps(), database="OBS_DB", schema_levels=silenced)
+    assert p["levels_ok"] is False
+    assert p["attempt"] == ["ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"]
+
+
+def test_on_event_is_insufficient_and_says_why():
+    p = plan(caps(trace_level="ON_EVENT"))
+    assert p["levels_ok"] is False
+    assert any("ON_EVENT" in n and "without an event" in n for n in p["notes"]), p["notes"]
+
+
 def test_apply_false_prints_instead_of_running():
     out = call_macro("set_telemetry_levels", capabilities=caps(edition="STANDARD", event_table="", log_level="OFF"),
                      database="OBS_DB", apply=False)
     assert out["executed"] == []
-    assert "ALTER DATABASE OBS_DB SET LOG_LEVEL = 'INFO'" in joined(out["printed"])
+    assert "ALTER SCHEMA OBS_DB.ICECORE_OBS SET LOG_LEVEL = 'INFO'" in joined(out["printed"])
     assert "ALTER ACCOUNT SET EVENT_TABLE" in joined(out["printed"])
 
 
 def test_quoted_database_name():
     p = plan(caps(log_level="OFF"), database='My "Obs" db')
-    assert p["attempt"] == ["""ALTER DATABASE "My ""Obs"" db" SET LOG_LEVEL = 'INFO'"""]
+    assert p["attempt"] == ["""ALTER SCHEMA "My ""Obs"" db".ICECORE_OBS SET LOG_LEVEL = 'INFO'"""]
 
 
 def test_missing_capabilities_is_a_clear_error():
@@ -129,7 +161,7 @@ def test_sandbox_levels_are_sufficient_and_nothing_changes(dbt, sf):
                     trace_level=before["TRACE_LEVEL"])
     out = call_macro("set_telemetry_levels", capabilities=detected, database=DATABASE)
     assert out["levels_ok"] is True, out
-    assert out["executed"] == [] and "ALTER DATABASE" not in joined(out["printed"]), out
+    assert out["executed"] == [] and "ALTER " not in joined(out["printed"]).replace("ALTER TABLE", ""), out
     assert _levels(sf, DATABASE) == before
 
 
@@ -138,7 +170,7 @@ def test_guarded_alter_that_fails_is_printed_and_the_run_succeeds(dbt, run_id):
     missing = f"ICECORE_NOPE_{run_id}".upper()
     out = call_macro("set_telemetry_levels", capabilities=caps(log_level="OFF", trace_level="OFF"), database=missing)
     assert out["executed"] == []
-    assert f"ALTER DATABASE {missing} SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'" in joined(out["printed"])
+    assert f"ALTER SCHEMA {missing}.ICECORE_OBS SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'" in joined(out["printed"])
     assert any("icecore-error" in n for n in out["notes"]), out["notes"]
 
 

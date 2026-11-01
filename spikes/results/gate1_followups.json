@@ -1,35 +1,118 @@
 {
-  "schema_levels": {
-    "blocked": [
-      {
-        "errno": 3001,
-        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
-        "statement": "alter schema ...LOG_LEVEL = 'INFO'"
+  "levels_matrix": {
+    "cases": {
+      "inherit": {
+        "landed": {
+          "EMIT_PROBE_NO_EVENT.SPAN": 1,
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 2,
+          "ICECORE_EMIT_RUN.LOG": 1,
+          "ICECORE_EMIT_RUN.SPAN": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 3,
+        "schema": null
       },
-      {
-        "errno": 3001,
-        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY TRACE LEVEL granted on ACCOUNT RK01532.",
-        "statement": "alter schema ...TRACE_LEVEL = 'ON_EVENT'"
+      "schema_info_always": {
+        "landed": {
+          "EMIT_PROBE_NO_EVENT.SPAN": 1,
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 2,
+          "ICECORE_EMIT_RUN.LOG": 1,
+          "ICECORE_EMIT_RUN.SPAN": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 3,
+        "schema": "LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'"
       },
-      {
-        "errno": 3001,
-        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
-        "statement": "alter procedure ...LOG_LEVEL = 'INFO'"
+      "schema_info_off": {
+        "landed": {
+          "ICECORE_EMIT_RUN.LOG": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 3,
+        "schema": "LOG_LEVEL = 'INFO', TRACE_LEVEL = 'OFF'"
       },
-      {
-        "errno": 3001,
-        "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY TRACE LEVEL granted on ACCOUNT RK01532.",
-        "statement": "alter procedure ...TRACE_LEVEL = 'ALWAYS'"
+      "schema_info_on_event": {
+        "landed": {
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 1,
+          "ICECORE_EMIT_RUN.LOG": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 3,
+        "schema": "LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ON_EVENT'"
+      },
+      "schema_off": {
+        "landed": {},
+        "procedure": null,
+        "python_runtime_logs": 0,
+        "schema": "LOG_LEVEL = 'OFF', TRACE_LEVEL = 'OFF'"
+      },
+      "schema_off_on_event": {
+        "landed": {
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 0,
+        "schema": "LOG_LEVEL = 'OFF', TRACE_LEVEL = 'ON_EVENT'"
+      },
+      "schema_off_proc_info_always": {
+        "landed": {
+          "EMIT_PROBE_NO_EVENT.SPAN": 1,
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 2,
+          "ICECORE_EMIT_RUN.LOG": 1,
+          "ICECORE_EMIT_RUN.SPAN": 1
+        },
+        "procedure": "LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'",
+        "python_runtime_logs": 3,
+        "schema": "LOG_LEVEL = 'OFF', TRACE_LEVEL = 'OFF'"
+      },
+      "schema_off_proc_info_on_event": {
+        "landed": {
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 1,
+          "ICECORE_EMIT_RUN.LOG": 1
+        },
+        "procedure": "LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ON_EVENT'",
+        "python_runtime_logs": 3,
+        "schema": "LOG_LEVEL = 'OFF', TRACE_LEVEL = 'OFF'"
+      },
+      "schema_warn_on_event": {
+        "landed": {
+          "ICECORE_EMIT.SPAN": 1,
+          "ICECORE_EMIT.SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_RUN_SPAN_EVENT": 1,
+          "ICECORE_EMIT_RUN.ICECORE_SPAN": 1
+        },
+        "procedure": null,
+        "python_runtime_logs": 0,
+        "schema": "LOG_LEVEL = 'WARN', TRACE_LEVEL = 'ON_EVENT'"
       }
-    ],
+    },
     "database_levels": {
       "LOG_EVENT_LEVEL": "OFF",
       "LOG_LEVEL": "INFO",
       "METRIC_LEVEL": "NONE",
       "TRACE_LEVEL": "ALWAYS"
     },
-    "measured": false,
-    "run_id": "f6a74d7482574e3b9b64e86bd11882d8",
-    "statements_tried": 4
+    "measured": true,
+    "recorded_at": "2026-11-01T17:26:14+00:00",
+    "run_id": "64959e450dda4d57b0e5a7d903292153",
+    "settle_s": 90
   }
 }

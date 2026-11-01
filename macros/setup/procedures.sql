@@ -55,12 +55,19 @@
 {% macro create_emit_procedures(schema=none) %}
   {%- set created = [] -%}
   {%- if execute -%}
+    {#- Render and validate every DDL first (_icecore_score_constant refuses a database or schema outside [A-Za-z0-9_]
+        and stops setup), so nothing is dropped for names that fail the check. TODO(#75): use _sql(..., 'ident') for the names. -#}
+    {%- set ddls = icecore._icecore_emit_procedures_ddl(schema) -%}
     {#- Snowflake keys a procedure by its signature: CREATE OR REPLACE of the shorter ICECORE_SCORE would leave an earlier
-        signature (with database and schema arguments, a confused deputy) callable. Drop each retired one first, guarded. -#}
+        signature (with database and schema arguments, a confused deputy) callable. Drop each retired one first, guarded,
+        and say so when a drop did not work. -#}
     {%- for ddl in icecore._icecore_retired_score_drops(schema) -%}
-      {%- do icecore._icecore_guarded_ddl(ddl) -%}
+      {%- set status = icecore._icecore_guarded_ddl(ddl) -%}
+      {%- if status != 'ok' -%}
+        {%- do log('icecore: warning: could not drop a retired ICECORE_SCORE signature: ' ~ status, info=True) -%}
+      {%- endif -%}
     {%- endfor -%}
-    {%- for ddl in icecore._icecore_emit_procedures_ddl(schema) -%}
+    {%- for ddl in ddls -%}
       {%- do run_query(ddl) -%}
     {%- endfor -%}
     {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_SCORE'] -%}

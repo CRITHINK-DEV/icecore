@@ -7,7 +7,16 @@
     {{ return(dbt.run_query(sql)) }}
   {%- endif -%}
   {%- set text = sql | lower -%}
-  {%- if 'datediff(\'day\'' in text -%}
+  {%- if 'drop procedure' in text -%}
+    {%- if var('it_query_stub_forbid_drop', false) -%}
+      {{ exceptions.raise_compiler_error('it stub: a DROP was issued: ' ~ sql) }}
+    {%- endif -%}
+    {%- do log('icecore: query: drop', info=True) -%}
+    {{ return({'rows': [[var('it_drop_status', 'ok')]]}) }}
+  {%- elif 'create or replace procedure' in text -%}
+    {%- do log('icecore: query: create procedure', info=True) -%}
+    {{ return({'rows': [['ok']]}) }}
+  {%- elif 'datediff(\'day\'' in text -%}
     {%- do log('icecore: query: history', info=True) -%}
     {{ return({'rows': [[30]]}) }}
   {%- elif 'icecore_score' in text -%}

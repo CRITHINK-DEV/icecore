@@ -112,7 +112,7 @@ macros:
         description: "The series key (see `cortex_series_key`); the model was trained on its MD5, which the procedure computes."
       - name: schema
         type: string
-        description: The obs schema whose `ICECORE_SCORE` scores, and the default schema of an unqualified model. Default the `obs_schema` var.
+        description: The obs schema whose `ICECORE_SCORE` scores. The model is always a bare `ICECORE_M_<hex>` name in that same schema; no other schema is ever read. Default the `obs_schema` var.
       - name: refresh_days
         type: number
         description: A model older than this many days is `stale`. Default `var('icecore').cortex_refresh_days`, 7.

@@ -37,7 +37,7 @@ def test_prediction_interval_follows_sensitivity(sensitivity, interval):
 
 def test_the_call_goes_through_the_score_procedure_inside_a_catching_block():
     sql = call_sql(model=GOOD).lower()
-    assert "call " in sql and ".\"icecore_score\"('icecore_m_0123456789abcdef', 'k'," in sql  # no database or schema argument
+    assert "call " in sql and ".\"icecore_score\"(:payload:model::string, :payload:series::string," in sql  # no database or schema argument
     assert "exception" in sql and "when other" in sql
     assert "detect_anomalies" not in sql and "create " not in sql  # the model is never called directly, never trained here
 
@@ -341,6 +341,34 @@ def test_a_database_or_schema_that_is_not_plain_stops_the_procedure_ddl(name):
 def test_every_retired_score_signature_is_dropped_before_the_new_one_is_created():
     drops = call_macro("_icecore_retired_score_drops", schema="obs_x")
     assert drops == ['DROP PROCEDURE IF EXISTS "%s"."OBS_X"."ICECORE_SCORE"(STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT)' % DATABASE]
+
+
+@pytest.mark.parametrize("schema", ["obs-x", "obs'x", "obs x", "obs$$x", "obs;x"])
+def test_a_bad_schema_name_stops_setup_before_any_drop(schema):
+    """The retired-signature DROPs used to run before the names were validated; the stub raises if a DROP is issued."""
+    with pytest.raises(MacroFailed, match="plain identifiers"):
+        run_macro_with_logs("it_call", {"name": "create_emit_procedures", "kwargs": {"schema": schema}},
+                            ["--vars", '{"it_query_stub": true, "it_query_stub_forbid_drop": true}'])
+
+
+def test_the_retired_drops_run_before_the_creates_and_a_failed_drop_is_logged():
+    _, logs = run_macro_with_logs("it_call", {"name": "create_emit_procedures", "kwargs": {"schema": "obs_x"}},
+                                  ["--vars", '{"it_query_stub": true, "it_drop_status": "icecore-error 3001: insufficient privileges"}'])
+    queries = [line.split("icecore: query: ")[1] for line in logs if line.startswith("icecore: query: ")]
+    assert queries == ["drop", "create procedure", "create procedure", "create procedure"], queries
+    assert any("could not drop a retired ICECORE_SCORE signature" in line and "3001" in line for line in logs), logs
+
+
+def test_a_clean_drop_logs_no_warning():
+    _, logs = run_macro_with_logs("it_call", {"name": "create_emit_procedures", "kwargs": {"schema": "obs_x"}}, STUB)
+    assert not any("could not drop" in line for line in logs), logs
+
+
+def test_the_payload_travels_inside_one_parse_json_not_as_separate_literals():
+    sql = call_sql(model=GOOD, series="it's a\\ key")
+    assert "payload variant default parse_json(" in sql
+    assert ":payload:model::string" in sql and ":payload:series::string" in sql
+    assert "ICECORE_M_0123456789ABCDEF'," not in sql  # not a bare literal argument of the CALL
 
 
 @pytest.mark.sandbox

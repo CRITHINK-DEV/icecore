@@ -74,12 +74,14 @@
   {% set interval = icecore._cortex_prediction_interval(sensitivity) %}
   {% set points = [{'ts': none if observed_at is none else observed_at | string, 'y': icecore._sql_number(current_value) | float}] + previous %}
   {% set lit = icecore._icecore_sql_literal %}
+  {% set payload = {'model': model, 'series': series, 'points': points} %}
   {% set block %}
 declare
   res variant;
+  payload variant default parse_json({{ lit(tojson(payload)) }});
 begin
-  call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}({{ lit(model) }}, {{ lit(series) }},
-    to_array(parse_json({{ lit(tojson(points)) }})), {{ interval }}, {{ icecore._cortex_refresh_days(refresh_days) }}) into :res;
+  call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}(:payload:model::string, :payload:series::string,
+    to_array(:payload:points), {{ interval }}, {{ icecore._cortex_refresh_days(refresh_days) }}) into :res;
   return res;
 exception
   when other then return object_construct('error', sqlcode || ': ' || sqlerrm);

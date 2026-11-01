@@ -25,3 +25,18 @@
   {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
   {% do log('icecore_it_result:' ~ tojson(icecore._icecore_history_bound(relation)), info=True) %}
 {% endmacro %}
+
+{#- Renders emit_metrics without running: the events, the records and how they chunk. -#}
+{% macro it_emit_metrics_render(rel, metrics) %}
+  {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
+  {% set events = [] %}
+  {% for m in metrics %}
+    {% do events.extend(icecore._icecore_metric_events(relation, m['metric'], m['value'], m.get('column'), m.get('dimension'), m.get('anomaly'), m.get('attributes'))) %}
+  {% endfor %}
+  {% set records = icecore._icecore_emit_records(events) %}
+  {% set sizes = [] %}
+  {% for chunk in icecore._icecore_emit_chunks(records) %}
+    {% do sizes.append(chunk | length) %}
+  {% endfor %}
+  {% do log('icecore_it_result:' ~ tojson({'records': records, 'chunk_sizes': sizes}), info=True) %}
+{% endmacro %}

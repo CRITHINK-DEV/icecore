@@ -69,6 +69,21 @@ def test_history_reads_look_back_30_days_by_default_and_start_with_the_relation(
     assert bound.index("node_relation") < bound.index("event_at >= dateadd(second, -2592000, sysdate())")
 
 
+def test_the_window_end_bounds_the_changes_source_and_the_timestamp_predicate():
+    rel = {"database": "icecore_sandbox", "schema": "spikes", "identifier": "orders"}
+    open_ended = run_macro("it_column_metrics_sql", {"rel": rel, "column_name": "amount",
+                                                     "window": {"mode": "changes", "since": "2026-11-01T00:00:00.000000Z"}})
+    bounded = run_macro("it_column_metrics_sql", {"rel": rel, "column_name": "amount", "window": {
+        "mode": "changes", "since": "2026-11-01T00:00:00.000000Z", "until": "2026-11-01T01:00:00.000000Z"}})
+    assert " end (" not in open_ended["changes_source"]
+    assert bounded["changes_source"].endswith("end (timestamp => to_timestamp_tz('2026-11-01T01:00:00.000000Z'))")
+    for kind, op in (("TIMESTAMP_NTZ", " < to_timestamp_ntz("), ("TIMESTAMP_TZ", " < to_timestamp_tz(")):
+        window = {"mode": "timestamp_column", "since": "2026-11-01T00:00:00.000000Z", "until": "2026-11-01T01:00:00.000000Z",
+                  "timestamp_column": "loaded_at", "timestamp_type": kind}
+        sql = run_macro("it_column_metrics_sql", {"rel": rel, "column_name": "amount", "window": window})["metrics_sql"]
+        assert op + "'2026-11-01T01:00:00.000000Z'" in sql, sql
+
+
 # --- sandbox: schema_changes ----------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -227,6 +242,13 @@ def test_every_metric_records_the_window_end_and_the_next_window_starts_there(co
 
 
 @pytest.mark.sandbox
+def test_each_test_writes_its_metrics_in_one_call_and_tags_its_monitor(columns):
+    rows = metric_rows(columns)
+    assert len({r["emit_query_id"] for r in rows}) == 4  # four test runs, seven metrics
+    assert {json.loads(r["attributes"])["dbt.window.monitor"] for r in rows} == {"column_anomaly"}
+
+
+@pytest.mark.sandbox
 def test_static_bounds_decide_the_verdict(columns):
     assert columns["first"]["it_column_bounds_ok"] == "pass"
     assert columns["first"]["it_column_bounds_breached"] == "fail"  # avg 59.5 above max 10, the metric still lands
@@ -242,3 +264,29 @@ def test_window_starts_at_the_previous_observation(columns):
     assert columns["second"]["it_column_from_history"] == "pass"
     (rows,) = [[r for r in metric_rows(columns) if r["metric_name"] == "window_rows"]]
     assert [r["metric_value"] for r in rows] == [10.0]  # only the 10 rows added after the first observation
+
+
+@pytest.mark.sandbox
+def test_rows_committed_after_the_window_end_are_left_for_the_next_window(dbt, sf, run_id):
+    table = f"IT_END_{run_id}".upper()
+    cur = sf.cursor()
+    cur.execute(f'create table {quoted(table)} (id number, amount number) change_tracking = true')
+    try:
+        time.sleep(3)
+        stamp = "select to_varchar(sysdate(), 'YYYY-MM-DD\"T\"HH24:MI:SS.FF6\"Z\"')"
+        since = cur.execute(stamp).fetchone()[0]
+        time.sleep(2)
+        cur.execute(f"insert into {quoted(table)} select seq4(), seq4() from table(generator(rowcount => 10))")
+        time.sleep(2)
+        until = cur.execute(stamp).fetchone()[0]
+        time.sleep(2)
+        cur.execute(f"insert into {quoted(table)} select 100 + seq4(), seq4() from table(generator(rowcount => 5))")
+        rel = {"database": DATABASE, "schema": SCHEMA, "identifier": table, "quoted": True}
+        bounded = run_macro("it_column_metrics", {"rel": rel, "column_name": "amount", "since": since, "until": until,
+                                                  "metrics": ["window_rows"]})
+        open_ended = run_macro("it_column_metrics", {"rel": rel, "column_name": "amount", "since": since,
+                                                     "metrics": ["window_rows"]})
+        assert bounded["window"]["until"] == until and bounded["metrics"] == {"window_rows": 10}
+        assert open_ended["metrics"] == {"window_rows": 15}
+    finally:
+        cur.execute(f"drop table if exists {quoted(table)}")

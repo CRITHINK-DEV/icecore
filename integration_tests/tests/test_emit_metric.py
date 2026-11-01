@@ -92,10 +92,28 @@ def test_null_anomaly_fields_are_left_out():
     assert anomaly_keys(record["attrs"]) == set()
 
 
-def test_extra_attributes_are_written_but_never_replace_metric_keys():
-    (record,) = render(attributes={"dbt.window.until": "2026-11-01T10:00:00.000000Z", "dbt.metric.name": "evil"})["records"]
-    assert record["attrs"]["dbt.window.until"] == "2026-11-01T10:00:00.000000Z"
-    assert record["attrs"]["dbt.metric.name"] == "row_count"
+def test_only_dbt_window_attributes_are_accepted():
+    extra = {"dbt.window.until": "2026-11-01T10:00:00.000000Z", "dbt.metric.name": "evil", "dbt.metric.column": "c",
+             "dbt.metric.dimension": "d", "dbt.anomaly.is_anomaly": True, "dbt.anomaly.score": 9,
+             "dbt.invocation_id": "forged", "icecore.level": "error", "icecore.message": "forged", "other": 1}
+    (record,) = render(attributes=extra)["records"]
+    a = record["attrs"]
+    assert a["dbt.window.until"] == "2026-11-01T10:00:00.000000Z"
+    assert a["dbt.metric.name"] == "row_count" and a["icecore.level"] == "info"
+    assert a["dbt.invocation_id"] != "forged"
+    for key in ("dbt.metric.column", "dbt.metric.dimension", "dbt.anomaly.is_anomaly", "dbt.anomaly.score",
+                "icecore.message", "other"):
+        assert key not in a, key
+
+
+def test_emit_metrics_is_one_call_for_many_metrics():
+    metrics = [{"metric": "null_rate", "value": 0.1, "column": f"c{i}"} for i in range(30)]
+    metrics.append({"metric": "row_count", "value": "abc"})  # not a number: skipped
+    out = run_macro("it_emit_metrics_render", {"rel": REL, "metrics": metrics})
+    assert out["chunk_sizes"] == [30]  # one CALL
+    assert [r["attrs"]["dbt.metric.column"] for r in out["records"]][:2] == ["c0", "c1"]
+    many = run_macro("it_emit_metrics_render", {"rel": REL, "metrics": metrics[:1] * 250})
+    assert many["chunk_sizes"] == [100, 100, 50]  # emit_events chunks at 100 events per CALL
 
 
 def test_quoted_relation_keeps_its_case_and_doubles_quotes():

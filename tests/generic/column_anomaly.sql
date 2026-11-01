@@ -16,20 +16,24 @@
     {#- the window end is taken before the read and recorded on every metric, so the next window starts from it -#}
     {%- set until = icecore._icecore_now_iso() -%}
     {%- set since = icecore._icecore_window_since(model, 'column', column_name, since, lookback_hours) -%}
-    {%- set window = icecore.get_change_window(model, since, timestamp_column) -%}
+    {%- set window = icecore.get_change_window(model, since, timestamp_column, until) -%}
     {%- set values = icecore.compute_column_metrics(model, column_name, window, names) -%}
     {%- if values is none -%}
       {%- do log('icecore: warning: column_anomaly of ' ~ column_name ~ ' on ' ~ name ~ ' could not be measured (see above); the test passes without metrics', info=True) -%}
     {%- else -%}
+      {%- set to_emit = [] -%}
       {%- for metric, value in values.items() -%}
         {#- UC3 scoring hook: icecore.score(<history of this metric>, value) plugs in here and its result goes to
-            emit_metric as `anomaly=`. Not called at this stage (engine none). -#}
-        {%- do icecore.emit_metric(model, metric, value, column=column_name, attributes={'dbt.window.until': until}) -%}
+            emit_metrics as `anomaly` of the entry. Not called at this stage (engine none). -#}
+        {%- do to_emit.append({'metric': metric, 'value': value, 'column': column_name,
+            'attributes': {'dbt.window.until': until, 'dbt.window.monitor': 'column_anomaly'}}) -%}
         {%- if icecore._icecore_outside(value, bounds.get(metric)) -%}
           {%- set limit = bounds.get(metric) -%}
           {%- do breaches.append({'metric': metric, 'value': value, 'min': limit.get('min'), 'max': limit.get('max')}) -%}
         {%- endif -%}
       {%- endfor -%}
+      {#- one CALL for the whole test -#}
+      {%- do icecore.emit_metrics(model, to_emit) -%}
     {%- endif -%}
   {%- endif -%}
 

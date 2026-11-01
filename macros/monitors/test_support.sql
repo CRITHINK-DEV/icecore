@@ -77,8 +77,9 @@ end;
 
 {#- Start of the next change window, as an ISO 8601 UTC string: `since` when given, else the window end (attribute
     dbt.window.until, the event time for records without it) of the newest metric record of the same kind for the relation, else `lookback_hours` before now (Snowflake's clock).
-    kind 'column': metrics of one column (column_name) without a dimension; 'dimension': metrics of one column
-    with a dimension; 'all_columns': metrics of any column without a dimension. -#}
+    kind 'column' (column_anomaly, one column), 'dimension' (dimension_anomaly, one column) or 'all_columns'
+    (all_columns_anomaly): the records are told apart by the tag dbt.window.monitor each monitor writes with its
+    metrics, so one test's window end never moves another's. Records without the tag are not read. -#}
 {% macro _icecore_window_since(relation, kind, column_name, since, lookback_hours) %}
   {%- if since is not none and (since | string | trim) != '' -%}{{ return(since) }}{%- endif -%}
   {%- set iso = 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"' -%}
@@ -86,9 +87,9 @@ end;
   {%- set previous = none -%}
   {%- if event_table is not none -%}
     {%- set filters = {
-        'column': 'metric_column = ' ~ icecore._icecore_sql_literal(column_name) ~ ' and metric_dimension is null',
-        'dimension': 'metric_column = ' ~ icecore._icecore_sql_literal(column_name) ~ ' and metric_dimension is not null',
-        'all_columns': 'metric_column is not null and metric_dimension is null'}[kind] -%}
+        'column': "attributes:\"dbt.window.monitor\"::string = 'column_anomaly' and metric_column = " ~ icecore._icecore_sql_literal(column_name),
+        'dimension': "attributes:\"dbt.window.monitor\"::string = 'dimension_anomaly' and metric_column = " ~ icecore._icecore_sql_literal(column_name),
+        'all_columns': "attributes:\"dbt.window.monitor\"::string = 'all_columns_anomaly'"}[kind] -%}
     {%- set sql -%}
       select to_varchar(max(coalesce(convert_timezone('UTC', try_to_timestamp_tz(attributes:"dbt.window.until"::string))::timestamp_ntz, event_at)), '{{ iso }}')
       from ({{ icecore.base_events(event_table=event_table) }})

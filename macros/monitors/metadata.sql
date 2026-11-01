@@ -73,21 +73,27 @@
 {% macro _icecore_quoted_name(relation) %}
   {%- set quoted = [] -%}
   {%- for part in icecore._icecore_name_parts(relation) -%}
-    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
+    {%- do quoted.append(icecore._sql(part, 'name')) -%}
   {%- endfor -%}
   {{ return(quoted | join('.')) }}
 {% endmacro %}
 
 
-{#- Single-quoted Snowflake string literal: backslash first, then single quote. -#}
+{#- Wrapper kept for one release: icecore._sql(value, 'string'). -#}
 {% macro _icecore_sql_literal(value) %}
-  {{ return("'" ~ (value | string | replace('\\', '\\\\') | replace("'", "\\'")) ~ "'") }}
+  {{ return(icecore._sql(value, 'string')) }}
 {% endmacro %}
 
 
 {#- Run a one-value SELECT inside a Snowflake Scripting block that catches every error:
     returns {'value': <value>} or {'error': <Snowflake message>, 'code': <SQLCODE>}, never raises. -#}
 {% macro _icecore_try_scalar(select_sql) %}
+  {{ return(fromjson(run_query('execute immediate ' ~ icecore._sql(icecore._icecore_try_scalar_block(select_sql), 'string')).rows[0][0])) }}
+{% endmacro %}
+
+
+{#- The block of _icecore_try_scalar: constant text around the one SELECT it is given. -#}
+{% macro _icecore_try_scalar_block(select_sql) %}
   {%- set block -%}
 declare
   v variant default null;
@@ -98,7 +104,7 @@ exception
   when other then return object_construct('error', sqlerrm, 'code', sqlcode);
 end;
   {%- endset -%}
-  {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
+  {{ return(block) }}
 {% endmacro %}
 
 
@@ -128,7 +134,7 @@ end;
             when table_type in ('TEMPORARY TABLE', 'LOCAL TEMPORARY') then 'temporary'
             when is_transient = 'YES' then 'transient'
             else 'standard' end)
-    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.tables
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.tables
     where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
       and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
   {%- endset -%}

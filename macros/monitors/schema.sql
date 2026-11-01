@@ -9,22 +9,8 @@
 {% macro get_columns_signature(relation) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
   {%- set name = icecore._icecore_schema_quoted_name(relation) -%}
-  {%- set block -%}
-declare
-  v variant default null;
-  qid varchar;
-begin
-  show columns in table {{ name }};
-  qid := sqlid;
-  select array_agg(object_construct('name', "column_name", 'data_type', {{ icecore._icecore_schema_type_sql('parse_json("data_type")') }}))
-    into :v
-    from table(result_scan(:qid));
-  return object_construct('value', v);
-exception
-  when other then return object_construct('error', sqlerrm);
-end;
-  {%- endset -%}
-  {%- set out = fromjson(run_query('execute immediate ' ~ icecore._icecore_schema_literal(block)).rows[0][0]) -%}
+  {%- set block = icecore._icecore_columns_signature_block(name) -%}
+  {%- set out = fromjson(run_query('execute immediate ' ~ icecore._sql(block, 'string')).rows[0][0]) -%}
   {%- if 'error' in out -%}
     {% do log('icecore: warning: get_columns_signature could not read ' ~ name ~ ': ' ~ out['error'], info=True) %}
     {{ return(none) }}
@@ -83,13 +69,34 @@ end
   {%- set quoted = [] -%}
   {%- for key, value in [('database', relation.database), ('schema', relation.schema), ('identifier', relation.identifier)] -%}
     {%- set part = value if relation.quote_policy.get_part(key) else value | upper -%}
-    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
+    {%- do quoted.append(icecore._sql(part, 'name')) -%}
   {%- endfor -%}
   {{ return(quoted | join('.')) }}
 {% endmacro %}
 
 
-{#- Single-quoted Snowflake string literal: backslash first, then single quote. -#}
+{#- Wrapper kept for one release: icecore._sql(value, 'string'). -#}
 {% macro _icecore_schema_literal(value) %}
-  {{ return("'" ~ (value | string | replace('\\', '\\\\') | replace("'", "\\'")) ~ "'") }}
+  {{ return(icecore._sql(value, 'string')) }}
+{% endmacro %}
+
+
+{#- The Scripting block of get_columns_signature: constant text around the one quoted name (icecore._sql). -#}
+{% macro _icecore_columns_signature_block(name) %}
+  {%- set block -%}
+declare
+  v variant default null;
+  qid varchar;
+begin
+  show columns in table {{ name }};
+  qid := sqlid;
+  select array_agg(object_construct('name', "column_name", 'data_type', {{ icecore._icecore_schema_type_sql('parse_json("data_type")') }}))
+    into :v
+    from table(result_scan(:qid));
+  return object_construct('value', v);
+exception
+  when other then return object_construct('error', sqlerrm);
+end;
+  {%- endset -%}
+  {{ return(block) }}
 {% endmacro %}

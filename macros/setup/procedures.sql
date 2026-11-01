@@ -19,24 +19,22 @@
 {#- The obs schema's name, as Snowflake resolves an unquoted identifier (upper case): `schema` when given (setup's
     and doctor's argument), else the obs_schema var. -#}
 {% macro obs_schema_name(schema=none) %}
-  {{ return((schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper) }}
+  {%- set name = (schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper -%}
+  {%- do icecore._sql(name, 'ident') -%}
+  {{ return(name) }}
 {% endmacro %}
 
 
-{#- The obs schema, fully qualified and quoted: "<TARGET_DB>"."<OBS_SCHEMA>". -#}
+{#- The obs schema, fully qualified and quoted: "<TARGET_DB>"."<OBS_SCHEMA>". The schema is validated by icecore._sql (letters,
+    digits, underscore); a hostile obs_schema fails at compile time. -#}
 {% macro obs_schema(schema=none) %}
-  {%- set parts = [target.database | string | upper, icecore.obs_schema_name(schema)] -%}
-  {%- set quoted = [] -%}
-  {%- for part in parts -%}
-    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
-  {%- endfor -%}
-  {{ return(quoted | join('.')) }}
+  {{ return(icecore._sql(target.database | string | upper, 'name') ~ '.' ~ icecore._sql(icecore.obs_schema_name(schema), 'ident')) }}
 {% endmacro %}
 
 
 {#- A procedure of the obs schema, fully qualified (name only, no signature). -#}
 {% macro _icecore_procedure(name, schema=none) %}
-  {{ return(icecore.obs_schema(schema) ~ '."' ~ name ~ '"') }}
+  {{ return(icecore.obs_schema(schema) ~ '.' ~ icecore._sql(name, 'ident')) }}
 {% endmacro %}
 
 

@@ -170,7 +170,7 @@
   {%- set chunks = [] -%}
   {%- set ns = namespace(current=[], size=4) -%}
   {%- for record in records -%}
-    {%- set size = (icecore._icecore_block_literal(tojson(record)) | length) - 1 -%}
+    {%- set size = (icecore._sql(tojson(record), 'string') | length) - 1 -%}
     {%- if ns.current and ((ns.current | length) >= max_events or ns.size + size > max_bytes) -%}
       {%- do chunks.append(ns.current) -%}
       {%- set ns.current = [] -%}
@@ -188,12 +188,15 @@
 
 {#- The guard block S1 measured: an error inside the CALL comes back as a status, never as a failure. -#}
 {% macro _icecore_guarded_call_sql(procedure, items) %}
+  {%- if procedure is not string or not modules.re.match('^[A-Za-z0-9_".]+\\Z', procedure) -%}
+    {{ exceptions.raise_compiler_error('icecore: invalid procedure name ' ~ (procedure | string)[:60] | tojson ~ ': build it with icecore._icecore_procedure') }}
+  {%- endif -%}
   {%- set sql -%}
 EXECUTE IMMEDIATE $$
 DECLARE
   r STRING;
 BEGIN
-  CALL {{ procedure }}(PARSE_JSON({{ icecore._icecore_block_literal(tojson(items)) }})) INTO :r;
+  CALL {{ procedure }}(PARSE_JSON({{ icecore._sql(tojson(items), 'string') }})) INTO :r;
   RETURN r;
 EXCEPTION
   WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
@@ -246,9 +249,7 @@ $$
 {% endmacro %}
 
 
-{#- Single-quoted literal safe inside a $$ block: backslash first, then quote; `$` becomes \x24 so the value can
-    never close the block; CR and LF are escaped so the statement stays on one line. -#}
+{#- Wrapper kept for one release: icecore._sql(value, 'string'). -#}
 {% macro _icecore_block_literal(value) %}
-  {%- set s = (value | string).replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\x24') -%}
-  {{ return("'" ~ s.replace('\n', '\\n').replace('\r', '\\r') ~ "'") }}
+  {{ return(icecore._sql(value, 'string')) }}
 {% endmacro %}

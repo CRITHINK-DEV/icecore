@@ -252,7 +252,7 @@
 
 
 {% macro _icecore_column_ref(column_name) %}
-  {{ return('"' ~ (icecore._icecore_column_name(column_name) | replace('"', '""')) ~ '"') }}
+  {{ return(icecore._sql(icecore._icecore_column_name(column_name), 'name')) }}
 {% endmacro %}
 
 
@@ -272,7 +272,7 @@
   {%- set parts = icecore._icecore_name_parts(relation) -%}
   {%- set sql -%}
     select data_type
-    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.columns
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.columns
     where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
       and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
       and column_name = {{ icecore._icecore_sql_literal(icecore._icecore_column_name(column_name)) }}

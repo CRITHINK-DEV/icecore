@@ -109,13 +109,19 @@
 {#- One DDL statement inside a Snowflake Scripting block that catches every error: 'ok' or
     'icecore-error <code>: <message>', never raises. -#}
 {% macro _icecore_guarded_ddl(statement) %}
+  {{ return(run_query('execute immediate ' ~ icecore._sql(icecore._icecore_guarded_ddl_block(statement), 'string')).columns[0].values()[0]) }}
+{% endmacro %}
+
+
+{#- The block of _icecore_guarded_ddl: the statement travels as a literal built with icecore._sql. -#}
+{% macro _icecore_guarded_ddl_block(statement) %}
   {%- set block -%}
 begin
-  execute immediate {{ icecore._icecore_sql_literal(statement) }};
+  execute immediate {{ icecore._sql(statement, 'string') }};
   return 'ok';
 exception
   when other then return 'icecore-error ' || sqlcode || ': ' || sqlerrm;
 end;
   {%- endset -%}
-  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).columns[0].values()[0]) }}
+  {{ return(block) }}
 {% endmacro %}

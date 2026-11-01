@@ -131,12 +131,12 @@ from scored
 {% endmacro %}
 
 
-{#- A timestamp as a SQL literal (escaped); none means now. -#}
+{#- A timestamp as a SQL literal (icecore._sql, escaped); none means now. Wrapper kept for one release. -#}
 {% macro _sql_timestamp(value) %}
   {% if value is none %}
     {{ return("convert_timezone('UTC', current_timestamp())::timestamp_ntz") }}
   {% endif %}
-  {{ return("'" ~ (value | string).replace('\\', '\\\\').replace("'", "''") ~ "'::timestamp_ntz") }}
+  {{ return(icecore._sql(value, 'string') ~ '::timestamp_ntz') }}
 {% endmacro %}
 
 

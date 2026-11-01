@@ -1,0 +1,20 @@
+{
+  "schema_levels": {
+    "blocked_statements": [
+      "ALTER SCHEMA SET LOG_LEVEL",
+      "ALTER SCHEMA SET TRACE_LEVEL",
+      "ALTER PROCEDURE SET LOG_LEVEL",
+      "ALTER PROCEDURE SET TRACE_LEVEL"
+    ],
+    "database_levels": {
+      "LOG_EVENT_LEVEL": "OFF",
+      "LOG_LEVEL": "INFO",
+      "METRIC_LEVEL": "NONE",
+      "TRACE_LEVEL": "ALWAYS"
+    },
+    "errno": 3001,
+    "measured": false,
+    "reason": "Insufficient privileges to operate on Account 'ACCOUNT'. Your primary role ICECORE_CI or one of your secondary roles must have MODIFY LOG LEVEL granted on ACCOUNT RK01532.",
+    "run_id": "3146494e31634c07aa021c71ee09818a"
+  }
+}

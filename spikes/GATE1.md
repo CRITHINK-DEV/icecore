@@ -1,6 +1,7 @@
 # Gate 1: how icecore writes telemetry
 
 Decision record. Decided on 31 Oct 2026 by the owner, Anouar Zbaida, after spikes S1, S2, S4 and S5. Story cb2e80f0 (S12).
+Follow-ups of the round-2 review of PR #23 (items 1 to 5 of story 43f3a439) are folded in below.
 Spike S3 ran afterwards (31 Oct 2026, `S3.md`); open item 1 records what it settled.
 
 Every number below comes from a spike note or its committed results file, cited as `S<n>.md` or `results/s<n>.json` with
@@ -67,7 +68,7 @@ the documented last resort only.
 - `ICECORE_EMIT_RUN` records: `SCOPE:name = 'icecore'`.
 - Both: `snow.executable.type = PROCEDURE`, `snow.executable.name` starting with `ICECORE_EMIT`, `snow.database.name` and
   `snow.schema.name` of the procedure, and `snow.query.id` = the query id of the `CALL` (S1.md, "Record shape").
-- **Base view filter**, on `RESOURCE_ATTRIBUTES`: `snow.database.name = '<TARGET_DB>'`, `snow.schema.name = 'ICECORE_OBS'` and
+- **Base view filter**, on `RESOURCE_ATTRIBUTES`: `snow.database.name = '<TARGET_DB>'`, `snow.schema.name = '<icecore schema>'` (the `obs_schema` var, default `ICECORE_OBS`) and
   `snow.executable.name` starting with `ICECORE_EMIT`, then the identity above. The database and schema predicates keep
   environments that share one event table apart.
 - Native dbt Projects records are not written by these procedures, so this filter excludes them. The views read them through
@@ -126,12 +127,12 @@ role. Whether procedure records from a database without an event table of its ow
 - The organization has accepted the Anaconda terms for Snowflake's third-party Python packages, which the Python procedure's
   `PACKAGES` need.
 - The target database has `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ON_EVENT` or `ALWAYS`. S1 measured `INFO` and
-  `ALWAYS` (S1.md, header); `ON_EVENT` is unmeasured. `doctor` checks the effective levels. `setup` prints the `ALTER
+  `ALWAYS` (S1.md, header); `ON_EVENT` and levels set below the database are unmeasured (open item 7). `doctor` checks the effective levels. `setup` prints the `ALTER
   DATABASE` statement for an admin when its role cannot set them.
 
 | Role | Needs | Why |
 |---|---|---|
-| The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)`, and the Cortex privileges of spec section 6 for the optional refresh task | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
+| The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)` and a deploy source the package does not create (a stage or a Git repository the role can read); CREATE SNOWFLAKE.ML.ANOMALY_DETECTION on `ICECORE_OBS` and the Cortex privileges of spec section 6 for the optional refresh task; CREATE DYNAMIC TABLE on `ICECORE_OBS` for the optional metrics table; `IMPORTED PRIVILEGES` on the `SNOWFLAKE` database (or a database role) for `attach_cost` | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
 | The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read. No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
 | Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
 
@@ -186,8 +187,30 @@ role. Whether procedure records from a database without an event table of its ow
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later
    `ICECORE_EMIT_RUN` `CALL` can name the invocation span as their parent was not tested.
-7. **`TRACE_LEVEL = ON_EVENT`** on the target database is unmeasured; S1 ran with `ALWAYS`.
+7. **`TRACE_LEVEL = ON_EVENT`, and levels below the database (schema, procedure), are unmeasured.** S1 ran with `ALWAYS` set on
+   the database. `TRACE_LEVEL = 'ALWAYS'` on a database traces every procedure and UDF the client has there, so a narrower setting
+   (the schema that holds the icecore procedures, or the procedures) would be better if it lands records. Attempted on
+   31 Oct 2026 in the sandbox (`tests/spikes/test_s12_schema_levels.py`, `results/gate1_followups.json`): **not measurable**.
+   The CI role cannot run `ALTER SCHEMA ... SET LOG_LEVEL / TRACE_LEVEL` or `ALTER PROCEDURE ... SET LOG_LEVEL / TRACE_LEVEL`,
+   although it owns the schema: error 003001, "must have MODIFY LOG LEVEL / MODIFY TRACE LEVEL granted on ACCOUNT". The
+   bootstrap grants only the `MODIFY SESSION ...` privileges, and a database cannot be created to lower the effective level.
+   Two consequences hold without further measurement: setting levels on any object needs these two account privileges, so on
+   most accounts `set_telemetry_levels` will print its `ALTER DATABASE` statement for an admin rather than run it; and the
+   statement it proposes stays the database one until a narrower one is measured. To measure: an administrator grants
+   `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account to `ICECORE_CI` (sandbox only), then
+   `pytest -m sandbox tests/spikes/test_s12_schema_levels.py` runs six cases (schema OFF, schema INFO with ON_EVENT, ALWAYS and
+   WARN, schema OFF with the procedure at INFO / ALWAYS) against the database's untouched INFO / ALWAYS and records which land.
+   Only if schema or procedure level lands records does `set_telemetry_levels` change.
 8. **The identity of native dbt Projects records** (their own view predicate) is to be defined and measured.
+9. **Reading `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` through an icecore view owned by another role is unmeasured.** No spike read
+   `EVENTS_VIEW` through a view; the readers' table in "What setup creates" assumes `EVENTS_VIEWER` is needed. Granting it gives
+   direct access to all account telemetry, which sits badly with "views are the only interface". The sandbox has one role, so
+   it cannot be measured here. The test to run with a second role: as `ACCOUNTADMIN` create `READER_PROBE` without
+   `EVENTS_VIEWER`; as `ICECORE_CI` (which holds it) create a view `ICECORE_SANDBOX.SPIKES.EV_PROBE_<run_id>` over
+   `SNOWFLAKE.TELEMETRY.EVENTS_VIEW`, `GRANT SELECT` on it and USAGE on the database and schema to `READER_PROBE`; as
+   `READER_PROBE` run `SELECT COUNT(*) FROM` that view. Record whether it returns rows, errors with 2003 or 3001, or returns
+   zero rows; repeat for a view over `SNOWFLAKE.TELEMETRY.EVENTS`. Drop the view and role. Until then the spec states
+   `EVENTS_VIEWER` for readers when the views read the account table.
 
 ## Consequences for the build (sprint 3: UC1 and UC5)
 

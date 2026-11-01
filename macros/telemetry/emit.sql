@@ -18,8 +18,7 @@
   (`exception when other`) and comes back as a status. (b) Emitters only build data and validate their inputs
   (none, wrong types: bad events are skipped, bad attributes coerced), so they do not raise. (c) end_run's loop
   carries on after an emitter that returns an error. The run_query of the guard block itself can still raise (no
-  warehouse, a closed connection) and Jinja cannot catch it. Statement size is not the risk it looked like: the
-  sandbox account ran guard blocks of 40 MB without a refusal (1 Nov 2026), and chunks are measured on the escaped
+  warehouse, a closed connection) and Jinja cannot catch it. Chunks are measured on the escaped
   literal so a statement stays near 512 KB (one record alone is at most four times its 256 KB cap).
   A failing CALL logs one warning per hook (the statuses of all its CALLs summed up), not one per CALL.
 -#}
@@ -72,21 +71,43 @@
 {% endmacro %}
 
 
-{#- Attributes as a dict that tojson can always serialise: not a mapping reads as none, keys become strings, and a
-    value that is not a string, number, boolean, none, mapping or sequence (a date, an object) becomes its text.
-    A bad value never raises. -#}
+{#- Attributes as a dict that tojson can always serialise: not a mapping reads as none, keys become strings, and
+    every value is cleaned by _icecore_safe_value, nested ones too. A bad value never raises. -#}
 {% macro _icecore_safe_attributes(attrs) %}
   {%- set out = {} -%}
   {%- if attrs is mapping -%}
     {%- for key, value in attrs.items() -%}
-      {%- if value is none or value is string or value is number or value is mapping or value is sequence -%}
-        {%- do out.update({key | string: value}) -%}
-      {%- else -%}
-        {%- do out.update({key | string: value | string}) -%}
-      {%- endif -%}
+      {%- do out.update({key | string: icecore._icecore_safe_value(value)}) -%}
     {%- endfor -%}
   {%- endif -%}
   {{ return(out) }}
+{% endmacro %}
+
+
+{#- One value as JSON can carry it. none, strings and booleans stay. A number is re-read from its text, so a Decimal
+    (what run_query returns) becomes an int or a float, and NaN or infinity becomes none. A date or datetime becomes
+    its ISO text. A mapping and a list are cleaned element by element, recursively. Anything else becomes its text. -#}
+{% macro _icecore_safe_value(value) %}
+  {%- if value is none or value is string or value is boolean -%}
+    {{ return(value) }}
+  {%- elif value is number -%}
+    {{ return(icecore._icecore_number(value | string)) }}
+  {%- elif value is mapping -%}
+    {%- set out = {} -%}
+    {%- for key, item in value.items() -%}
+      {%- do out.update({key | string: icecore._icecore_safe_value(item)}) -%}
+    {%- endfor -%}
+    {{ return(out) }}
+  {%- elif value is sequence -%}
+    {%- set out = [] -%}
+    {%- for item in value -%}
+      {%- do out.append(icecore._icecore_safe_value(item)) -%}
+    {%- endfor -%}
+    {{ return(out) }}
+  {%- elif value.isoformat is defined -%}
+    {{ return(value.isoformat()) }}
+  {%- endif -%}
+  {{ return(value | string) }}
 {% endmacro %}
 
 
@@ -140,7 +161,7 @@
 
 {#- Records -> lists of at most max_events records and max_bytes of the literal as it is sent: the escaped JSON
     (backslash and quote doubled, `$` as four characters), not the raw JSON, which under-counts it up to four
-    times. A record larger than max_bytes alone goes in a chunk of its own (the guard refuses it by size).
+    times. A record larger than max_bytes alone goes in a chunk of its own and is sent.
     (S2: a CALL keeps only its last 128 events, and lands none at about 1 MB.) -#}
 {% macro _icecore_emit_chunks(records, max_events=100, max_bytes=524288) %}
   {%- set chunks = [] -%}

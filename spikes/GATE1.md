@@ -90,10 +90,6 @@ the documented last resort only.
 | `ICECORE_EMIT`, bytes per CALL | If the kept events total about **1 MB**, **none** land, with no drop count (15 × 64 KB landed, 16 × 64 KB did not) | S2.md; `proc_batch.15x64`, `proc_batch.16x64` |
 | `ICECORE_EMIT_RUN`, per CALL | **200 spans** and **4 MB** (64 × 64 KB) landed whole; the 4 MB CALL took **153.81 s** of dbt wall time, against 5.30 s for 200 KB | S2.md; `emit_run_batch.200x1`, `emit_run_batch.64x64` |
 
-Statement size is not a limit in practice: on 1 Nov 2026 a plain `SELECT` of 2 MB and a guard block (`EXECUTE IMMEDIATE $$ ... $$`) of
-40 MB were accepted by the sandbox account, although Snowflake documents 1 MB for query text. icecore keeps statements near 512 KB
-(chunks are measured on the escaped literal) and does not refuse by size.
-
 The 4 MB time is client-side: Snowflake reported about 3–4 s of execution (S2.md, exploration). dbt and Jinja spend the rest
 building, escaping and logging the literal.
 

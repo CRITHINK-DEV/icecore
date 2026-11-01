@@ -111,6 +111,16 @@ def test_chunks_measure_the_escaped_literal_not_the_raw_json():
     assert all(c["literal_bytes"] <= 512 * KB for c in chunks), chunks
 
 
+def test_dates_are_iso_and_nested_values_are_cleaned_recursively():
+    a = run_macro("it_safe_attributes", {})
+    assert a["date"] == "2026-11-01" and a["datetime"] == "2026-11-01T10:30:05.123456"
+    assert a["nested"] == {"when": "2026-11-01T10:30:05.123456",
+                           "list": ["2026-11-01", 1.5, {"deep": "2026-11-01T10:30:05.123456"}], "n": 7}
+    assert a["list"] == ["2026-11-01", ["2026-11-01T10:30:05.123456"]]
+    assert a["bool"] is True and a["none"] is None and a["int"] == 3 and a["float"] == 2.5
+    assert isinstance(a["obj"], str)  # anything unknown is its text, never an exception
+
+
 # --- sandbox ---------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -183,6 +193,25 @@ def test_one_emitter_whose_guarded_query_fails_does_not_stop_the_others(sf, obs,
                                "resource_attributes:\"snow.schema.name\"::string = %(schema)s",
                            {"tag": run_id, "schema": obs}, since=since)
     assert [r["record_attributes"]["icecore.kind"] for r in rows] == ["it_marker"]
+
+
+@pytest.mark.sandbox
+def test_run_query_values_decimal_dates_and_nested_land_as_json(sf, obs, run_id):
+    # run_query returns Decimal for numbers: json cannot serialise it, which used to fail the hook.
+    since = snowflake_since(sf)
+    out, _ = run_macro_with_logs("it_emit_query_values", {"run_id": run_id},
+                                 ["--vars", json.dumps(icecore_vars(obs))])
+    assert out["emit"]["statuses"] == ["ok 1"], out
+    assert out["types"][0] == "1.50"
+    rows = wait_for_events(sf, "record_attributes:\"it.run_id\"::string = %(tag)s and "
+                               "resource_attributes:\"snow.schema.name\"::string = %(schema)s",
+                           {"tag": run_id, "schema": obs}, since=since)
+    a = rows[0]["record_attributes"]
+    assert a["it.decimal"] == 1.5 and a["it.int"] == 7
+    assert a["it.date"] == out["types"][1] and a["it.ts"].startswith(out["types"][2][:10])
+    # The nested values were serialisable, so the CALL succeeded. SYSTEM$ADD_EVENT itself keeps only scalar
+    # attributes (it silently drops an object, measured 1 Nov 2026), so the nested ones are absent from the row.
+    assert "it.nested" not in a and "it.list" not in a
 
 
 def epoch_ns(sf) -> int:

@@ -59,3 +59,22 @@
   {% endfor %}
   {% do _it_result(out) %}
 {% endmacro %}
+
+{#- Attributes as emit would write them, for values only Jinja can build: dates and datetimes, nested. -#}
+{% macro it_safe_attributes() %}
+  {% set d = modules.datetime.date(2026, 11, 1) %}
+  {% set dt = modules.datetime.datetime(2026, 11, 1, 10, 30, 5, 123456) %}
+  {% do _it_result(icecore._icecore_safe_attributes({
+      'date': d, 'datetime': dt, 'nested': {'when': dt, 'list': [d, 1.5, {'deep': dt}], 'n': float('nan') if false else 7},
+      'list': [d, [dt]], 'bool': true, 'none': none, 'int': 3, 'float': 2.5, 'obj': modules.datetime.timedelta(days=1)})) %}
+{% endmacro %}
+
+{#- Emits values from run_query as agate returns them: Decimal numbers, a date and a timestamp, and the same nested in a
+    mapping and a list. Needs a connection. -#}
+{% macro it_emit_query_values(run_id) %}
+  {% set row = run_query("select 1.50::number(10,2) as d, 7::number(38,0) as i, current_date as dt, current_timestamp::timestamp_ntz as ts").rows[0] %}
+  {% set out = icecore.emit('it_values', none, {
+      'it.run_id': run_id, 'it.decimal': row[0], 'it.int': row[1], 'it.date': row[2], 'it.ts': row[3],
+      'it.nested': {'dec': row[0], 'when': row[3], 'list': [row[0], row[2]]}, 'it.list': [row[0], {'ts': row[3]}]}) %}
+  {% do _it_result({'emit': out, 'types': [row[0] | string, row[2] | string, row[3] | string]}) %}
+{% endmacro %}

@@ -80,3 +80,15 @@
       {'type': 'log', 'level': 'warn', 'message': weird, 'attrs': {'it.run_id': run_id, 'it.value': weird}},
   ])) %}
 {% endmacro %}
+
+{#- emit_run with values from run_query (Decimal, date, timestamp) and nested values, on a span, a span event and a log. -#}
+{% macro it_emit_run_query_values(run_id, start_ns) %}
+  {% set row = run_query("select 1.50::number(10,2) as d, current_date as dt, current_timestamp::timestamp_ntz as ts").rows[0] %}
+  {% set attrs = {'it.run_id': run_id, 'it.decimal': row[0], 'it.date': row[1], 'it.ts': row[2],
+                  'it.nested': {'dec': row[0], 'when': row[2]}, 'it.list': [row[0], row[1]]} %}
+  {% set out = icecore.emit_run([
+      {'name': 'icecore.node', 'start_ns': start_ns - 3000000000, 'end_ns': start_ns - 2000000000, 'attrs': attrs,
+       'events': [{'name': 'icecore.query', 'ts_ns': start_ns - 3000000000, 'attrs': attrs}]},
+      {'type': 'log', 'level': 'info', 'message': 'values', 'attrs': attrs}]) %}
+  {% do _it_result({'emit_run': out, 'date': row[1] | string}) %}
+{% endmacro %}

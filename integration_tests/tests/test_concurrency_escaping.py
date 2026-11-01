@@ -187,6 +187,36 @@ def test_a_failing_models_error_message_lands_identical(sf, obs, run_id):
         sf.cursor().execute(f'drop table if exists "{DATABASE}"."{os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES").upper()}"."HOOKS_MSG_{run_id.upper()}"')
 
 
+@pytest.mark.sandbox
+def test_run_query_decimals_dates_and_nested_values_land_through_both_procedures(sf, obs, run_id):
+    since = snowflake_since(sf)
+    out, _ = run_macro_with_logs("it_emit_query_values", {"run_id": run_id}, with_vars({"obs_schema": obs}))
+    assert out["emit"]["statuses"] == ["ok 1"], out
+    now = int(sf.cursor().execute("select date_part(epoch_nanosecond, current_timestamp())").fetchone()[0])
+    out, _ = run_macro_with_logs("it_emit_run_query_values", {"run_id": run_id + "r", "start_ns": now},
+                                 with_vars({"obs_schema": obs}))
+    assert out["emit_run"]["statuses"] == ["ok spans=1 logs=1"], out
+    where, params = tagged(obs, run_id)
+    emit_row = wait_for_events(sf, where, params, since=since)[0]["record_attributes"]
+    where, params = tagged(obs, run_id + "r")
+    rows = wait_for_events(sf, where, params, min_rows=3, since=since, settle_s=5)
+    assert len(rows) == 3
+    # scalars: the Decimal is a number, the date and the timestamp are ISO text
+    for a in [emit_row] + [r["record_attributes"] for r in rows]:
+        assert a["it.decimal"] == 1.5
+    assert emit_row["it.date"]
+    # nested values were serialisable, so nothing failed; what the procedure keeps of them is measured here
+    kept = {r["record_type"]: {k: v for k, v in r["record_attributes"].items() if k in ("it.nested", "it.list")}
+            for r in rows}
+    assert "it.nested" not in emit_row and "it.list" not in emit_row  # SYSTEM$ADD_EVENT drops objects and lists
+    # Finding (1 Nov 2026): through ICECORE_EMIT_RUN a LOG keeps a nested mapping and list (Decimal as a number, dates
+    # as ISO text); a SPAN and a SPAN_EVENT silently drop them, as ICECORE_EMIT does.
+    log = kept["LOG"]
+    assert log["it.list"][0] == 1.5 and log["it.nested"]["dec"] == 1.5
+    assert log["it.nested"]["when"][:4].isdigit() and "T" in log["it.nested"]["when"]
+    assert kept["SPAN"] == {} and kept["SPAN_EVENT"] == {}
+
+
 # --- payload cap and chunk size ------------------------------------------------------------------------
 
 def cap_overhead(run_id: str, cap_kb: int) -> int:

@@ -7,8 +7,7 @@ macros:
       native or cortex; default none) next to the primary one and returns its fields `engine`, `expected`,
       `lower`, `upper`, `score`, `is_anomaly` and `fallback_reason`. The primary result is only read, never
       changed: is_anomaly always comes from the configured engine. Returns none, running no query, when shadow
-      is none, when the shadow engine is the engine that scored, or when Cortex is not available (then no
-      Cortex call is made and one warning is logged per call; availability is `detect_capabilities`). A Cortex
+      is none, when the shadow engine is the engine that scored, or when Cortex is not available (with `capabilities` saying so no Cortex call is made, otherwise the first guarded call fails and `detect_capabilities` confirms; one warning is logged per call). A Cortex
       shadow that cannot score (no or stale model, history under 14 days, error) returns engine cortex with
       null bands and the reason, never a native result. At parse time it returns none.
     arguments:

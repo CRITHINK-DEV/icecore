@@ -9,7 +9,10 @@
     {%- set shadow = icecore.shadow_score(history_sql, value, result, model=model, series=series) -%}
     {%- do icecore.emit_shadow(relation, 'row_count', value, shadow, result) -%}
 
-  Costs nothing when shadow is off or Cortex is off: no query runs.
+  Costs nothing when shadow is off. When Cortex is off and the caller passes `capabilities` (a detect_capabilities result),
+  no Cortex query runs; without it the first guarded Cortex call fails and detect_capabilities is run once to confirm, then
+  one warning is logged and nothing is emitted. The dispatcher's rules apply to the shadow too (no model: no query; history
+  count; model state; detect), so a working Cortex shadow costs 3 queries.
 -#}
 
 
@@ -29,15 +32,11 @@
     {%- set scored = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at) -%}
     {{ return(icecore._shadow_fields(scored, none)) }}
   {%- endif -%}
-  {%- set unavailable = icecore._cortex_unavailable_reason(capabilities) -%}
-  {%- if unavailable is not none -%}
-    {% do log('icecore: warning: shadow_engine is cortex but Cortex is not available (' ~ unavailable ~ '): no shadow scoring', info=True) %}
+  {%- set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities) -%}
+  {%- if attempt.get('fallback_reason') == 'cortex_unavailable' -%}
+    {% do log('icecore: warning: shadow_engine is cortex but Cortex is not available (' ~ attempt.get('detail') ~ '): no shadow scoring', info=True) %}
     {{ return(none) }}
   {%- endif -%}
-  {%- if icecore._history_days(series_sql) < 14 -%}
-    {{ return(icecore._shadow_fields(none, 'history_too_short')) }}
-  {%- endif -%}
-  {%- set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at) -%}
   {{ return(icecore._shadow_fields(attempt.get('result'), attempt.get('fallback_reason'))) }}
 {% endmacro %}
 

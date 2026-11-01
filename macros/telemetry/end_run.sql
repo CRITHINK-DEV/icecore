@@ -33,8 +33,14 @@
 {% endmacro %}
 
 
-{#- The batch end_run sends for these results: the spans, the emitters' items, then the invocation-end LOG. -#}
-{% macro _icecore_end_run_items(results) %}
+{#- The batch end_run sends for these results: the spans, the emitters' items, then the invocation-end LOG.
+    Isolation of the emitters: an emitter runs only when its var is on and its entry is usable (a mapping with a
+    callable macro); one that returns `{'error': <text>}` (a failed guarded query) or has a broken entry is
+    skipped, and the loop goes on with the next. One warning per hook sums them up. A Jinja exception inside an
+    emitter cannot be caught and would still stop the hook: emitters must only build data and validate their
+    inputs. extra_emitters are run after the package's own (tests; same entry shape). -#}
+{% macro _icecore_end_run_items(results, extra_emitters=none) %}
+  {%- set results = results if (results is iterable and results is not string and results is not mapping) else [] -%}
   {%- set results = icecore._icecore_node_results(results) -%}
   {%- set timing = icecore._icecore_invocation_timing() -%}
   {%- set batch = {'items': [icecore._icecore_invocation_span(timing)], 'node_spans': {}, 'timing': timing} -%}
@@ -45,11 +51,20 @@
       {%- do batch['node_spans'].update({span['attrs'].get('dbt.node.unique_id'): span}) -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- for emitter in icecore._icecore_end_run_emitters() -%}
-    {%- if icecore._icecore_flag(emitter['var'], emitter['default']) -%}
-      {%- do emitter['macro'](results, batch) -%}
+  {%- set skipped = [] -%}
+  {%- for emitter in icecore._icecore_end_run_emitters() + (extra_emitters or []) -%}
+    {%- if emitter is not mapping or emitter.get('macro') is not callable -%}
+      {%- do skipped.append((emitter.get('name') if emitter is mapping else 'entry') ~ ': not a usable emitter entry') -%}
+    {%- elif icecore._icecore_flag(emitter.get('var'), emitter.get('default')) -%}
+      {%- set outcome = emitter['macro'](results, batch) -%}
+      {%- if outcome is mapping and outcome.get('error') -%}
+        {%- do skipped.append((emitter.get('name') or 'emitter') ~ ': ' ~ outcome.get('error')) -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- if skipped -%}
+    {%- do log('icecore: warning: end_run emitters reported errors, the others still ran (' ~ (skipped | join('; ')) ~ ')', info=True) -%}
+  {%- endif -%}
   {%- do batch['items'].append(icecore._icecore_run_end_log(results, timing)) -%}
   {{ return(batch['items']) }}
 {% endmacro %}
@@ -76,10 +91,11 @@
 {% endmacro %}
 
 
-{#- The results of nodes: hook operations (unique_id operation.*) are left out, whatever the dbt version passes. -#}
+{#- The results of nodes: hook operations (unique_id operation.*) are left out, whatever the dbt version passes, and
+    so is anything that is not a result (none, text, a number). -#}
 {% macro _icecore_node_results(results) %}
   {%- set out = [] -%}
-  {%- for result in results or [] -%}
+  {%- for result in results or [] if result is not none and result is not string and result is not number -%}
     {%- set unique_id = icecore._icecore_get(result, 'unique_id') or icecore._icecore_get(icecore._icecore_get(result, 'node'), 'unique_id') -%}
     {%- if not (unique_id | string).startswith('operation.') -%}
       {%- do out.append(result) -%}

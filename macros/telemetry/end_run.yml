@@ -20,7 +20,12 @@ macros:
       warn or info to match. Span times are dbt's, never ingestion time, and node spans are not nested under
       the invocation span (nesting across CALLs is unmeasured, GATE1.md open item 6).
       Every record carries `dbt.invocation_id`; each CALL is its own trace, so a run is grouped by that
-      attribute. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
+      attribute. Failure isolation: an end-of-run emitter that returns an error (a mapping with an `error` key,
+      as one whose guarded query failed does) or whose list entry is unusable is skipped, the next emitter still
+      runs, and one warning (`icecore: warning: end_run emitters reported errors ...`) names them. A failing
+      CALL logs one warning per hook. dbt's Jinja has no try and except, so an exception raised inside an
+      emitter's own Jinja would still stop the hook: emitters only build data and validate their inputs, and
+      run every query inside a guard. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
       `var('icecore').telemetry` is false.
     arguments:
       - name: results

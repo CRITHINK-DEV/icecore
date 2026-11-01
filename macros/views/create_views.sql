@@ -34,6 +34,8 @@
     {'name': 'LINEAGE', 'sql': icecore.lineage_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'LINEAGE_LATEST', 'sql': icecore.lineage_latest_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'CAPABILITIES', 'sql': icecore.capabilities_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'INVOCATIONS', 'sql': icecore.invocations_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'NODE_EXECUTIONS', 'sql': icecore.node_executions_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'ALERTS_FEED', 'sql': icecore.alerts_feed_view_sql(event_table=event_table, obs_schema=obs)},
   ]) }}
 {% endmacro %}

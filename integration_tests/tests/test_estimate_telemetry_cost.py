@@ -70,7 +70,9 @@ def test_the_estimate_states_its_sources():
 
 
 def test_samples_and_query_events_follow_their_arguments():
-    out, _ = estimate(nodes=10, runs_per_day=1, query_events_per_node=3, failing_tests_per_run=2, lineage=False)
+    vars_ = ["--vars", json.dumps({"icecore": {"lineage": False}})]
+    out, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {
+        "nodes": 10, "runs_per_day": 1, "query_events_per_node": 3, "failing_tests_per_run": 2}}, vars_)
     r = out["records_per_run"]
     assert (r["query_events"], r["samples"], r["lineage"]) == (30, 2, 0)
 

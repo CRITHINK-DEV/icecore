@@ -58,7 +58,7 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
   and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(database)) }}
   and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(obs_schema)) }}
   and (RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
-       or RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_ACK(%')
+       or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK('))
   and (
     SCOPE:name::string = 'icecore'
     or (RECORD_TYPE = 'SPAN_EVENT' and RECORD:name::string like 'icecore.%')

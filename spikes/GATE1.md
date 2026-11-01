@@ -133,7 +133,7 @@ role. Whether procedure records from a database without an event table of its ow
 |---|---|---|
 | The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)`, and the Cortex privileges of spec section 6 for the optional refresh task | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
 | The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read. No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
-| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
+| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app, or any role that acknowledges incidents, needs USAGE on the database, on `ICECORE_OBS` and on `ICECORE_ACK` (not on the emitters); the acknowledger is recorded from its own `CURRENT_USER()`, and the separation holds only when the role that runs `setup` is not the role that runs dbt | Views are the public interface |
 
 - A missing procedure or grant does not fail a run (the guard), but the telemetry is lost. `icecore.doctor` therefore makes a
   test `CALL` of both procedures and checks the grants (S1.md, "Consequences for building option B").
@@ -180,8 +180,14 @@ role. Whether procedure records from a database without an event table of its ow
    design expects them in the account table. On that table, only LOG records from anonymous blocks were checked, by the lead
    with ACCOUNTADMIN. The query's `value::string` predicate dropped every SPAN and SPAN_EVENT row, so SPAN and SPAN_EVENT
    routing there is unmeasured too (S1.md, "Routing").
-3. **Rollback through the persisted Python procedure is unmeasured.** It was measured for `ICECORE_EMIT` (both records kept,
-   `proc.rollback`) and for the temporary procedures (S1.md, open point 3).
+3. **Closed (1 Nov 2026, story cd57206a, `test_records_survive_a_rollback_through_both_procedures` in
+   `integration_tests/tests/test_failure_isolation.py`).** Inside one explicit transaction (`BEGIN`; an `INSERT` into a
+   control table; one `CALL` of `ICECORE_EMIT` with 1 event; one `CALL` of the persisted Python `ICECORE_EMIT_RUN` with 1 span
+   and 1 LOG; `ROLLBACK`), the control table went from 1 row to 0, so the transaction was rolled back, and **all 3 records
+   landed**: 1 SPAN_EVENT from `ICECORE_EMIT` (status `ok 1`) and 1 SPAN and 1 LOG from `ICECORE_EMIT_RUN` (status `ok spans=1
+   logs=1`). Rollback does not lose icecore records through either procedure (`ICECORE_EMIT` was also measured in S1,
+   `proc.rollback`). The same test gives the story's acceptance criterion: a record emitted in a rolled-back transaction is
+   present when the event table is read.
 4. **The temporary-table privilege for `edr report` is unmeasured** (S4.md, consequence 3).
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later

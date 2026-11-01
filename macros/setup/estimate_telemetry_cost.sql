@@ -4,8 +4,10 @@
 
     Reads only the dbt graph; runs no query. Rows per run, from the write-path design (spec section 4;
     spikes/GATE1.md, "Consequences for the build"):
-      - one start record (ICECORE_EMIT, on-run-start) and one end LOG (ICECORE_EMIT_RUN, on-run-end);
-      - one span per node (models, seeds, snapshots, tests) and query_events_per_node query events per node;
+      - one start record (ICECORE_EMIT, on-run-start), the invocation span and one end LOG (ICECORE_EMIT_RUN, on-run-end);
+      - one span per node (models, seeds, snapshots, tests), one node-result LOG per node (var node_results) and
+        query_events_per_node query events per node (var query_events); these counts come from
+        _icecore_end_run_row_counts, next to end_run's emitter list, and follow the vars;
       - lineage: one record per run, one more per payload cap (64 KB by default) of edges, sized from the graph;
       - samples: one LOG per failing test (failing_tests_per_run; off by default for warn tests);
       - measured rows per CALL: one procedure SPAN per CALL (spikes/S3.md, finding 4) and about 3 untagged Snowpark
@@ -33,9 +35,14 @@
   {%- set rate = icecore._icecore_telemetry_ingest_rate() -%}
 
   {%- set lineage_records = ([1, ((counted['edge_bytes'] / cap) | round(0, 'ceil') | int)] | max) if lineage else 0 -%}
-  {%- set r = {'start': 1, 'end': 1, 'node_spans': n, 'query_events': n * (query_events_per_node | int),
+  {#- what end_run writes per node, from the macro that sits next to its emitter list, honouring the vars -#}
+  {%- set rows = icecore._icecore_end_run_row_counts(n, query_events_per_node) -%}
+  {%- set r = {'start': 1, 'invocation_span': rows['fixed']['invocation_span'], 'end': rows['fixed']['end'],
+               'node_spans': rows['fixed']['node_spans'], 'node_results': rows['emitters'].get('node_results', 0),
+               'query_events': rows['emitters'].get('query_events', 0),
                'lineage': lineage_records, 'samples': failing_tests_per_run | int} -%}
-  {%- set end_run_records = r['end'] + r['node_spans'] + r['query_events'] + r['lineage'] + r['samples'] -%}
+  {%- set end_run_records = r['end'] + r['invocation_span'] + r['node_spans'] + r['node_results'] + r['query_events']
+      + r['lineage'] + r['samples'] -%}
   {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 524288) | round(0, 'ceil') | int)] | max -%}
   {%- do r.update({'call_overhead': 1 + emit_run_calls * 4}) -%}
   {%- set rows_per_run = r.values() | sum -%}
@@ -45,7 +52,8 @@
                  'emit_run_calls': emit_run_calls, 'credits_per_gb': rate['credits_per_gb'],
                  'rows_per_month': none, 'gb_per_month': none, 'credits_per_month': none} -%}
   {%- set per_run = '{:,}'.format(rows_per_run) ~ ' rows per run for ' ~ '{:,}'.format(n) ~ ' nodes (' ~ r['start'] ~ ' start, '
-      ~ r['end'] ~ ' end, ' ~ r['node_spans'] ~ ' node spans, ' ~ r['query_events'] ~ ' query events, ' ~ r['lineage']
+      ~ r['invocation_span'] ~ ' invocation span, ' ~ r['end'] ~ ' end, ' ~ r['node_spans'] ~ ' node spans, '
+      ~ r['node_results'] ~ ' node results, ' ~ r['query_events'] ~ ' query events, ' ~ r['lineage']
       ~ ' lineage, ' ~ r['samples'] ~ ' samples, ' ~ r['call_overhead'] ~ ' rows written by the procedures themselves over '
       ~ (1 + emit_run_calls) ~ ' CALLs)' -%}
 

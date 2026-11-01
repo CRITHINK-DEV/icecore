@@ -30,24 +30,26 @@ def message(logs) -> str:
 
 def test_100_nodes_24_runs_prints_a_monthly_record_count_and_a_credit_range():
     out, logs = estimate(nodes=100, runs_per_day=24)
-    # 1 start + 1 end + 100 node spans + 100 query events + 1 lineage = 203 icecore records,
-    # + 1 SPAN for the start CALL + (1 SPAN + 3 Snowpark LOG rows) for the one ICECORE_EMIT_RUN CALL = 208 rows
-    assert out["records_per_run"] == {"start": 1, "end": 1, "node_spans": 100, "query_events": 100, "lineage": 1,
-                                      "samples": 0, "call_overhead": 5}
-    assert out["rows_per_run"] == 208
-    assert out["rows_per_month"] == 208 * 24 * 30 == 149_760
+    # 1 start + 1 invocation span + 1 end + 100 node spans + 100 node results + 100 query events + 1 lineage = 304
+    # icecore records, + 1 SPAN for the start CALL + (1 SPAN + 3 Snowpark LOG rows) for the one ICECORE_EMIT_RUN
+    # CALL = 309 rows
+    assert out["records_per_run"] == {"start": 1, "invocation_span": 1, "end": 1, "node_spans": 100,
+                                      "node_results": 100, "query_events": 100, "lineage": 1, "samples": 0,
+                                      "call_overhead": 5}
+    assert out["rows_per_run"] == 309
+    assert out["rows_per_month"] == 309 * 24 * 30 == 222_480
     low, high = out["credits_per_month"]
-    assert low == pytest.approx(149_760 * 1500 / 1e9 * 0.0212)
-    assert high == pytest.approx(149_760 * 64 * 1024 / 1e9 * 0.0212)
+    assert low == pytest.approx(222_480 * 1500 / 1e9 * 0.0212)
+    assert high == pytest.approx(222_480 * 64 * 1024 / 1e9 * 0.0212)
     text = message(logs)
-    assert "149,760 rows per month" in text
+    assert "222,480 rows per month" in text
     assert f"{low:.4f} to {high:.4f} credits per month" in text
 
 
 def test_missing_runs_per_day_is_asked_for_and_does_not_fail():
     out, logs = estimate(nodes=100)
     assert out["status"] == "needs_runs_per_day"
-    assert out["rows_per_run"] == 208 and out["rows_per_month"] is None and out["credits_per_month"] is None
+    assert out["rows_per_run"] == 309 and out["rows_per_month"] is None and out["credits_per_month"] is None
     assert "runs_per_day" in message(logs) and "--args '{runs_per_day: <n>}'" in message(logs)
 
 
@@ -68,16 +70,18 @@ def test_the_estimate_states_its_sources():
 
 
 def test_samples_and_query_events_follow_their_arguments():
-    out, _ = estimate(nodes=10, runs_per_day=1, query_events_per_node=3, failing_tests_per_run=2, lineage=False)
+    vars_ = ["--vars", json.dumps({"icecore": {"lineage": False}})]
+    out, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {
+        "nodes": 10, "runs_per_day": 1, "query_events_per_node": 3, "failing_tests_per_run": 2}}, vars_)
     r = out["records_per_run"]
     assert (r["query_events"], r["samples"], r["lineage"]) == (30, 2, 0)
 
 
 def test_large_runs_need_more_emit_run_calls():
     out, _ = estimate(nodes=1000, runs_per_day=1)
-    # 1 + 1000 + 1000 + 1 + lineage end-run records at 1500 bytes = about 3 MB: 6 CALLs of 512 KB
-    assert out["emit_run_calls"] == 6
-    assert out["records_per_run"]["call_overhead"] == 1 + 6 * 4
+    # 1 + 1 + 1000 + 1000 + 1000 + 1 lineage = 3003 end-run records at 1500 bytes = about 4.5 MB: 9 CALLs of 512 KB
+    assert out["emit_run_calls"] == 9
+    assert out["records_per_run"]["call_overhead"] == 1 + 9 * 4
 
 
 def test_nodes_default_to_the_graph():
@@ -90,7 +94,7 @@ def test_nodes_default_to_the_graph():
 
 def test_setup_runs_the_estimate_after_recording_capabilities():
     names = [s["name"] for s in call_macro("_icecore_setup_steps") if s["ready"]]
-    assert names[-2:] == ["record_capabilities", "estimate_telemetry_cost"]
+    assert names.index("record_capabilities") + 1 == names.index("estimate_telemetry_cost")
 
 
 # --- sandbox --------------------------------------------------------------------------------------

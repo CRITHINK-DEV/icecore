@@ -6,9 +6,12 @@ macros:
       Estimates the rows icecore writes to the event table and the ingestion credits, before telemetry is turned on.
       `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`; `setup` runs it too. Reads
       only the dbt graph and runs no query. Rows per run follow the write-path design (spec section 4;
-      spikes/GATE1.md, "Consequences for the build"): one start record, one end LOG, one span per node (models,
-      seeds, snapshots and tests), `query_events_per_node` query events per node, one lineage record per payload cap
-      of edges (sized from the graph), one sample per failing test, plus the rows the procedures write themselves:
+      spikes/GATE1.md, "Consequences for the build"): one start record, the invocation span, one end LOG, one span per node (models,
+      seeds, snapshots and tests), one node-result LOG per node (only when the `node_results` var is on),
+      `query_events_per_node` query events per node (only when the `query_events` var is on; both counts come from the
+      macro next to end_run's emitter list, so a new emitter cannot be left out unnoticed), the lineage records (only when
+      the `lineage` var is on: the graph's edges split under the payload cap, as `emit_lineage` splits them), one sample per
+      failing test, plus the rows the procedures write themselves:
       one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL
       (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag,
       not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5:
@@ -30,9 +33,6 @@ macros:
       - name: query_events_per_node
         type: integer
         description: Queries per node, one query event each. Default 1.
-      - name: lineage
-        type: boolean
-        description: Default true. Counts the lineage records sent every run.
       - name: failing_tests_per_run
         type: integer
         description: Failing tests per run that send a sample. Default 0 (samples are off for warn tests by default).

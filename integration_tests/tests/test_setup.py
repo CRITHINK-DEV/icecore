@@ -2,7 +2,7 @@
 
 setup runs one ordered list of steps: detect_capabilities, CREATE SCHEMA IF NOT EXISTS for the obs schema,
 create_emit_procedures, set_telemetry_levels, then records the capabilities through the new ICECORE_EMIT. The
-steps that do not exist yet (create_views, create_alerts, create_tasks, deploy_app, compat views) keep their place
+steps that do not exist yet (create_alerts, create_tasks, deploy_app, compat views) keep their place
 in the list and are reported as planned. The `schema` argument overrides the obs_schema var.
 
 doctor re-detects, checks the database's levels (LOG_LEVEL at least INFO, TRACE_LEVEL ON_EVENT or ALWAYS), makes
@@ -57,7 +57,7 @@ def test_setup_steps_keep_one_ordered_list():
         "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
-        "estimate_telemetry_cost"]
+        "estimate_telemetry_cost", "create_views"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():
@@ -170,6 +170,11 @@ def _state(sf, schema):
         state[proc + "_ddl"] = cur.execute(f"select get_ddl('procedure', '{qualified}')").fetchone()
         grants = cur.execute(f"show grants on procedure {qualified}").fetchall()
         state[proc + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
+    for view in sorted(r["name"] for r in cur.execute(f'show views in schema "{DATABASE}"."{schema}"').fetchall()):
+        qualified = f'"{DATABASE}"."{schema}"."{view}"'
+        state[view + "_ddl"] = cur.execute(f"select get_ddl('view', '{qualified}')").fetchone()
+        grants = cur.execute(f"show grants on view {qualified}").fetchall()
+        state[view + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
     return state
 
 
@@ -186,11 +191,14 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
 
     # the user-facing command, as the README gives it
     _, logs = run_macro_with_logs("icecore.setup", {"schema": schema, "compat": "none", "app": False})
-    assert any("planned" in line and "create_views" in line for line in logs), logs
+    assert any("create_views" in line and "METRICS" in line and "planned" not in line for line in logs), logs
     # a grant made after setup must survive the next setup (CREATE OR REPLACE ... COPY GRANTS)
     sf.cursor().execute(f'grant usage on procedure "{DATABASE}"."{schema}"."ICECORE_EMIT"(ARRAY) to role PUBLIC')
+    sf.cursor().execute(f'grant select on view "{DATABASE}"."{schema}"."METRICS" to role PUBLIC')  # COPY GRANTS keeps it
     before = _state(sf, schema)
     assert before["schema_created_on"] and ("USAGE", "ROLE", "PUBLIC") in before["ICECORE_EMIT_grants"]
+    assert ("SELECT", "ROLE", "PUBLIC") in before["METRICS_grants"]
+    assert {"METRICS_ddl", "SCHEMA_CHANGES_ddl"} <= set(before)  # the views exist, with their DDL compared too
 
     first, _ = call("setup", {"schema": schema})
     second, _ = call("setup", {"schema": schema})
@@ -202,7 +210,7 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
         assert out["levels"]["executed"] == [] and out["levels"]["levels_ok"] is True, out["levels"]
         assert [s["name"] for s in out["steps"] if s["status"] == "done"] == [
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-            "record_capabilities", "estimate_telemetry_cost"], out["steps"]
+            "record_capabilities", "estimate_telemetry_cost", "create_views"], out["steps"]
         assert out["recorded"] == "ok 1"
     assert first["levels"] == second["levels"]
     assert first["steps"] == second["steps"]

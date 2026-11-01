@@ -1,0 +1,24 @@
+version: 2
+
+# UC1 hook fixtures. Every relation is a view (hooks_msg is a table) named with var('run_id') in the target schema and dropped by the
+# test. Tagged icecore_hooks, which the default selector leaves out (selectors.yml), so a plain dbt build in
+# another suite never touches them. hooks_c has 4 rows and accepts only id 1: its test warns with 3 failures.
+
+models:
+  - name: hooks_a
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_b
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_c
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      - name: id
+        data_tests:
+          - accepted_values:
+              values: [1]
+              quote: false
+              config: {severity: warn, tags: ["icecore_hooks"]}
+  - name: hooks_msg
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_fail
+    config: {tags: ["icecore_hooks"]}

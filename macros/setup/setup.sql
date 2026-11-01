@@ -9,7 +9,8 @@
       4. set_telemetry_levels     the database's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
-      7. create_views, create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
+      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -62,7 +63,7 @@
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
-      {'name': 'create_views', 'ready': false, 'detail': 'the core views over base_events'},
+      {'name': 'create_views', 'ready': true, 'detail': 'the core views over base_events'},
   ] -%}
   {%- if (compat or 'none') | string | lower != 'none' -%}
     {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
@@ -111,6 +112,8 @@
           ~ '%.4f' | format(e['credits_per_month'][1]) ~ ' credits per month') }}
     {%- endif -%}
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
+  {%- elif name == 'create_views' -%}
+    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

@@ -1,0 +1,33 @@
+version: 2
+
+macros:
+  - name: end_run
+    description: >
+      The on-run-end hook of run telemetry. Add it to dbt_project.yml as the on-run-end hook calling
+      icecore.end_run with dbt's `results` (README, "Try it in 60 seconds"). One orchestrator: it builds the
+      run's batch and sends it with `icecore.emit_run` to ICECORE_EMIT_RUN, in as many guarded CALLs of at most
+      512 KB as needed. The batch holds, in order, the invocation span `icecore.invocation` (from
+      `run_started_at` to the hook, with `dbt.invocation.started_at`, `dbt.invocation.completed_at` and
+      `dbt.invocation.duration_s`); one span `icecore.node` per node that has timing, with the node's keys and
+      its start and end taken from dbt's `result.timing` (first start, last end), also written as
+      `dbt.node.started_at`, `dbt.node.completed_at`, `dbt.node.duration_s` and `dbt.timing.<phase>.started_at`
+      / `completed_at`; the items of each end-of-run emitter whose var is on (`node_results`:
+      `emit_node_results`, `query_events`: `emit_query_events` and `lineage`: `emit_lineage`, all on by default;
+      samples, cost and root cause are to be added to the same list); then the invocation-end LOG record (`icecore.kind = run_end`), which carries `dbt.invocation.status` (`error` when
+      a node errored or failed, else `warn` when one warned, else `success`), `dbt.invocation.nodes_total`,
+      `nodes_success`, `nodes_failed` (error, fail, runtime error), `nodes_warned` (warn, partial success) and
+      `nodes_skipped`, plus `dbt.version`, the engine settings and the invocation's times; its level is error,
+      warn or info to match. Span times are dbt's, never ingestion time, and node spans are not nested under
+      the invocation span (nesting across CALLs is unmeasured, GATE1.md open item 6).
+      Every record carries `dbt.invocation_id`; each CALL is its own trace, so a run is grouped by that
+      attribute. Failure isolation: an end-of-run emitter that returns an error (a mapping with an `error` key,
+      as one whose guarded query failed does) or whose list entry is unusable is skipped, the next emitter still
+      runs, and one warning (`icecore: warning: end_run emitters reported errors ...`) names them. A failing
+      CALL logs one warning per hook. dbt's Jinja has no try and except, so an exception raised inside an
+      emitter's own Jinja would still stop the hook: emitters only build data and validate their inputs, and
+      run every query inside a guard. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
+      `var('icecore').telemetry` is false.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results` (run results with their nodes). Default none, read as no nodes.

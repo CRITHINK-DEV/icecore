@@ -1,0 +1,15 @@
+version: 2
+
+macros:
+  - name: create_views
+    description: >
+      Create the icecore views in `<target.database>.<schema>`, the step `create_views` of `setup`. One list,
+      `_icecore_views`, holds every view (`METRICS`, `SCHEMA_CHANGES`, `TEST_RESULTS`, `LINEAGE`, `LINEAGE_LATEST`, `CAPABILITIES`,
+      `INVOCATIONS`, `NODE_EXECUTIONS`); a later story appends its view there.
+      Each is `CREATE OR REPLACE VIEW ... COPY GRANTS` over `icecore.base_events()`, so a second run keeps the grants
+      made on the views. The event table is resolved once. No tables are created. The schema must exist and the
+      role needs CREATE VIEW on it. Returns the qualified view names (empty at parse time).
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema to create them in, which is also the schema the base filter reads. Default the `obs_schema` var.

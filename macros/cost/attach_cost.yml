@@ -16,7 +16,7 @@ macros:
       them on a later run. The attribution query runs inside a Snowflake Scripting block that catches every error,
       so a missing privilege (grant `SNOWFLAKE.USAGE_VIEWER` to the role, or IMPORTED PRIVILEGES on the SNOWFLAKE
       database) or an empty result is a warning, never a failed run. With var `cost` false nothing is read or
-      written. Settling: Snowflake never writes attribution rows for many statements (views, plain CREATE TABLE, about half of short SELECTs, measured in the sandbox), so after var `cost_settle_hours` (default 24) a node whose queries have no attribution row is closed at the credits that were attributed (0 when none) with `dbt.cost.settled = no_attribution`, and gets no metric. A node always gets its cost record once its queries are attributed or settled. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
+      written. Settling: Snowflake never writes attribution rows for many statements (views, plain table creation, about half of short SELECTs, measured in the sandbox), so after var `cost_settle_hours` (default 24) a node whose queries have no attribution row is closed at the credits that were attributed (0 when none) with `dbt.cost.settled = no_attribution`, and gets no metric. A node always gets its cost record once its queries are attributed or settled. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
     arguments:
       - name: results
         type: list

@@ -167,7 +167,7 @@
 
 
 {#- var icecore.cost_settle_hours (default 24): after this age a node whose queries have no attribution row is settled
-    (see _icecore_node_costs). Snowflake never writes attribution rows for many statements (views, plain CREATE TABLE,
+    (see _icecore_node_costs). Snowflake never writes attribution rows for many statements (views, plain table creation,
     about half of short SELECTs, measured in the sandbox), so waiting longer would leave those nodes without a cost
     forever and fill the backfill's pending set. A value of 0 or less settles at once. -#}
 {% macro _icecore_cost_settle_hours() %}

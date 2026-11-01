@@ -14,9 +14,10 @@
   {%- set sql -%}
 EXECUTE IMMEDIATE $$
 DECLARE
+  k STRING DEFAULT (PARSE_JSON({{ icecore._icecore_block_literal(tojson(key)) }}))::STRING;
   r STRING;
 BEGIN
-  CALL {{ icecore._icecore_procedure('ICECORE_ACK') }}('{{ key }}') INTO :r;
+  CALL {{ icecore._icecore_procedure('ICECORE_ACK') }}(:k) INTO :r;
   RETURN r;
 EXCEPTION
   WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;

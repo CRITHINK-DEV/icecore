@@ -26,3 +26,7 @@
 {% macro it_cost_settled(age_hours) %}
   {% do _it_result({'settled': icecore._icecore_cost_settled(age_hours), 'hours': icecore._icecore_cost_settle_hours()}) %}
 {% endmacro %}
+
+{% macro it_settled_at_run_end(ids_by_node, found) %}
+  {% do _it_result(icecore._icecore_settled_at_run_end(ids_by_node, found)) %}
+{% endmacro %}

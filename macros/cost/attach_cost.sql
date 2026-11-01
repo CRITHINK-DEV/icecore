@@ -33,10 +33,7 @@
   {%- endfor -%}
   {%- if ids_by_node -%}
     {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node)) -%}
-    {%- set settled = {} -%}
-    {%- if icecore._icecore_cost_settled(0) -%}
-      {%- for unique_id in ids_by_node -%}{%- do settled.update({unique_id: true}) -%}{%- endfor -%}
-    {%- endif -%}
+    {%- set settled = icecore._icecore_settled_at_run_end(ids_by_node, found) -%}
     {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled) -%}
     {%- set events = [] -%}
     {%- for unique_id, cost in costs.items() -%}
@@ -173,6 +170,17 @@
 {% macro _icecore_cost_settle_hours() %}
   {%- set hours = icecore._icecore_number(icecore._icecore_setting('cost_settle_hours', 24)) -%}
   {{ return(24 if hours is none else hours) }}
+{% endmacro %}
+
+
+{#- {unique_id: true} of the nodes settled at once (cost_settle_hours <= 0): none when the attribution read failed,
+    because a failed read says nothing about Snowflake never attributing the queries. -#}
+{% macro _icecore_settled_at_run_end(ids_by_node, found) %}
+  {%- set settled = {} -%}
+  {%- if not found['error'] and icecore._icecore_cost_settled(0) -%}
+    {%- for unique_id in ids_by_node -%}{%- do settled.update({unique_id: true}) -%}{%- endfor -%}
+  {%- endif -%}
+  {{ return(settled) }}
 {% endmacro %}
 
 

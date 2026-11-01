@@ -67,6 +67,15 @@ def test_settled_cost_log_carries_the_flag_and_has_no_metric():
     assert out["metric"] == []
 
 
+def test_settle_hours_zero_never_settles_when_the_attribution_read_failed():
+    zero = ["--vars", json.dumps({"icecore": {"cost_settle_hours": 0}})]
+    ids = {"n.a": ["q1"], "n.b": ["q2"]}
+    ok = run_macro("it_settled_at_run_end", {"ids_by_node": ids, "found": {"costs": {}, "error": None}}, zero)
+    assert ok == {"n.a": True, "n.b": True}
+    failed = run_macro("it_settled_at_run_end", {"ids_by_node": ids, "found": {"costs": {}, "error": "no grant"}}, zero)
+    assert failed == {}
+
+
 def test_settle_after_24_hours_by_default_and_the_var_changes_it():
     assert run_macro("it_cost_settled", {"age_hours": 23}) == {"settled": False, "hours": 24}
     assert run_macro("it_cost_settled", {"age_hours": 24})["settled"] is True

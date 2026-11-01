@@ -147,9 +147,8 @@ def test_emit_round_trips_special_characters_byte_for_byte(sf, obs, run_id, monk
     assert out["statuses"] == ["ok 1"], out
     where, params = tagged(obs, run_id)
     a = wait_for_events(sf, where, params, since=since)[0]["record_attributes"]
-    # Finding (1 Nov 2026): SYSTEM$ADD_EVENT drops an attribute whose value is an object, silently (call ok, key absent).
-    # Attribute values must be scalars, as emit.yml says; callers must not pass dicts.
-    assert "it.nested" not in a
+    # SYSTEM$ADD_EVENT drops object values, so emit sends a mapping as JSON text: it lands, and parses back.
+    assert json.loads(a["it.nested"]) == {"k": WEIRD}
     assert a["icecore.message"] == WEIRD and a["it.value"] == WEIRD
     assert a["icecore.message"].encode() == WEIRD.encode()
 
@@ -208,9 +207,9 @@ def test_run_query_decimals_dates_and_nested_values_land_through_both_procedures
     # nested values were serialisable, so nothing failed; what the procedure keeps of them is measured here
     kept = {r["record_type"]: {k: v for k, v in r["record_attributes"].items() if k in ("it.nested", "it.list")}
             for r in rows}
-    assert "it.nested" not in emit_row and "it.list" not in emit_row  # SYSTEM$ADD_EVENT drops objects and lists
+    assert json.loads(emit_row["it.nested"])["dec"] == 1.5 and json.loads(emit_row["it.list"])[0] == 1.5  # JSON text
     # Finding (1 Nov 2026): through ICECORE_EMIT_RUN a LOG keeps a nested mapping and list (Decimal as a number, dates
-    # as ISO text); a SPAN and a SPAN_EVENT silently drop them, as ICECORE_EMIT does.
+    # as ISO text); a SPAN and a SPAN_EVENT silently drop them, (ICECORE_EMIT sends nested values as JSON text for that reason).
     log = kept["LOG"]
     assert log["it.list"][0] == 1.5 and log["it.nested"]["dec"] == 1.5
     assert log["it.nested"]["when"][:4].isdigit() and "T" in log["it.nested"]["when"]

@@ -37,7 +37,7 @@
   {%- if ids_by_node -%}
     {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node)) -%}
     {%- set settled = icecore._icecore_settled_at_run_end(ids_by_node, found) -%}
-    {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled) -%}
+    {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled, found['failed_ids']) -%}
     {%- set events = [] -%}
     {%- for unique_id, cost in costs.items() -%}
       {%- do batch['items'].append(icecore._icecore_cost_log(nodes[unique_id], cost)) -%}
@@ -86,14 +86,19 @@
 {% endmacro %}
 
 
-{#- {costs: {query_id: {credits, warehouse}}, error: text or none}. The query runs in a block that catches every
-    error (_icecore_try_scalar), 500 ids at a time; a failed chunk leaves its ids out and reports the error. -#}
-{% macro _icecore_query_costs(query_ids, lookback_days=none) %}
-  {%- set out = {'costs': {}, 'error': none} -%}
-  {%- for start in range(0, query_ids | length, 500) -%}
-    {%- set chunk = icecore._icecore_try_scalar(icecore._icecore_cost_lookup_sql(query_ids[start:start + 500], lookback_days)) -%}
+{#- {costs: {query_id: {credits, warehouse}}, error: text or none, failed_ids: [ids]}. The query runs in a block that
+    catches every error (_icecore_try_scalar), chunk_size (500) ids at a time. A failed chunk leaves its ids out of
+    `costs`, lists them in `failed_ids` and reports the error: those ids are UNKNOWN, not unattributed, so nothing
+    may be settled on them. `runner` (tests only) replaces _icecore_try_scalar: a callable sql -> its result. -#}
+{% macro _icecore_query_costs(query_ids, lookback_days=none, chunk_size=500, runner=none) %}
+  {%- set out = {'costs': {}, 'error': none, 'failed_ids': []} -%}
+  {%- for start in range(0, query_ids | length, chunk_size | int) -%}
+    {%- set ids = query_ids[start:start + (chunk_size | int)] -%}
+    {%- set sql = icecore._icecore_cost_lookup_sql(ids, lookback_days) -%}
+    {%- set chunk = runner(sql) if runner else icecore._icecore_try_scalar(sql) -%}
     {%- if 'error' in chunk -%}
       {%- do out.update({'error': chunk['error']}) -%}
+      {%- do out['failed_ids'].extend(ids) -%}
     {%- else -%}
       {%- for row in chunk.get('value') or [] -%}
         {%- do out['costs'].update({row['query_id']: {'credits': row['credits'], 'warehouse': row['warehouse']}}) -%}
@@ -106,17 +111,19 @@
 
 {#- {unique_id: {credits, warehouse}} for the nodes whose query ids are ALL in costs. A node with one query still
     unattributed gets nothing yet: a partial sum would be wrong, and the backfill would then add a second one.
+    A query id in failed_ids (its read failed) is unknown: a node with one is never settled, whatever `settled` says.
     A node in `settled` (see _icecore_cost_settled) is closed instead: its credits are what was attributed (0 when
     nothing was) and it carries settled = 'no_attribution'. -#}
-{% macro _icecore_node_costs(ids_by_node, costs, settled={}) %}
+{% macro _icecore_node_costs(ids_by_node, costs, settled={}, failed_ids=[]) %}
   {%- set out = {} -%}
   {%- for unique_id, ids in ids_by_node.items() -%}
-    {%- set total = namespace(credits=0.0, complete=true) -%}
+    {%- set total = namespace(credits=0.0, complete=true, unknown=false) -%}
     {%- set warehouses = [] -%}
     {%- for query_id in ids -%}
       {%- set row = costs.get(query_id) -%}
       {%- if row is none -%}
         {%- set total.complete = false -%}
+        {%- if query_id in failed_ids -%}{%- set total.unknown = true -%}{%- endif -%}
       {%- else -%}
         {%- set total.credits = total.credits + (row['credits'] or 0) -%}
         {%- if row['warehouse'] and row['warehouse'] not in warehouses -%}{%- do warehouses.append(row['warehouse']) -%}{%- endif -%}
@@ -124,7 +131,7 @@
     {%- endfor -%}
     {%- if total.complete -%}
       {%- do out.update({unique_id: {'credits': total.credits, 'warehouse': (warehouses | sort | join(',')) or none}}) -%}
-    {%- elif settled.get(unique_id) -%}
+    {%- elif settled.get(unique_id) and not total.unknown -%}
       {#- settled: Snowflake never wrote an attribution row for this query (many statements get none), so the node
           is closed with what was attributed (0 when nothing was) and says why -#}
       {%- do out.update({unique_id: {'credits': total.credits, 'warehouse': (warehouses | sort | join(',')) or none,
@@ -230,14 +237,9 @@
     {%- do ids_by_node.update({node['invocation_id'] ~ '|' ~ node['unique_id']: node['query_ids']}) -%}
   {%- endfor -%}
   {%- set days = (icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7) | int -%}
-  {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node), days + 1) -%}
-  {%- set settled = {} -%}
-  {%- for node in pending -%}
-    {%- if icecore._icecore_cost_settled(node.get('age_hours')) -%}
-      {%- do settled.update({node['invocation_id'] ~ '|' ~ node['unique_id']: true}) -%}
-    {%- endif -%}
-  {%- endfor -%}
-  {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled) -%}
+  {%- set decided = icecore._icecore_backfill_costs(pending, ids_by_node, days + 1) -%}
+  {%- set found = decided['found'] -%}
+  {%- set costs = decided['costs'] -%}
   {%- set now_ns = (batch.get('timing') or {}).get('completed_ns') or icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
   {%- for node in pending -%}
     {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
@@ -251,6 +253,24 @@
   {%- if costs -%}
     {%- do log('icecore: cost backfill: ' ~ (costs | length) ~ ' of ' ~ (pending | length) ~ ' earlier nodes got their cost', info=True) -%}
   {%- endif -%}
+{% endmacro %}
+
+
+{#- {found, costs} for the pending nodes: the attribution read (chunked, guarded) and the cost of each node keyed
+    `invocation_id|unique_id`. Nodes older than cost_settle_hours are settled, but NEVER when a read failed: nothing is
+    settled at all when `found` carries an error, and a node with an id of a failed chunk is not settled either (the
+    ids are unknown, not unattributed; the cost would be wrong for good). `runner` and `chunk_size`: see _icecore_query_costs. -#}
+{% macro _icecore_backfill_costs(pending, ids_by_node, lookback_days, chunk_size=500, runner=none) %}
+  {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node), lookback_days, chunk_size, runner) -%}
+  {%- set settled = {} -%}
+  {%- if not found['error'] -%}
+    {%- for node in pending -%}
+      {%- if icecore._icecore_cost_settled(node.get('age_hours')) -%}
+        {%- do settled.update({node['invocation_id'] ~ '|' ~ node['unique_id']: true}) -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {{ return({'found': found, 'costs': icecore._icecore_node_costs(ids_by_node, found['costs'], settled, found['failed_ids'])}) }}
 {% endmacro %}
 
 

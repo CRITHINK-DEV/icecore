@@ -116,6 +116,39 @@ BACKFILL_NODE = {"invocation_id": "inv-old", "unique_id": "model.p.a", "type": "
                  "node_at": "2026-10-31T12:00:00.000Z", "age_hours": 5}
 
 
+ZERO_HOURS = ["--vars", json.dumps({"icecore": {"cost_settle_hours": 0}})]
+
+
+def _old(inv, uid, *ids):
+    return {"invocation_id": inv, "unique_id": uid, "query_ids": list(ids), "age_hours": 48}
+
+
+def test_forced_read_failure_settles_nothing_and_writes_no_zero_cost():
+    pending = [_old("i", "n.a", "q-FAIL-1"), _old("i", "n.b", "q-FAIL-2")]
+    for extra in ([], ZERO_HOURS):
+        out = run_macro("it_backfill_costs_stubbed", {"pending": pending}, extra)
+        assert out["found"]["error"] == "forced read failure"
+        assert out["costs"] == {}
+
+
+def test_partial_chunk_failure_settles_only_nodes_whose_ids_were_all_read():
+    # chunk_size 2: chunk 1 = [q-ok-1, q-ok-2] reads, chunk 2 = [q-FAIL-3, q-ok-4] fails, chunk 3 = [q-ok-5] reads
+    pending = [_old("i", "n.read", "q-ok-1", "q-ok-2"), _old("i", "n.failed", "q-FAIL-3"),
+               _old("i", "n.mixed", "q-ok-4", "q-ok-5")]
+    out = run_macro("it_backfill_costs_stubbed", {"pending": pending, "chunk_size": 2})
+    assert out["found"]["failed_ids"] == ["q-FAIL-3", "q-ok-4"]
+    assert out["costs"] == {"i|n.read": {"credits": 1.0, "warehouse": "WH"}}  # no zero record for failed or mixed nodes
+    # a clean read of the same kind of id: a real cost, no failed ids
+    clean = run_macro("it_backfill_costs_stubbed", {"pending": [_old("i", "n.ok", "q-ok-1")]})
+    assert clean["costs"]["i|n.ok"]["credits"] == 0.5 and clean["found"]["failed_ids"] == []
+
+
+def test_node_with_a_failed_id_is_not_settled_even_when_marked_settled():
+    out = run_macro("it_node_costs", {"ids_by_node": {"n.f": ["q1", "q9"], "n.u": ["q8"]}, "costs": {"q1": {"credits": 0.25, "warehouse": "WH"}},
+                                      "settled": {"n.f": True, "n.u": True}, "failed_ids": ["q9"]})
+    assert out == {"n.u": {"credits": 0.0, "warehouse": None, "settled": "no_attribution"}}
+
+
 def test_backfilled_cost_keeps_the_original_invocation_on_every_record():
     out = run_macro("it_backfill_items", {"node": BACKFILL_NODE, "cost": {"credits": 0.5, "warehouse": "WH"},
                                           "backfilled_by": "inv-new", "now_ns": 1762000000000000000})

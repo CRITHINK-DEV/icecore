@@ -1,7 +1,7 @@
 {#- Test wrappers for UC4 cost (macros/cost/). Results are logged as `icecore_it_result:<json>`. -#}
 
-{% macro it_node_costs(ids_by_node, costs, settled={}) %}
-  {% do _it_result(icecore._icecore_node_costs(ids_by_node, costs, settled)) %}
+{% macro it_node_costs(ids_by_node, costs, settled={}, failed_ids=[]) %}
+  {% do _it_result(icecore._icecore_node_costs(ids_by_node, costs, settled, failed_ids)) %}
 {% endmacro %}
 
 {#- The cost LOG and the metric events for one node, as attach_cost builds them. -#}
@@ -46,4 +46,23 @@
 
 {% macro it_settled_at_run_end(ids_by_node, found) %}
   {% do _it_result(icecore._icecore_settled_at_run_end(ids_by_node, found)) %}
+{% endmacro %}
+
+{#- Offline stand-in for the guarded attribution read: a statement that names a query id containing FAIL fails (as a
+    missing grant or a timeout would), any other returns one attribution row of 0.5 credits per `q-` id it names. -#}
+{% macro _it_cost_runner(sql) %}
+  {%- if 'FAIL' in sql -%}{{ return({'error': 'forced read failure'}) }}{%- endif -%}
+  {%- set rows = [] -%}
+  {%- for query_id in modules.re.findall("'(q-[^']*)'", sql) -%}
+    {%- do rows.append({'query_id': query_id, 'warehouse': 'WH', 'credits': 0.5}) -%}
+  {%- endfor -%}
+  {{ return({'value': rows}) }}
+{% endmacro %}
+
+{% macro it_backfill_costs_stubbed(pending, chunk_size=500) %}
+  {%- set ids_by_node = {} -%}
+  {%- for node in pending -%}
+    {%- do ids_by_node.update({node['invocation_id'] ~ '|' ~ node['unique_id']: node['query_ids']}) -%}
+  {%- endfor -%}
+  {% do _it_result(icecore._icecore_backfill_costs(pending, ids_by_node, 8, chunk_size, _it_cost_runner)) %}
 {% endmacro %}

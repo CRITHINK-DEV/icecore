@@ -139,6 +139,7 @@
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
       'root_cause': 0 if icecore._icecore_flag('node_results', true) else nodes,
+      'cost': nodes * 2,
   } -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}

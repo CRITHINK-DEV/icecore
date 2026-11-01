@@ -192,6 +192,7 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 
 - [Scope and architecture](docs/design/scope-and-architecture.md): the full design, event-table conventions and spikes.
 - [Roadmap](docs/superpowers/plans/2026-10-30-icecore-roadmap.md): six phases, three gates.
+- [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.

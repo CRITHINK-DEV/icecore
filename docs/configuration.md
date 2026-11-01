@@ -78,6 +78,15 @@ The tests do not score anomalies yet. These keys are read today by the scoring m
 | `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |
 
+### Root cause
+
+Off by default. When `root_cause` is true, `end_run` explains each failed test of the run: it walks the dbt graph upstream and writes `dbt.root_cause.unique_id`, `dbt.root_cause.kind` (`upstream_failure`, `schema_change` or `stale_source`) and `dbt.root_cause.distance` on that test's result record. Signals: this run's failed nodes, `SCHEMA_CHANGES` and `METRICS` rows recorded in the lookback (they must have been recorded before the run: ingestion lag), and any `icecore.freshness` test that failed or warned in this run. The views must exist (`icecore.setup`); an unreadable view logs one warning and its signal stays empty.
+
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `root_cause` | `false` | boolean | Turn the explanation on. | Two small queries on the views at the end of a run with a failed test; no row of its own while `node_results` is on. |
+| `root_cause_lookback_hours` | `24` | integer | How far back schema changes and metric anomalies count as signals. | None. |
+
 ### Declared, not read yet
 
 These keys are in the package's `dbt_project.yml`, but no merged macro reads them. Setting them changes nothing today.
@@ -86,7 +95,6 @@ These keys are in the package's `dbt_project.yml`, but no merged macro reads the
 | --- | --- | --- |
 | `monitors` | `true` | **coming** |
 | `cost` | `false` | **coming** |
-| `root_cause` | `false` | **coming** |
 | `alerts` | `false` | **coming** |
 
 The `meta.sla` and `meta.alerts` model settings, the alerts and the app are **coming** too.

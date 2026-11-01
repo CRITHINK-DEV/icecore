@@ -60,12 +60,14 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "credits")),
     "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "rows_affected",
-        "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "root_cause_unique_id")),
+        "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "root_cause_unique_id",
+        "recorded_at")),
     "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
         "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),
-    "SILENCE_EVENTS": ("spec", "spec section 7 (no view or branch yet)", (
-        "unique_id", "expected_at", "grace", "detected_at", "last_success_at")),
+    "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
+        "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
+        "severity")),
 }
 
 
@@ -372,5 +374,5 @@ def alerts_feed(acknowledged: bool | None = None, severity: str | None = None, k
 
 def silence_events(unique_id: str | None = None, since=None, limit: int = DEFAULT_LIMIT,
                    layer: QueryLayer | None = None) -> list[Row]:
-    """SILENCE_EVENTS (spec columns; the view does not exist yet, so no rows and no query until it is merged)."""
+    """SILENCE_EVENTS: silence verdicts written by the silence task (macros/views/silence_events.sql)."""
     return _read(build_silence_events, layer, unique_id, since, limit, view="SILENCE_EVENTS")

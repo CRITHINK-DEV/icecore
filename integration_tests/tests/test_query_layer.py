@@ -5,9 +5,9 @@ fixture rows. The sandbox test creates the views with icecore.create_views in IC
 schema_change records, and reads them back through the query functions over a qmark-bound connection.
 
 Merged views (status `merged` in VIEWS): METRICS, SCHEMA_CHANGES, TEST_RESULTS, LINEAGE, LINEAGE_LATEST,
-CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS. Their columns are checked against the SQL that icecore.create_views renders
-(offline), and the sandbox test reads every one of them. ALERTS_FEED (#57) and SILENCE_EVENTS (spec) are coming: their
-functions return no rows and run no query.
+CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS, SILENCE_EVENTS. Their columns are checked against the SQL that icecore.create_views renders
+(offline), and the sandbox test reads every one of them. ALERTS_FEED (#57) is coming: its
+function returns no rows and runs no query.
 
 The sandbox test binds with the connector's qmark paramstyle (QmarkSession below), not with a Snowpark
 `session.sql(sql, params=[...])`: Snowpark is only installed inside Streamlit in Snowflake, not in the test venvs, and
@@ -74,7 +74,7 @@ def test_each_query_reads_one_view_in_the_views_schema(view):
 
 
 MERGED = ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS",
-          "NODE_EXECUTIONS"]
+          "NODE_EXECUTIONS", "SILENCE_EVENTS"]
 
 
 def _output_columns(sql: str) -> list[str]:
@@ -118,8 +118,7 @@ def rendered_views():
 
 def test_every_merged_view_is_marked_merged_and_the_others_are_not():
     assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted(MERGED)
-    assert {v: queries.VIEWS[v][0] for v in ("ALERTS_FEED", "SILENCE_EVENTS")} == {
-        "ALERTS_FEED": "pr", "SILENCE_EVENTS": "spec"}
+    assert queries.VIEWS["ALERTS_FEED"][0] == "pr"
 
 
 def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
@@ -261,7 +260,7 @@ def test_every_merged_view_function_runs_against_the_fake_session():
 def test_a_view_that_is_not_merged_yet_returns_no_rows_and_runs_no_query():
     session = FakeSession()
     lay = layer(session)
-    assert queries.alerts_feed(layer=lay) == [] and queries.silence_events(layer=lay) == []
+    assert queries.alerts_feed(layer=lay) == []
     assert session.calls == []
     assert not queries.is_available("ALERTS_FEED") and queries.is_available("METRICS")
 

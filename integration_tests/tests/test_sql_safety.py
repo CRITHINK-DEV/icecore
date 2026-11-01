@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from snowflake.connector.util_text import split_statements
 
-from helpers.macros import MacroFailed, call_macro, run_macro
+from helpers.macros import MacroFailed, call_macro, run_macro, run_macro_with_logs
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -104,6 +104,86 @@ def test_every_string_renderer_yields_exactly_one_statement_for_every_payload(mo
             assert len(split(sql)) == 1, (renderer, payload, sql[:200])
 
 
+NAME_PAYLOADS = [
+    "$$", "'", "\\", ";", "\n", '"', "a'b", 'a"b', "a;b", "\\'; drop table x; --", '"; drop table x; --', "a\\b",
+    "MY-DB", "My DB", 'Mixed Case "Orders"',
+    "\uff04\uff04", "\u02bc; drop", "\u201cx\u201d", "\uff07; select 1", "\u2018a\u2019", "\u0430dmin", "emoji 😀 漢",
+]
+
+
+def refused(payload: str) -> bool:
+    return "$" in payload or any(ord(c) < 32 or ord(c) == 127 for c in payload)
+
+
+def test_every_name_renderer_yields_exactly_one_statement_for_every_name_payload(monkeypatch):
+    payloads_in(monkeypatch, NAME_PAYLOADS)
+    out = run_macro("it_name_renderers", {})
+    errors = out.pop("refused")
+    assert set(out) >= {"procedure_guarded_call", "columns_block", "try_show", "try_scalar", "guarded_ddl",
+                        "relation_quoted_name", "schema_quoted_name", "changes_source", "body"}
+    for payload, error in zip(NAME_PAYLOADS, errors):
+        assert bool(error) == refused(payload), (payload, error)
+    for renderer, statements in out.items():
+        assert len(statements) == len(NAME_PAYLOADS)
+        for payload, sql in zip(NAME_PAYLOADS, statements):
+            if refused(payload):
+                assert sql is None, (renderer, payload)
+            else:
+                assert len(split(sql)) == 1, (renderer, payload, sql[:200])
+                # a `$$` body holds exactly its own two delimiters; everything else carries no dollar sign
+                owns_body = renderer in ("procedure_guarded_call", "body")
+                assert sql.count("$") == (4 if owns_body else 0), (renderer, payload, sql[:200])
+
+
+# --- a valid database name that is not a plain identifier (MY-DB, "My DB") -----------------------------------------
+
+@pytest.mark.parametrize("database,expected", [
+    ("MY-DB", '"MY-DB"."ICECORE_OBS"."ICECORE_EMIT"'),
+    ("My DB", '"MY DB"."ICECORE_OBS"."ICECORE_EMIT"'),
+    ('A"B', '"A""B"."ICECORE_OBS"."ICECORE_EMIT"'),
+])
+def test_the_procedure_of_a_database_with_a_hyphen_a_space_or_a_quote_renders_and_passes_the_guard(monkeypatch, database, expected):
+    monkeypatch.setenv("SNOWFLAKE_DATABASE", database)
+    out = run_macro("it_procedure_for_target", {})
+    assert out["error"] is None and out["procedure"] == expected
+    assert f"CALL {expected}(PARSE_JSON(" in out["sql"]
+    assert len(split(out["sql"])) == 1
+
+
+@pytest.mark.parametrize("database", ["MY-DB", "My DB"])
+def test_emit_renders_for_a_database_with_a_hyphen_or_a_space(monkeypatch, database):
+    monkeypatch.setenv("SNOWFLAKE_DATABASE", database)
+    out = run_macro("it_emit_render", {"events": [{"kind": "metric", "message": "m"}]})
+    assert f'"{database.upper()}"."ICECORE_OBS"."ICECORE_EMIT"' in out["sql"]
+
+
+@pytest.mark.parametrize("database", ["MY$$DB", "MY\nDB"])
+def test_emit_on_a_hostile_database_warns_and_skips_and_never_raises(monkeypatch, database):
+    # Offline: a query would fail with a connection error, so a clean result proves nothing was sent.
+    monkeypatch.setenv("SNOWFLAKE_DATABASE", database)
+    out, logs = run_macro_with_logs("it_emit_events", {"events": [{"kind": "metric"}]})
+    assert out == {"events": 0, "calls": 0, "statuses": []}
+    assert any("telemetry not written" in line and "invalid SQL name" in line for line in logs)
+    out, logs = run_macro_with_logs("it_emit_run_hook", {"items": [{"type": "log", "message": "m"}]})
+    assert out["calls"] == 0
+    assert any("telemetry not written" in line for line in logs)
+
+
+def test_the_guarded_status_of_a_bad_procedure_is_a_status_not_an_exception():
+    out = call_macro("_icecore_guarded_status", procedure='P$$; GRANT x', items=[])
+    assert out.startswith("icecore-error invalid_procedure")
+
+
+@pytest.mark.parametrize("procedure", ['"A"."B"."C"', '"MY-DB"."S"."P"', '"My DB"."S"."P"', '"A""B"."S"."P"'])
+def test_the_guard_accepts_every_name_icecore_sql_builds(procedure):
+    assert call_macro("_icecore_procedure_problem", procedure=procedure) is None
+
+
+@pytest.mark.parametrize("procedure", ['A.B.C', '"A"."B"."C', '"A"B"."S"."P"', '"A$$"."S"."P"', '"A\nB"."S"."P"', '"A"."S";"P"', '', '"A".'])
+def test_the_guard_refuses_what_is_not_a_chain_of_quoted_names(procedure):
+    assert call_macro("_icecore_procedure_problem", procedure=procedure)
+
+
 # --- hostile identifiers fail at compile time ------------------------------------------------------------
 
 HOSTILE = "X$$; GRANT ROLE ICECORE_SETUP TO ROLE DBT_ROLE; --"
@@ -154,6 +234,8 @@ def test_only_icecore_sql_builds_literals_and_identifiers():
             continue
         for n, line in enumerate(path.read_text().splitlines(), 1):
             code = line.split("{#-")[0]
+            # dropping quotes to compare two names (replace('"', '')) builds no SQL
+            code = code.replace("""replace('"', '')""", "")
             if re.search(r"""replace\(\s*(['"])(\\\\|'|")\1|replace\(["']'["']""", code) or re.search(r"""'"'\s*~""", code):
                 offenders.append(f"{path.relative_to(REPO)}:{n}: {line.strip()}")
     assert not offenders, offenders

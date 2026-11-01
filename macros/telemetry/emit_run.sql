@@ -19,7 +19,12 @@
     {{ return(out) }}
   {%- endif -%}
   {%- set records = icecore._icecore_emit_run_records(items) -%}
-  {%- set procedure = icecore._icecore_procedure('ICECORE_EMIT_RUN') -%}
+  {%- set target_procedure = icecore._icecore_procedure_or_error('ICECORE_EMIT_RUN') -%}
+  {%- if target_procedure['error'] -%}
+    {%- do icecore._icecore_warn_no_procedure(target_procedure['error']) -%}
+    {{ return(out) }}
+  {%- endif -%}
+  {%- set procedure = target_procedure['procedure'] -%}
   {%- for chunk in icecore._icecore_emit_run_chunks(records) -%}
     {%- do out['statuses'].append(icecore._icecore_guarded_status(procedure, chunk)) -%}
   {%- endfor -%}
@@ -50,10 +55,10 @@
       {%- for event in item.get('events') or [] if event is mapping -%}
         {%- set copy = {} -%}
         {%- do copy.update(event) -%}
-        {%- do copy.update({'attrs': icecore._icecore_run_attrs(base, event.get('attrs'), cap)}) -%}
+        {%- do copy.update({'attrs': icecore._icecore_run_attrs(base, event.get('attrs'), cap, none, true)}) -%}
         {%- do events.append(copy) -%}
       {%- endfor -%}
-      {%- do record.update({'attrs': icecore._icecore_run_attrs(base, item.get('attrs'), cap), 'events': events}) -%}
+      {%- do record.update({'attrs': icecore._icecore_run_attrs(base, item.get('attrs'), cap, none, true), 'events': events}) -%}
     {%- endif -%}
     {%- do records.append(record) -%}
   {%- endfor -%}
@@ -61,11 +66,11 @@
 {% endmacro %}
 
 
-{#- base + attrs, capped; with message, the message rides along as icecore.message so it is capped too. -#}
-{% macro _icecore_run_attrs(base, attrs, cap, message=none) %}
+{#- base + attrs, capped (as_json: mapping and list values as JSON text, for spans and span events, which drop them otherwise); with message, the message rides along as icecore.message so it is capped too. -#}
+{% macro _icecore_run_attrs(base, attrs, cap, message=none, as_json=false) %}
   {%- set out = {} -%}
   {%- do out.update(base) -%}
-  {%- do out.update(icecore._icecore_safe_attributes(attrs)) -%}
+  {%- do out.update(icecore._icecore_safe_attributes(attrs, as_json)) -%}
   {%- if message is not none -%}
     {%- do out.update({'icecore.message': message}) -%}
   {%- endif -%}

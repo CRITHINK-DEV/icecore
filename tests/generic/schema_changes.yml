@@ -1,0 +1,19 @@
+version: 2
+
+macros:
+  - name: test_schema_changes
+    description: >
+      Zero-scan schema drift test. Reads the current columns with SHOW COLUMNS (no data scan) and compares them with
+      the signature the previous run recorded (an `icecore.schema_signature` span event, read back through
+      `icecore.base_events()`), using `icecore.diff_schema`. Every added column, removed column and type change is
+      one failing row and one `icecore.schema_change` span event at level warn, written with the new signature in
+      one guarded CALL, so the next run compares against the new shape and a change is reported once. The first run,
+      or a run with no readable history, passes and only records the signature; the same when the columns cannot be
+      read. A failed telemetry CALL is a logged warning and never changes the verdict. Use `severity: warn` in the
+      test config to warn instead of failing. Example, `data_tests: [icecore.schema_changes]`. Telemetry reaches the
+      history after the ingestion lag (about 8 seconds, at worst 20, spike S3), so two runs closer than that may
+      compare against an older signature.
+    arguments:
+      - name: model
+        type: relation
+        description: The relation under test, filled in by dbt.

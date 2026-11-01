@@ -2,7 +2,7 @@
     The current columns come from icecore.get_columns_signature (SHOW COLUMNS, no data scan). The baseline is the
     signature the previous run wrote as an `icecore.schema_signature` record, read back through
     icecore.base_events() for this relation. The diff (icecore.diff_schema) is emitted as one
-    `icecore.schema_changes` record per change, plus the new signature, in one CALL. Every failing row is one change.
+    `icecore.schema_change` record per change, plus the new signature, in one CALL. Every failing row is one change.
     With no baseline (first run) or no readable history the test passes and only records the signature.
     Pass or fail comes only from the diff: the baseline read and the emit are guarded. -#}
 {% test schema_changes(model) %}
@@ -44,7 +44,7 @@
         {%- set attrs = {'dbt.node.relation': name, 'dbt.schema.change_kind': ch['kind'], 'dbt.schema.column': ch['column']} -%}
         {%- if ch['from_type'] is not none -%}{%- do attrs.update({'dbt.schema.from_type': ch['from_type']}) -%}{%- endif -%}
         {%- if ch['to_type'] is not none -%}{%- do attrs.update({'dbt.schema.to_type': ch['to_type']}) -%}{%- endif -%}
-        {%- do events.append({'kind': 'schema_changes', 'level': 'warn', 'attributes': attrs,
+        {%- do events.append({'kind': 'schema_change', 'level': 'warn', 'attributes': attrs,
             'message': 'icecore: schema change on ' ~ name ~ ': ' ~ ch['kind'] ~ ' column ' ~ ch['column']
                 ~ (' from ' ~ ch['from_type'] if ch['from_type'] is not none else '')
                 ~ (' to ' ~ ch['to_type'] if ch['to_type'] is not none else '')}) -%}

@@ -2,7 +2,7 @@
 column_anomaly.sql). Fixtures: integration_tests/models/monitors/_schema_column.yml (sources whose identifiers are vars).
 
 schema_changes compares SHOW COLUMNS with the signature the previous run recorded (`icecore.schema_signature`), fails
-or warns (severity) on a diff and writes one `icecore.schema_changes` record per change. column_anomaly computes the
+or warns (severity) on a diff and writes one `icecore.schema_change` record per change. column_anomaly computes the
 requested metrics over the changed rows, writes one metric each and checks static bounds; the scoring hook for UC3 is
 not called. Sandbox tests create the emitter procedures in ICECORE_OBS_<run_id> (the obs_schema var), run `dbt test`,
 and read records back through icecore.base_events().
@@ -101,7 +101,7 @@ def drift(dbt, sf):
 def changes_of(d: dict, table: str) -> dict:
     out = {}
     for r in d["rows"]:
-        if r["node_relation"] == quoted(table) and r["record_name"] == "icecore.schema_changes":
+        if r["node_relation"] == quoted(table) and r["record_name"] == "icecore.schema_change":
             a = json.loads(r["attributes"])
             out[a["dbt.schema.column"]] = a
     return out

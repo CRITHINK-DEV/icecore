@@ -6,7 +6,7 @@ macros:
       Zero-scan schema drift test. Reads the current columns with SHOW COLUMNS (no data scan) and compares them with
       the signature the previous run recorded (an `icecore.schema_signature` span event, read back through
       `icecore.base_events()`), using `icecore.diff_schema`. Every added column, removed column and type change is
-      one failing row and one `icecore.schema_changes` span event at level warn, written with the new signature in
+      one failing row and one `icecore.schema_change` span event at level warn, written with the new signature in
       one guarded CALL, so the next run compares against the new shape and a change is reported once. The first run,
       or a run with no readable history, passes and only records the signature; the same when the columns cannot be
       read. A failed telemetry CALL is a logged warning and never changes the verdict. Use `severity: warn` in the

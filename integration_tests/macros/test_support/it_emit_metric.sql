@@ -19,3 +19,9 @@
   {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
   {% do log('icecore_it_result:' ~ tojson(icecore.emit_metric(relation, metric, value, column, dimension, anomaly)), info=True) %}
 {% endmacro %}
+
+{#- The history read predicate for a relation (macros/monitors/test_support.sql). -#}
+{% macro it_history_bound(rel) %}
+  {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_history_bound(relation)), info=True) %}
+{% endmacro %}

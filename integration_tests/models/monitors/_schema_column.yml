@@ -19,6 +19,11 @@ sources:
               name: it_schema_changes_warn
               config:
                 severity: warn
+      - name: drift_stale
+        identifier: "{{ var('it_uc2_drift_stale_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_schema_changes_stale
   - name: it_uc2_columns
     schema: spikes
     tables:

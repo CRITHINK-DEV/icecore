@@ -37,6 +37,27 @@ end;
 {% endmacro %}
 
 
+{#- Seconds the history reads look back: var icecore.baseline_lookback_days (default 30), a positive number. A baseline
+    older than that is not found, and the run counts as the first. -#}
+{% macro _icecore_history_lookback_seconds() %}
+  {%- set days = var('icecore', {}).get('baseline_lookback_days', 30) -%}
+  {#- a command-line var such as 2e-05 reaches Jinja as text -#}
+  {%- set days = (days | float(0)) if days is string else days -%}
+  {%- if days is boolean or days is not number or days <= 0 -%}
+    {{ exceptions.raise_compiler_error("icecore: baseline_lookback_days must be a positive number of days; got '" ~ days ~ "'") }}
+  {%- endif -%}
+  {{ return(((days * 86400) | int) if (days * 86400) | int > 0 else 1) }}
+{% endmacro %}
+
+
+{#- The WHERE predicate every history read starts with: the relation first, then the time bound, so the scan of the
+    event table is narrowed and does not grow with its age. -#}
+{% macro _icecore_history_bound(relation) %}
+  {{ return('node_relation = ' ~ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation))
+      ~ ' and event_at >= dateadd(second, -' ~ icecore._icecore_history_lookback_seconds() ~ ', sysdate())') }}
+{% endmacro %}
+
+
 {#- The columns of the newest `icecore.schema_signature` record of the relation, as get_columns_signature returns
     them, or none (no record, no event table, unreadable). -#}
 {% macro _icecore_previous_signature(relation) %}
@@ -45,7 +66,7 @@ end;
   {%- set sql -%}
     select attributes:"dbt.schema.columns"::string
     from ({{ icecore.base_events(event_table=event_table) }})
-    where record_name = 'icecore.schema_signature' and node_relation = {{ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation)) }}
+    where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.schema_signature'
     order by event_at desc
     limit 1
   {%- endset -%}
@@ -71,7 +92,7 @@ end;
     {%- set sql -%}
       select to_varchar(max(coalesce(convert_timezone('UTC', try_to_timestamp_tz(attributes:"dbt.window.until"::string))::timestamp_ntz, event_at)), '{{ iso }}')
       from ({{ icecore.base_events(event_table=event_table) }})
-      where record_name = 'icecore.metric' and node_relation = {{ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation)) }}
+      where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.metric'
         and {{ filters }}
     {%- endset -%}
     {%- set previous = icecore._icecore_safe_scalar(sql, 'previous observation', relation) -%}

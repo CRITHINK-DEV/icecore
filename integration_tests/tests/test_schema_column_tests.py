@@ -61,6 +61,14 @@ def test_invalid_bounds_fail_at_parse(var_args):
     assert not invoke(["parse", "--vars", json.dumps(var_args)]).success
 
 
+def test_history_reads_look_back_30_days_by_default_and_start_with_the_relation():
+    assert call_macro("_icecore_history_lookback_seconds") == 30 * 86400
+    rel = {"database": "icecore_sandbox", "schema": "spikes", "identifier": "orders"}
+    bound = run_macro("it_history_bound", {"rel": rel})
+    assert bound.startswith("node_relation = '")
+    assert bound.index("node_relation") < bound.index("event_at >= dateadd(second, -2592000, sysdate())")
+
+
 # --- sandbox: schema_changes ----------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -68,35 +76,40 @@ def drift(dbt, sf):
     run_id = uuid.uuid4().hex
     schema = f"ICECORE_OBS_{run_id}".upper()
     fail, warn = f"IT_DRIFT_FAIL_{run_id}".upper(), f"IT_DRIFT_WARN_{run_id}".upper()
-    names = {"it_uc2_drift_fail_table": fail, "it_uc2_drift_warn_table": warn}
+    stale = f"IT_DRIFT_STALE_{run_id}".upper()
+    names = {"it_uc2_drift_fail_table": fail, "it_uc2_drift_warn_table": warn, "it_uc2_drift_stale_table": stale}
     obs = {"icecore": {"obs_schema": schema}, **names}
     cur = sf.cursor()
     cur.execute(f'create schema "{DATABASE}"."{schema}"')
     try:
         run_macro("it_create_emit_procedures", {}, ["--vars", json.dumps({"icecore": {"obs_schema": schema}})])
-        for table in (fail, warn):
+        for table in (fail, warn, stale):
             cur.execute(f'create table {quoted(table)} (id number, note varchar(20), gone date)')
         since = cur.execute("select dateadd(minute, -2, sysdate())").fetchone()[0]
-        select = ["--select", "source:it_uc2_schema"]
+        select = ["--select", "it_schema_changes_fail", "it_schema_changes_warn", "it_schema_changes_stale"]
         first = results_by_name(invoke(["test", *select, "--vars", json.dumps(obs)]))
         # the baselines are in the event table before the schema moves
         wait_for_events(sf, EVENTS + " and record:name::string = 'icecore.schema_signature'",
-                        {"db": DATABASE, "schema": schema}, min_rows=2, since=since)
+                        {"db": DATABASE, "schema": schema}, min_rows=3, since=since)
         cur.execute(f'alter table {quoted(fail)} drop column gone')
         cur.execute(f'alter table {quoted(fail)} add column extra boolean')
         cur.execute(f'alter table {quoted(fail)} alter column note set data type varchar(50)')
         cur.execute(f'alter table {quoted(warn)} drop column gone')
         second = results_by_name(invoke(["test", *select, "--vars", json.dumps(obs)]))
-        raw = wait_for_events(sf, EVENTS, {"db": DATABASE, "schema": schema}, min_rows=7, since=since, settle_s=10)
+        # the baseline of `stale` is now older than a 2 second look back: that run counts as the first
+        cur.execute(f'alter table {quoted(stale)} drop column gone')
+        short = {**obs, "icecore": {"obs_schema": schema, "baseline_lookback_days": 0.00002}}
+        third = results_by_name(invoke(["test", "--select", "it_schema_changes_stale", "--vars", json.dumps(short)]))
+        raw = wait_for_events(sf, EVENTS, {"db": DATABASE, "schema": schema}, min_rows=9, since=since, settle_s=10)
         view = f'"{DATABASE}"."{schema}"."BASE_EVENTS"'
         cur.execute(f"create view {view} as {call_macro('base_events', obs_schema=schema)}")
         rows = sf.cursor(DictCursor).execute(
             f"select * from {view} where event_at >= %(since)s", {"since": since}).fetchall()
-        yield {"fail": fail, "warn": warn, "first": first, "second": second, "raw": raw,
+        yield {"fail": fail, "warn": warn, "stale": stale, "first": first, "second": second, "third": third, "raw": raw,
                "rows": [{k.lower(): v for k, v in r.items()} for r in rows]}
     finally:
         cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
-        for table in (fail, warn):
+        for table in (fail, warn, stale):
             cur.execute(f"drop table if exists {quoted(table)}")
 
 
@@ -111,7 +124,8 @@ def changes_of(d: dict, table: str) -> dict:
 
 @pytest.mark.sandbox
 def test_first_run_passes_and_records_the_baseline(drift):
-    assert drift["first"] == {"it_schema_changes_fail": "pass", "it_schema_changes_warn": "pass"}
+    assert drift["first"] == {"it_schema_changes_fail": "pass", "it_schema_changes_warn": "pass",
+                              "it_schema_changes_stale": "pass"}
     sigs = [r for r in drift["rows"] if r["record_name"] == "icecore.schema_signature"]
     assert len([r for r in sigs if r["node_relation"] == quoted(drift["fail"])]) == 2  # baseline + after the change
 
@@ -127,6 +141,14 @@ def test_a_removed_column_fails_and_a_schema_changes_record_lands(drift):
     assert (changes["NOTE"]["dbt.schema.from_type"], changes["NOTE"]["dbt.schema.to_type"]) == (
         "VARCHAR(20)", "VARCHAR(50)")
     assert all(a["icecore.level"] == "warn" and a["dbt.invocation_id"] for a in changes.values())
+
+
+@pytest.mark.sandbox
+def test_a_baseline_older_than_the_lookback_counts_as_the_first_run(drift):
+    # `stale` lost a column, but its baseline is outside baseline_lookback_days: pass, no change record
+    assert drift["third"] == {"it_schema_changes_stale": "pass"}
+    assert drift["second"]["it_schema_changes_fail"] == "fail"
+    assert changes_of(drift, drift["stale"]) == {}
 
 
 @pytest.mark.sandbox

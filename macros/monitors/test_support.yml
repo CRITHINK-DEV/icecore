@@ -60,3 +60,17 @@ macros:
       - name: limit
         type: dictionary
         description: The limit.
+
+  - name: _icecore_history_lookback_seconds
+    description: >
+      Seconds the history reads of the generic tests look back, from `vars: icecore: baseline_lookback_days`
+      (default 30, a positive number). A baseline older than that is not found and the run counts as the first.
+
+  - name: _icecore_history_bound
+    description: >
+      The WHERE predicate every history read starts with, the relation first and then the time bound, so the scan of
+      the event table is narrowed by relation and does not grow with the age of the table.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The monitored relation.

@@ -6,7 +6,8 @@ recorded reason when the capabilities say Cortex is not available to the role.
 """
 import pytest
 
-from helpers.macros import MacroFailed, call_macro
+from helpers.macros import MacroFailed, call_macro, run_macro
+from test_engine_contract import daily_series_sql
 
 DATABASE, SCHEMA = "ICECORE_SANDBOX", "SPIKES"
 SERIES_SQL = "select observed_at, value from t"
@@ -141,3 +142,64 @@ def test_high_sensitivity_uses_the_narrower_interval_0_90(cortex_model):
 def test_a_missing_model_is_an_error_value_not_a_failure(cortex_model):
     out = score(f"{DATABASE}.{SCHEMA}.CX_NO_SUCH_MODEL", "a", 1)
     assert set(out) == {"error"} and out["error"]
+
+
+# --- fallbacks (offline) ----------------------------------------------------------------------------
+
+
+def test_model_state_from_show_rows():
+    day = 86400
+    assert call_macro("_cortex_state_of", rows=[], refresh_days=7)["state"] == "missing"
+    assert call_macro("_cortex_state_of", rows=[{"age_s": 6 * day}], refresh_days=7)["state"] == "fresh"
+    stale = call_macro("_cortex_state_of", rows=[{"age_s": 8 * day}], refresh_days=7)
+    assert stale["state"] == "stale" and stale["age_days"] == 8
+
+
+def test_no_model_given_falls_back_with_model_missing():
+    attempt = call_macro("_cortex_attempt", model=None, series=None, series_sql=SERIES_SQL, current_value=1,
+                         settings={"sensitivity": "medium", "min_consecutive": 1}, observed_at=None)
+    assert attempt["result"] is None and attempt["fallback_reason"] == "model_missing"
+
+
+# --- fallbacks through the dispatcher (sandbox) -----------------------------------------------------
+
+HISTORY_22 = daily_series_sql([100 + i % 4 for i in range(22)])
+HISTORY_10 = daily_series_sql([100 + i % 4 for i in range(10)])
+
+
+def dispatch(model, series_sql, extra=None, engine="cortex"):
+    kwargs = {"series_sql": series_sql, "current_value": 500, "engine": engine, "sensitivity": "medium",
+              "min_consecutive": 1, "observed_at": "2026-10-29 06:00:00", "model": model, "series": "a"}
+    return run_macro("it_call", {"name": "score", "kwargs": kwargs}, extra)
+
+
+@pytest.mark.sandbox
+def test_fresh_model_with_enough_history_scores_with_cortex(cortex_model):
+    out = dispatch(cortex_model, HISTORY_22)
+    assert out["engine"] == "cortex" and out["fallback_reason"] is None and out["is_anomaly"] is True
+
+
+@pytest.mark.sandbox
+def test_no_model_for_the_table_falls_back_with_model_missing(cortex_model):
+    out = dispatch(f"{DATABASE}.{SCHEMA}.CX_NO_SUCH_MODEL", HISTORY_22)
+    assert out["engine"] == "native" and out["fallback_reason"] == "model_missing"
+    assert out["is_anomaly"] is True  # native still scores the series
+
+
+@pytest.mark.sandbox
+def test_model_older_than_the_refresh_period_falls_back_with_model_stale(cortex_model):
+    out = dispatch(cortex_model, HISTORY_22, ["--vars", '{"icecore": {"cortex_refresh_days": 0}}'])
+    assert out["engine"] == "native" and out["fallback_reason"] == "model_stale"
+    assert "days old" in out["fallback_detail"]
+
+
+@pytest.mark.sandbox
+def test_10_days_of_history_falls_back_with_history_too_short(cortex_model):
+    out = dispatch(cortex_model, HISTORY_10)
+    assert out["engine"] == "native" and out["fallback_reason"] == "history_too_short"
+
+
+@pytest.mark.sandbox
+def test_an_unreadable_schema_is_a_fallback_not_a_failure(cortex_model):
+    out = dispatch(f"{DATABASE}.NO_SUCH_SCHEMA_{cortex_model[-8:]}.M", HISTORY_22)
+    assert out["engine"] == "native" and out["fallback_reason"] == "cortex_error" and out["fallback_detail"]

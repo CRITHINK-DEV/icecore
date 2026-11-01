@@ -110,8 +110,10 @@
       emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
       uncounted names of emitters in the list that have no count here.
     An emitter added to the list needs its count here: a test fails until it has one.
-    lineage  the records of the graph's edges split under the payload cap (0 with no edges). -#}
-{% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1) %}
+    lineage  the records of the graph's edges split under the payload cap (0 with no edges);
+    samples  one per failing test with store_failures, failing_tests of them (the caller knows; the graph does
+             not), 0 when var samples is off (the default). Warn-severity failures count only if the caller counts them. -#}
+{% macro _icecore_end_run_row_counts(nodes, query_events_per_node=1, failing_tests=0) %}
   {%- set nodes = nodes | int -%}
   {%- set per_emitter = {
       'node_results': nodes,
@@ -120,14 +122,16 @@
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}
     {%- set name = emitter['name'] -%}
-    {%- if name not in per_emitter and name != 'lineage' -%}
+    {%- if name not in per_emitter and name not in ['lineage', 'samples'] -%}
       {%- do out['uncounted'].append(name) -%}
     {%- elif not icecore._icecore_flag(emitter['var'], emitter['default']) -%}
       {%- do out['emitters'].update({name: 0}) -%}
     {%- elif name in per_emitter -%}
       {%- do out['emitters'].update({name: per_emitter[name]}) -%}
-    {%- else -%}
+    {%- elif name == 'lineage' -%}
       {%- do out['emitters'].update({name: icecore._icecore_lineage_parts(icecore._icecore_lineage_edges(graph)) | length}) -%}
+    {%- else -%}
+      {%- do out['emitters'].update({name: failing_tests | int}) -%}
     {%- endif -%}
   {%- endfor -%}
   {{ return(out) }}

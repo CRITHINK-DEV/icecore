@@ -70,11 +70,15 @@ def test_the_estimate_states_its_sources():
 
 
 def test_samples_and_query_events_follow_their_arguments():
-    vars_ = ["--vars", json.dumps({"icecore": {"lineage": False}})]
+    # samples is opt-in: counted only with the var on; lineage off by its var
+    vars_ = ["--vars", json.dumps({"icecore": {"samples": True, "lineage": False}})]
     out, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {
         "nodes": 10, "runs_per_day": 1, "query_events_per_node": 3, "failing_tests_per_run": 2}}, vars_)
     r = out["records_per_run"]
     assert (r["query_events"], r["samples"], r["lineage"]) == (30, 2, 0)
+    # default vars: samples are off, so failing tests add no rows
+    out, _ = estimate(nodes=10, runs_per_day=1, failing_tests_per_run=2)
+    assert out["records_per_run"]["samples"] == 0
 
 
 def test_large_runs_need_more_emit_run_calls():

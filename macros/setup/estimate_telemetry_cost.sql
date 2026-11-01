@@ -9,8 +9,8 @@
         query_events_per_node query events per node (var query_events); these counts come from
         _icecore_end_run_row_counts, next to end_run's emitter list, and follow the vars;
       - lineage (var lineage): the records of the graph's edges split under the payload cap, as emit_lineage splits them;
-      - samples: one LOG per failing test (failing_tests_per_run; off by default for warn tests);
-        the lineage count also comes from _icecore_end_run_row_counts and follows its var;
+      - samples (var samples, off by default): one LOG per failing test with store_failures (failing_tests_per_run);
+        lineage and samples counts also come from _icecore_end_run_row_counts and follow their vars;
       - measured rows per CALL: one procedure SPAN per CALL (spikes/S3.md, finding 4) and about 3 untagged Snowpark
         LOG rows per ICECORE_EMIT_RUN CALL (spikes/S1.md, "Python noise"). ICECORE_EMIT_RUN takes at most 512 KB per
         CALL (GATE1.md), so its CALLs are the end-run bytes over 512 KB.
@@ -36,11 +36,11 @@
   {%- set rate = icecore._icecore_telemetry_ingest_rate() -%}
 
   {#- what end_run writes per node, from the macro that sits next to its emitter list, honouring the vars -#}
-  {%- set rows = icecore._icecore_end_run_row_counts(n, query_events_per_node) -%}
+  {%- set rows = icecore._icecore_end_run_row_counts(n, query_events_per_node, failing_tests_per_run) -%}
   {%- set r = {'start': 1, 'invocation_span': rows['fixed']['invocation_span'], 'end': rows['fixed']['end'],
                'node_spans': rows['fixed']['node_spans'], 'node_results': rows['emitters'].get('node_results', 0),
                'query_events': rows['emitters'].get('query_events', 0),
-               'lineage': rows['emitters'].get('lineage', 0), 'samples': failing_tests_per_run | int} -%}
+               'lineage': rows['emitters'].get('lineage', 0), 'samples': rows['emitters'].get('samples', 0)} -%}
   {%- set end_run_records = r['end'] + r['invocation_span'] + r['node_spans'] + r['node_results'] + r['query_events']
       + r['lineage'] + r['samples'] -%}
   {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 524288) | round(0, 'ceil') | int)] | max -%}

@@ -1,0 +1,28 @@
+version: 2
+
+macros:
+  - name: render_silence_task_sql
+    description: >
+      Renders the body of the silence task: one Snowflake Scripting block, run as `EXECUTE IMMEDIATE $$ ... $$`,
+      that finds the runs that never happened. The SLA entries of `collect_sla_config` are embedded as a VALUES list,
+      so change `meta.sla` and run setup again to refresh the task. For each entry with `meta.sla` it takes the
+      latest `recorded_at` of the node's successful rows (status success or pass) in `node_executions`, adds
+      `expected_every`, and flags the node when Snowflake's now is later than that plus the grace (the default grace
+      is 1 minute, from spike S3). `recorded_at` is the TIMESTAMP of the node's result record, so the comparison
+      stays on Snowflake's clock. A node with no successful row yet gets no verdict. A verdict is a span event
+      `icecore.silence`, written by a CALL of `ICECORE_EMIT` from the task body, never an INSERT, with
+      `dbt.node.unique_id`, `icecore.silence.expected_at`, `last_success_at`, `expected_every_minutes`,
+      `grace_minutes`, `channel` and `severity` at level warn. A node already in `silence_events` with the same
+      `expected_at` gets none, so a task that runs every few minutes does not repeat a verdict once the first one is
+      readable. At most 100 verdicts per run; an error returns `icecore-error` instead of failing the task. Raises a
+      compiler error when no entry has `meta.sla`.
+    arguments:
+      - name: entries
+        type: list[dict]
+        description: The entries of `collect_sla_config`. Those without `expected_every_minutes` are ignored.
+      - name: schema
+        type: string
+        description: The obs schema holding `ICECORE_EMIT`, `SILENCE_EVENTS` and `NODE_EXECUTIONS`. Default the `obs_schema` var.
+      - name: source
+        type: string
+        description: The relation read as `node_executions`. Default the obs schema's `NODE_EXECUTIONS` view.

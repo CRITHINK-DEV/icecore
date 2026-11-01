@@ -31,3 +31,16 @@
 {% macro it_history_delay(delay_minutes=none) %}
   {% do log('icecore_it_result:' ~ tojson(icecore._icecore_history_delay(delay_minutes)), info=True) %}
 {% endmacro %}
+
+{#- UC6 silence (macros/control/). `entries` are collect_sla_config entries. -#}
+{% macro it_silence_task_sql(entries, schema=none, source=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore.render_silence_task_sql(entries, schema, source)), info=True) %}
+{% endmacro %}
+
+{% macro it_silence_task_ddl(schema=none, warehouse='WH', schedule='5 MINUTE') %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_silence_task_ddl(icecore._icecore_procedure('ICECORE_SILENCE', schema), 'select 1', warehouse, schedule)), info=True) %}
+{% endmacro %}
+
+{% macro it_create_silence_task(schema=none, entries=none, source=none, resume=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore.create_silence_task(schema, entries, source, none, none, resume)), info=True) %}
+{% endmacro %}

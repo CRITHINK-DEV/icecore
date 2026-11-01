@@ -62,7 +62,7 @@ def test_unfillable_columns_are_typed_nulls():
 
 def test_compat_views_list_holds_the_elementary_test_view():
     views = run_macro("it_compat_views_render", {})
-    assert [v["name"] for v in views] == ["ELEMENTARY_TEST_RESULTS"]
+    assert [v["name"] for v in views][:1] == ["ELEMENTARY_TEST_RESULTS"]  # later groups append; see test_compat_runs
 
 
 def test_compat_schema_is_separate_from_the_obs_schema_and_configurable():
@@ -124,7 +124,7 @@ def test_views_are_created_in_the_compat_schema_with_elementarys_types_and_the_c
             assert not sf.cursor().execute(f"show schemas like '{compat}' in database {DATABASE}").fetchall()  # no compat yet
 
             created = run_macro("it_create_compat_views", {"schema": obs}, obs_vars)
-            assert created == [f'"{DATABASE}"."{compat}"."ELEMENTARY_TEST_RESULTS"']
+            assert created[:1] == [f'"{DATABASE}"."{compat}"."ELEMENTARY_TEST_RESULTS"']  # later groups append
 
             columns = sf.cursor().execute(
                 f"select column_name, data_type from {DATABASE}.information_schema.columns "

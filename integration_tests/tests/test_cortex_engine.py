@@ -336,3 +336,26 @@ def test_a_bad_model_name_is_a_fallback_not_a_failure(cortex_model):
 def test_a_database_or_schema_that_is_not_plain_stops_the_procedure_ddl(name):
     with pytest.raises(MacroFailed, match="plain identifiers"):
         run_macro_with_logs("it_call", {"name": "_icecore_score_constant", "kwargs": {"name": name}})
+
+
+def test_every_retired_score_signature_is_dropped_before_the_new_one_is_created():
+    drops = call_macro("_icecore_retired_score_drops", schema="obs_x")
+    assert drops == ['DROP PROCEDURE IF EXISTS "%s"."OBS_X"."ICECORE_SCORE"(STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT)' % DATABASE]
+
+
+@pytest.mark.sandbox
+def test_creating_the_procedures_leaves_exactly_one_score_overload(sf):
+    """An earlier ICECORE_SCORE (database and schema arguments) is gone after setup's create_emit_procedures: one overload remains."""
+    run_id = uuid.uuid4().hex.upper()
+    schema = f"ICECORE_OBS_{run_id}"
+    cur = sf.cursor()
+    cur.execute(f'create schema "{DATABASE}"."{schema}"')
+    try:
+        cur.execute(f"""create procedure "{DATABASE}"."{schema}"."ICECORE_SCORE"(db STRING, sch STRING, model STRING, series STRING, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)
+            returns variant language sql as $$ begin return object_construct('old', true); end; $$""")
+        assert len(cur.execute(f"show procedures like 'ICECORE_SCORE' in schema \"{DATABASE}\".\"{schema}\"").fetchall()) == 1
+        run_macro("it_create_emit_procedures", {}, ["--vars", json.dumps({"icecore": {"obs_schema": schema}})])
+        rows = cur.execute(f"show procedures like 'ICECORE_SCORE' in schema \"{DATABASE}\".\"{schema}\"").fetchall()
+        assert len(rows) == 1 and "ICECORE_SCORE(VARCHAR, VARCHAR, ARRAY, FLOAT, FLOAT)" in rows[0][8], rows
+    finally:
+        cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')

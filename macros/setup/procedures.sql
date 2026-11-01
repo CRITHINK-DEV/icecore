@@ -55,6 +55,11 @@
 {% macro create_emit_procedures(schema=none) %}
   {%- set created = [] -%}
   {%- if execute -%}
+    {#- Snowflake keys a procedure by its signature: CREATE OR REPLACE of the shorter ICECORE_SCORE would leave an earlier
+        signature (with database and schema arguments, a confused deputy) callable. Drop each retired one first, guarded. -#}
+    {%- for ddl in icecore._icecore_retired_score_drops(schema) -%}
+      {%- do icecore._icecore_guarded_ddl(ddl) -%}
+    {%- endfor -%}
     {%- for ddl in icecore._icecore_emit_procedures_ddl(schema) -%}
       {%- do run_query(ddl) -%}
     {%- endfor -%}
@@ -222,4 +227,15 @@ $$
     {{ exceptions.raise_compiler_error("icecore: the database and the obs schema must be plain identifiers ([A-Za-z0-9_]) to create ICECORE_SCORE, got '" ~ name ~ "'") }}
   {%- endif -%}
   {{ return(up) }}
+{% endmacro %}
+
+
+{#- Every ICECORE_SCORE signature shipped before the current one, as DROP statements. Add a line here whenever the signature changes. -#}
+{% macro _icecore_retired_score_drops(schema=none) %}
+  {%- set retired = ['STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT'] -%}
+  {%- set drops = [] -%}
+  {%- for signature in retired -%}
+    {%- do drops.append('DROP PROCEDURE IF EXISTS ' ~ icecore._icecore_procedure('ICECORE_SCORE', schema) ~ '(' ~ signature ~ ')') -%}
+  {%- endfor -%}
+  {{ return(drops) }}
 {% endmacro %}

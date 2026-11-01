@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: rce_a
+    data_tests:
+      # max_lag 0 is always breached, as a warning so that the build goes on: a breach of the real freshness test.
+      - icecore.freshness:
+          max_lag: 0
+          config: {severity: warn, tags: ["root_cause_e2e"]}
+  - name: rce_c
+    columns:
+      - name: id
+        data_tests:
+          - not_null:
+              config: {tags: ["root_cause_e2e"]}

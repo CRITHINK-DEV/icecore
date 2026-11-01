@@ -17,7 +17,7 @@ macros:
       (a Decimal) is written as an int or a float, a date or datetime as ISO text, and anything else as text, so none
       raises. `SYSTEM$ADD_EVENT` itself silently drops
       mapping and list attribute values (measured 1 Nov 2026), so `emit` writes a mapping or list value as a JSON
-      string (the attribute lands as JSON text). Records sent by `emit_run` keep native nesting on LOG records. Chunks are measured on the escaped literal that is sent. What is left: the
+      string (the attribute lands as JSON text). `emit_run` writes them as JSON text on spans and span events too, and keeps native nesting only on LOG records. Chunks are measured on the escaped literal that is sent. What is left: the
       `run_query` of the guard block itself can still raise (no warehouse, a closed connection), and dbt's Jinja
       cannot catch it. Never INSERTs, never emits from an
       anonymous block, never changes session levels; the database's LOG_LEVEL and TRACE_LEVEL apply. A no-op at

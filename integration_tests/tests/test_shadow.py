@@ -47,7 +47,7 @@ def test_unknown_shadow_engine_is_refused():
 
 
 def test_cortex_off_makes_no_cortex_call_and_warns_once():
-    out, logs = shadow("cortex", capabilities=CORTEX_OFF, model="DB.S.M", series="a")
+    out, logs = shadow("cortex", capabilities=CORTEX_OFF, model="ICECORE_M_0123456789ABCDEF", series="a")
     assert out is None  # a query would have failed to connect: none ran
     warnings = [line for line in logs if "shadow_engine is cortex" in line]
     assert len(warnings) == 1 and "not available" in warnings[0], logs
@@ -135,7 +135,7 @@ def test_native_decides_and_cortex_is_the_shadow(cortex_model):
 def test_a_cortex_shadow_without_a_model_reports_model_missing(cortex_model):
     out, _ = run_macro_with_logs("it_call", {"name": "shadow_score", "kwargs": {
         "series_sql": HISTORY, "current_value": 500, "primary": NATIVE, "shadow_engine": "cortex",
-        "model": f"{DATABASE}.{cortex_model.schema}.CX_NO_SUCH_MODEL", "series": "a", "schema": cortex_model.schema}})
+        "model": "ICECORE_M_FFFFFFFFFFFFFFFF", "series": "a", "schema": cortex_model.schema}})
     assert out["engine"] == "cortex" and out["fallback_reason"] == "model_missing" and out["lower"] is None
 
 

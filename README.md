@@ -54,6 +54,17 @@ models:
 
 Then `dbt deps`, `dbt run-operation icecore.setup` (creates the views in `<target_db>.ICECORE_OBS` and the two emitter procedures, no tables) and `dbt build`.
 
+The two hook lines are all run telemetry needs. `start_run` writes one `icecore.run_start` record when the run starts. `end_run` sends the run's records at the end, ending with one record that holds the run's status and node counts, all tagged with `dbt.invocation_id`. Both hooks write nothing when telemetry is off:
+
+```yaml
+# dbt_project.yml
+vars:
+  icecore:
+    telemetry: false
+```
+
+A telemetry failure never fails your run: if the procedures or a grant are missing, icecore logs a warning and dbt carries on. On dbt 1.8, `dbt source freshness` runs no project hooks unless `flags: {source_freshness_run_project_hooks: true}` is set in `dbt_project.yml`; dbt 1.12 runs them by default ([spike S3](spikes/S3.md)).
+
 ### Set up and check the install
 
 `setup` and `doctor` run today; the views, alerts, tasks and app that `setup` will also create are not built yet, and `setup` lists them as planned.
@@ -108,7 +119,7 @@ flowchart LR
 | **SLA and alert settings in YAML** | `collect_sla_config` reads `meta.sla` and `meta.alerts` from your models. | `building` |
 | **Column monitors over `CHANGES`** | Column metrics read over `CHANGES` since the last run. Cheap for insert-only windows on large tables; after a DELETE or MERGE, `CHANGES` reads every rewritten micro-partition (1.8–1.9x a full scan, S5). | `building` |
 | **Elementary compatibility target** | Pin the Elementary release the compatibility views follow; spike S4 on `edr report`. | `building` |
-| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `planned` |
+| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `building` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
 | **Setup and doctor** | `icecore.setup` creates the schema and the two emitter procedures and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
 | **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`. | `planned` |

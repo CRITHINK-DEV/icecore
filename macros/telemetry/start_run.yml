@@ -1,0 +1,13 @@
+version: 2
+
+macros:
+  - name: start_run
+    description: >
+      The on-run-start hook of run telemetry. Add it to dbt_project.yml as the on-run-start hook calling
+      icecore.start_run (README, "Try it in 60 seconds"). Writes one record, the span event `icecore.run_start`,
+      through `icecore.emit` (ICECORE_EMIT, inside the guard block, so a missing procedure or grant only logs a
+      warning). The record carries `base_attributes()` (with `dbt.invocation_id` and `dbt.command`), plus
+      `dbt.version`, `icecore.anomaly_engine` and `icecore.shadow_engine`, and the message `dbt <command>
+      started`. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
+      `var('icecore').telemetry` is false. On dbt 1.8, `dbt source freshness` fires no project hooks unless
+      the behaviour flag `source_freshness_run_project_hooks` is true (spike S3).

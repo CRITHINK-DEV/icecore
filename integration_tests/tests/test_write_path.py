@@ -39,7 +39,6 @@ BASE_KEYS = ["dbt.invocation_id", "dbt.runtime", "dbt.command", "dbt.target", "d
 RUN_KEYS = ["dbt.version", "icecore.anomaly_engine", "icecore.shadow_engine"]
 NODE_KEYS = ["dbt.node.unique_id", "dbt.node.type", "dbt.node.name"]
 TEST_KEYS = ["dbt.test.name", "dbt.test.type", "dbt.test.severity"]  # a generic test also has dbt.test.column
-RESULT_KEYS = ["dbt.result.status", "dbt.result.execution_time_s", "dbt.result.message"]
 
 
 # --- offline --------------------------------------------------------------------------------------
@@ -133,7 +132,9 @@ def test_invocation_span(build):
 
 @pytest.mark.sandbox
 def test_node_spans_one_per_node(build):
-    spans = by_node(of(build["rows"], "SPAN", "icecore.node"))
+    span_rows = of(build["rows"], "SPAN", "icecore.node")
+    assert len(span_rows) == len(build["nodes"])  # one per node: by_node would hide duplicates
+    spans = by_node(span_rows)
     assert sorted(spans) == sorted(r["unique_id"] for r in build["nodes"])
     for unique_id, span in spans.items():
         has_keys(span, NODE_KEYS + ["dbt.node.started_at", "dbt.node.completed_at", "dbt.node.duration_s"])
@@ -147,7 +148,9 @@ def test_node_spans_one_per_node(build):
 
 @pytest.mark.sandbox
 def test_node_results_one_per_node(build):
-    logs = by_node(of(build["rows"], "LOG", kind="node_result"))
+    log_rows = of(build["rows"], "LOG", kind="node_result")
+    assert len(log_rows) == len(build["nodes"])  # one per node: by_node would hide duplicates
+    logs = by_node(log_rows)
     assert sorted(logs) == sorted(r["unique_id"] for r in build["nodes"])
     levels = {"success": "INFO", "pass": "INFO", "warn": "WARN", "fail": "ERROR", "error": "ERROR"}
     for res in build["nodes"]:

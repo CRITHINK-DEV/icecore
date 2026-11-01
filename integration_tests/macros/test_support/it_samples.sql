@@ -20,3 +20,11 @@
   {% set record = icecore._icecore_sample_log(result, rows) %}
   {% do _it_result(icecore._icecore_emit_run_records([record])[0]) %}
 {% endmacro %}
+
+{#- Which of these names and relation names the emitter accepts. -#}
+{% macro it_sample_validate(names, relations) %}
+  {% set out = {'names': [], 'relations': []} %}
+  {% for n in names %}{% do out['names'].append(icecore._icecore_sample_valid_name(n)) %}{% endfor %}
+  {% for r in relations %}{% do out['relations'].append(icecore._icecore_sample_valid_relation(r)) %}{% endfor %}
+  {% do _it_result(out) %}
+{% endmacro %}

@@ -5,7 +5,9 @@
 {% test freshness(model, max_lag=none) %}
   {%- set max_lag_seconds = none -%}
   {%- if max_lag is not none -%}
-    {%- if max_lag is number -%}
+    {%- if max_lag is boolean or (max_lag is number and max_lag < 0) -%}
+      {{ exceptions.raise_compiler_error("icecore.freshness: max_lag must be a non-negative number of seconds or a number with a unit s, m, h or d; got '" ~ max_lag ~ "'") }}
+    {%- elif max_lag is number -%}
       {%- set max_lag_seconds = max_lag -%}
     {%- else -%}
       {%- set parsed = modules.re.match('^\\s*(\\d+(?:\\.\\d+)?)\\s*([smhd])\\s*$', max_lag | string | lower) -%}
@@ -17,12 +19,17 @@
   {%- endif -%}
 
   {%- set breach = false -%}
+  {%- set unmeasured = none -%}
   {%- set lag_seconds = none -%}
   {%- if execute -%}
     {%- set last_change = icecore.get_last_change_time(model) -%}
     {%- if last_change is none -%}
       {#- Never written, or not readable (the reader logged why): there is no lag to judge, so the test passes. -#}
-      {%- do log('icecore: warning: freshness of ' ~ model ~ ' could not be measured: no last change time (never written, or not readable); the test passes without a metric', info=True) -%}
+      {%- do log('icecore: warning: freshness of ' ~ model ~ ' could not be measured: no last change time (never written, or not readable)', info=True) -%}
+      {#- No threshold: nothing to judge, the test passes. With max_lag: one failing row, so the test's severity applies. -#}
+      {%- if max_lag_seconds is not none -%}
+        {%- set unmeasured = 'unmeasured: no last change time (never written, or not readable)' -%}
+      {%- endif -%}
     {%- else -%}
       {%- set ms = run_query("select datediff('millisecond', to_timestamp_tz('" ~ last_change ~ "'), current_timestamp())").rows[0][0] -%}
       {%- set lag_seconds = ((ms | float) / 1000) | round(3) -%}
@@ -34,6 +41,7 @@
   {%- endif -%}
 
   select {{ 'null' if lag_seconds is none else lag_seconds }}::float as lag_seconds,
-         {{ 'null' if max_lag_seconds is none else max_lag_seconds }}::float as max_lag_seconds
-  where {{ 'true' if breach else 'false' }}
+         {{ 'null' if max_lag_seconds is none else max_lag_seconds }}::float as max_lag_seconds,
+         {{ 'null' if unmeasured is none else icecore._icecore_sql_literal(unmeasured) }}::varchar as reason
+  where {{ 'true' if (breach or unmeasured is not none) else 'false' }}
 {% endtest %}

@@ -13,12 +13,17 @@
   {%- endif -%}
 
   {%- set breach = false -%}
+  {%- set unmeasured = none -%}
   {%- set row_count = none -%}
   {%- if execute -%}
     {%- set row_count = icecore.get_row_count_metadata(model) -%}
     {%- if row_count is none -%}
       {#- A view, an external table, an Iceberg table, or not readable (the reader logged why): nothing to judge. -#}
-      {%- do log('icecore: warning: volume of ' ~ model ~ ' could not be measured from metadata; the test passes without a metric', info=True) -%}
+      {%- do log('icecore: warning: volume of ' ~ model ~ ' could not be measured from metadata', info=True) -%}
+      {#- No threshold: nothing to judge, the test passes. With min_rows or max_rows: one failing row, so the test's severity applies. -#}
+      {%- if min_rows is not none or max_rows is not none -%}
+        {%- set unmeasured = 'unmeasured: no trusted metadata row count (view, external or Iceberg table, missing, or not readable)' -%}
+      {%- endif -%}
     {%- else -%}
       {%- set breach = (min_rows is not none and row_count < min_rows) or (max_rows is not none and row_count > max_rows) -%}
       {#- UC3 scoring hook: icecore.score(<history of row_count>, row_count) plugs in here and its result goes
@@ -29,6 +34,7 @@
 
   select {{ 'null' if row_count is none else row_count }}::number as row_count,
          {{ 'null' if min_rows is none else min_rows }}::number as min_rows,
-         {{ 'null' if max_rows is none else max_rows }}::number as max_rows
-  where {{ 'true' if breach else 'false' }}
+         {{ 'null' if max_rows is none else max_rows }}::number as max_rows,
+         {{ 'null' if unmeasured is none else icecore._icecore_sql_literal(unmeasured) }}::varchar as reason
+  where {{ 'true' if (breach or unmeasured is not none) else 'false' }}
 {% endtest %}

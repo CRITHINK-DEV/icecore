@@ -7,8 +7,9 @@ macros:
       data scan), writes it as the metric `row_count` through `icecore.emit_metric`, and fails when it is below
       `min_rows` or above `max_rows`. With no argument it only records the metric and always passes. The verdict
       comes only from that comparison: a failed telemetry CALL is a logged warning and never changes the result.
-      Views, external tables and Iceberg tables have no trusted metadata row count: the reader logs why, no metric is
-      written and the test passes. The scoring hook for UC3 (`icecore.score`) is marked in the test body and not
+      Views, external tables and Iceberg tables have no trusted metadata row count: the reader logs why and no metric is
+      written; the test passes without thresholds, and with `min_rows` or `max_rows` it returns one row `unmeasured: <reason>`
+      so its severity applies. The scoring hook for UC3 (`icecore.score`) is marked in the test body and not
       called yet. Use `severity: warn` in the test config to warn instead of failing. Example,
       `data_tests: [icecore.volume: {min_rows: 1}]`.
     arguments:

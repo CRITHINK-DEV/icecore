@@ -17,10 +17,10 @@ sources:
               max_lag: 2h
           - icecore.freshness:
               name: it_freshness_fail
-              max_lag: 5s
+              max_lag: 0.001h
           - icecore.freshness:
               name: it_freshness_warn
-              max_lag: 5s
+              max_lag: 0.001h
               config:
                 severity: warn
           - icecore.freshness:
@@ -45,6 +45,27 @@ sources:
               name: it_volume_var
               min_rows: "{{ var('it_min_rows', 1) }}"
               max_rows: "{{ var('it_max_rows', 1000) }}"
+      - name: never_written
+        identifier: "{{ var('it_uc2_empty_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.freshness:
+              name: it_freshness_unmeasured_bare
+          - icecore.freshness:
+              name: it_freshness_unmeasured_max_lag
+              max_lag: 1h
+      - name: a_view
+        identifier: "{{ var('it_uc2_view', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_volume_unmeasured_bare
+          - icecore.volume:
+              name: it_volume_unmeasured_min_rows
+              min_rows: 1
+          - icecore.volume:
+              name: it_volume_unmeasured_warn
+              max_rows: 10
+              config:
+                severity: warn
       - name: no_telemetry
         identifier: "{{ var('it_uc2_vol_table', 'it_uc2_unset') }}"
         data_tests:

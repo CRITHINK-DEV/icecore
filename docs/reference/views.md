@@ -18,7 +18,7 @@ Views not merged yet are **coming**: `SILENCE_EVENTS` and `ALERTS_FEED`.
 | --- | --- |
 | Anyone who queries a view | USAGE on the database and the schema, SELECT on the view |
 | The same, when `setup` resolved the account event table `SNOWFLAKE.TELEMETRY.EVENTS` | Also the `EVENTS_VIEWER` application role. The views then read `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` |
-| The role that runs dbt | USAGE on the database, the schema and both procedures. Writing needs no `EVENTS_VIEWER` |
+| The role that runs dbt | USAGE on the database, the schema and both procedures, and SELECT on the views, which anomaly history and root cause read (`get_metric_history` reads `METRICS`). Also `EVENTS_VIEWER` when the views read the account table. Without these grants, anomaly history quietly reads as too short. Writing needs neither |
 
 ```sql
 GRANT USAGE ON DATABASE <db> TO ROLE <reader>;
@@ -83,8 +83,8 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `test_name` | text | Test name, such as `not_null` | `dbt.test.name` |
 | `test_type` | text | `generic` or `singular` | `dbt.test.type` |
 | `COLUMN` | text | Tested column | `dbt.test.column` |
-| `severity` | text | `error` or `warn` | `dbt.test.severity` |
-| `status` | text | `pass`, `fail`, `warn`, `error` | `dbt.result.status` |
+| `severity` | text | `ERROR` (dbt's default) or `WARN` | `dbt.test.severity` |
+| `status` | text | `pass`, `fail`, `warn`, `error` or `skipped` | `dbt.result.status` |
 | `failures` | number | Failing rows | `dbt.test.failures` |
 | `message` | text | dbt's result message, redacted by default ([`result_message`](../configuration.md#result_message)) | `dbt.result.message` |
 | `execution_time_s` | float | Seconds | `dbt.result.execution_time_s` |

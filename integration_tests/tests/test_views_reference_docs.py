@@ -1,6 +1,6 @@
 """docs/reference/views.md lists every column of every view that icecore.create_views builds (offline).
 
-A column added to a view without a row in its section of the reference fails here."""
+A column added to a view without a row in its section of the reference fails here, and so does a documented column the view no longer has."""
 import re
 from pathlib import Path
 
@@ -50,17 +50,33 @@ def sections() -> dict:
     return {p.splitlines()[0].strip("` ").upper(): p for p in parts}
 
 
-@pytest.mark.parametrize("name", ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS", "NODE_EXECUTIONS"])
+VIEW_NAMES = list(views())
+
+
+def documented_columns(name: str) -> set:
+    """The first cell of each table row of the view's section, as lower-case identifiers."""
+    section = sections()["LINEAGE" if name == "LINEAGE_LATEST" else name]
+    found = set()
+    for line in section.splitlines():
+        cells = line.split("|")
+        if len(cells) > 2 and cells[1].strip().startswith("`"):
+            found.update(c.lower() for c in re.findall(r"`([A-Za-z_]+)`", cells[1]))
+    return found
+
+
+@pytest.mark.parametrize("name", VIEW_NAMES)
 def test_every_view_column_is_in_the_reference(name):
-    section = sections()[name if name != "LINEAGE_LATEST" else "LINEAGE_LATEST"]
-    text = section.lower()
-    if name == "LINEAGE_LATEST":
-        text += sections()["LINEAGE"].lower()
     cols = columns(views()[name])
-    assert cols
-    missing = [c for c in cols if f"`{c}`" not in text]
+    assert len(cols) >= 5
+    missing = [c for c in cols if c not in documented_columns(name)]
     assert not missing, f"{name}: columns not in docs/reference/views.md: {missing}"
 
 
-def test_the_reference_covers_exactly_the_views_setup_creates():
-    assert {n for n in views()} <= set(sections())
+@pytest.mark.parametrize("name", VIEW_NAMES)
+def test_every_documented_column_still_exists(name):
+    gone = sorted(documented_columns(name) - set(columns(views()[name])))
+    assert not gone, f"{name}: documented in docs/reference/views.md but not in the view: {gone}"
+
+
+def test_the_reference_covers_every_view_setup_creates():
+    assert set(VIEW_NAMES) <= set(sections())

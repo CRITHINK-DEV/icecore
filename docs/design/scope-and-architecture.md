@@ -132,6 +132,7 @@ There are no `METRIC` records: SQL cannot write them (S1).
 | `dbt.result.status`, `dbt.result.rows_affected`, `dbt.result.execution_time_s`, `dbt.result.message` | `success`, `1200`, `4.2`, `...` |  |
 | `dbt.test.name`, `dbt.test.type`, `dbt.test.column`, `dbt.test.severity`, `dbt.test.failures` | `volume_anomaly`, `warn`, `3` |  |
 | `dbt.metric.name`, `dbt.metric.column`, `dbt.metric.dimension`, `dbt.metric.value` | `row_count`, `null_rate`, `country=FR`, `1200` | On metric span events; the value is an attribute because span events have no `VALUE` (S1) |
+| `dbt.schema.change_kind`, `dbt.schema.column`, `dbt.schema.from_type`, `dbt.schema.to_type` | `added` / `removed` / `type_changed`, `AMOUNT`, `NUMBER(10,2)`, `FLOAT` | On `icecore.schema_change` span events, one record per detected column change, with `dbt.node.relation`; `from_type` is null for `added`, `to_type` null for `removed` |
 | `dbt.anomaly.engine`, `dbt.anomaly.expected`, `dbt.anomaly.lower`, `dbt.anomaly.upper`, `dbt.anomaly.score`, `dbt.anomaly.is_anomaly` | `native`, ... | Same keys whatever engine scored it |
 | `dbt.cost.credits`, `dbt.cost.warehouse` | `0.021`, `TRANSFORM_WH` | Joined post-run from `QUERY_ATTRIBUTION_HISTORY` by `snow.query.id` |
 | `dbt.root_cause.unique_id`, `dbt.root_cause.kind` | `model.x.stg_orders`, `upstream_failure` / `stale_source` / `schema_change` | Set by the on-run-end DAG walk |

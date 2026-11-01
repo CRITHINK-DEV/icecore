@@ -31,7 +31,8 @@ def views() -> dict:
 
 def test_both_views_are_in_the_create_views_list_after_the_earlier_ones():
     names = list(views())
-    assert names[-2:] == ["INVOCATIONS", "NODE_EXECUTIONS"]  # the full list is asserted in test_results_lineage_views
+    assert names.index("NODE_EXECUTIONS") == names.index("INVOCATIONS") + 1  # the full list is asserted in test_results_lineage_views
+    assert names.index("INVOCATIONS") > names.index("CAPABILITIES")
 
 
 def test_invocations_reads_the_three_run_records_on_the_invocation_id():

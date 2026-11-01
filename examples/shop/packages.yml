@@ -1,0 +1,4 @@
+packages:
+  # From a clone of the icecore repository (examples/shop is two levels down). In your own project use the
+  # git or dbt Hub reference instead, see the README of this folder.
+  - local: ../../

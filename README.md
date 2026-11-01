@@ -175,11 +175,11 @@ Why each row holds:
 
 ## Compatibility
 
-Targets from the design (`require-dbt-version: [">=1.8.0", "<3.0.0"]`). Only dbt Core is tested today.
+Targets from the design (`require-dbt-version: [">=1.8.0", "<3.0.0"]`). Only dbt Core is tested today, at its oldest and newest supported version.
 
 | Runtime or edition | Target | Tested today |
 | --- | --- | --- |
-| dbt Core 1.8 to latest | Supported | Yes: CI runs the offline suite on dbt-core 1.8 and on the latest release; the sandbox suite runs on 1.8, on manual dispatch only |
+| dbt Core 1.8 to latest | Supported | Yes, on the two ends of the range: dbt-core 1.8 (the floor, 1.8.x) and the latest release (1.12.x at the time of writing). CI runs the offline suite on both for every pull request, and the sandbox suite on both every night; versions in between are not tested separately |
 | dbt Fusion 2.x | Supported | Not yet |
 | dbt Cloud | Supported | Not yet |
 | dbt Projects on Snowflake (`EXECUTE DBT PROJECT`) | Supported, through Snowflake's own dbt telemetry (how the views select those records is still to be defined) | Not yet |

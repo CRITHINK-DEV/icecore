@@ -4,7 +4,14 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  schedule:
+    - cron: "0 2 * * *"   # nightly sandbox matrix (job nightly-sandbox); GitHub runs schedules from the default branch
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: "Run the nightly sandbox matrix (dbt floor and latest) instead of only the single floor sandbox job"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -60,3 +67,55 @@ jobs:
           python -m venv elementary_probe/.venv
           elementary_probe/.venv/bin/pip install -r requirements-elementary.txt pytest
           elementary_probe/.venv/bin/pytest -m sandbox tests/spikes/test_s4_edr_contract.py
+
+  nightly-sandbox:
+    # The sandbox suite on the oldest and newest dbt Core, once a night (or on dispatch with nightly = true).
+    # One run at a time (max-parallel 1): the sandbox is shared. A failure opens an issue, or comments on the open one.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        requirements: [floor, latest]
+    defaults:
+      run:
+        working-directory: integration_tests
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-${{ matrix.requirements }}.txt
+      - run: dbt --version
+      - name: Write private key
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          umask 077
+          key_path="$RUNNER_TEMP/snowflake_key.p8"
+          printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
+          echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - run: pytest -m sandbox
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Nightly sandbox suite failed on dbt ${{ matrix.requirements }}"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "Failed again: $url"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "The nightly \`pytest -m sandbox\` run on the ${{ matrix.requirements }} requirements failed: $url"
+          fi

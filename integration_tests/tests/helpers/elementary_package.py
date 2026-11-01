@@ -66,9 +66,10 @@ def table_columns(relation: str) -> list[tuple[str, str]]:
     """[(column, logical type)] of Elementary's table, in order, from its package macros."""
     text = (package_dir() / "macros" / "edr" / "system" / "system_utils" / "empty_table.sql").read_text()
     if relation == "data_monitoring_metrics":
-        columns = _pairs(_macro_body(text, "default__empty_data_monitoring_metrics"))
-        assert "with_created_at" in _macro_body(text, "default__empty_data_monitoring_metrics")
-        return columns + [("created_at", "timestamp")]
+        body = _macro_body(text, "default__empty_data_monitoring_metrics")
+        listed = body.split("] %}", 1)[0]  # the columns list; created_at is appended after it when with_created_at
+        assert re.search(r"if with_created_at.*?append\(\(\s*\"created_at\",\s*\"timestamp\"\s*\)\)", body, re.S)
+        return _pairs(listed) + [("created_at", "timestamp")]
     macro = {"elementary_test_results": "empty_elementary_test_results",
              "schema_columns_snapshot": "empty_schema_columns_snapshot"}[relation]
     return _pairs(_macro_body(text, macro))

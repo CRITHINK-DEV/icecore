@@ -2,7 +2,7 @@ version: 2
 
 macros:
   - name: dbt_models_view_sql
-    description: "The SELECT of the compat view dbt_models: Elementary's 25 columns, in its order and types (Elementary dbt package pinned in macros/compat/ELEMENTARY_VERSION), over the core views NODE_EXECUTIONS and LINEAGE_LATEST only. One row per model that ran, from its latest execution. Filled: unique_id, name, materialization, alias, database_name and schema_name (read from the node's relation), package_name (from the unique_id), generated_at and depends_on_nodes (a JSON list of the node's parents in the latest lineage). Every other column is a typed NULL, because icecore holds no manifest metadata: description, tags, meta, owner, paths, checksum, metadata_hash, unique_key, incremental_strategy, group_name, access, bigquery_partition_by, bigquery_cluster_by, depends_on_macros. A model that has never run is absent."
+    description: "The SELECT of the compat view dbt_models: Elementary's 23 Snowflake columns, in its order and types (Elementary dbt package pinned in macros/compat/ELEMENTARY_VERSION), over the core views NODE_EXECUTIONS and LINEAGE_LATEST only. One row per model that ran, from its latest execution. Filled: unique_id, name, materialization, alias, database_name and schema_name (read from the node's relation), package_name (from the unique_id), generated_at and depends_on_nodes (a JSON list of the node's parents in the latest lineage). Every other column is a typed NULL, because icecore holds no manifest metadata: description, tags, meta, owner, paths, checksum, metadata_hash, unique_key, incremental_strategy, group_name, access, depends_on_macros. A model that has never run is absent."
     arguments:
       - name: obs
         type: string

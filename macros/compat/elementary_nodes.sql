@@ -104,8 +104,6 @@
     {'name': 'incremental_strategy', 'type': 'string', 'expr': none},
     {'name': 'group_name', 'type': 'string', 'expr': none},
     {'name': 'access', 'type': 'string', 'expr': none},
-    {'name': 'bigquery_partition_by', 'type': 'string', 'expr': none},
-    {'name': 'bigquery_cluster_by', 'type': 'string', 'expr': none},
   ]) }}
 {% endmacro %}
 

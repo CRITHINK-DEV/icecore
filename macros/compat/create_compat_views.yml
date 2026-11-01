@@ -19,4 +19,4 @@ macros:
         description: "What the views imitate: only elementary. Any other value is refused."
       - name: compat_schema
         type: string
-        description: "The schema to create the views in. Default var icecore.compat_schema, else the obs schema name followed by _ELEMENTARY."
+        description: "The schema to create the views in. Default var icecore.compat_schema, else the obs schema name followed by _ELEMENTARY. Only letters, digits and underscores are accepted; anything else is a compile error."

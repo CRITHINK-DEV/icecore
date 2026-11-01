@@ -10,9 +10,9 @@
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
-      8. create_tasks            the silence task (created suspended; resumed by var), see create_silence_task;
-      9. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
+      8. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
          views of step 7 (macros/compat/create_compat_views.sql);
+      9. create_tasks            the silence task (created suspended; resumed by var), see create_silence_task;
          create_alerts, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
@@ -27,6 +27,9 @@
     status, detail}]}; status is done or planned. Nothing at parse time. -#}
 {% macro setup(schema=none, compat='none', app=false, runs_per_day=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- if (compat or 'none') | string | lower not in ['none', 'elementary'] -%}
+    {{ exceptions.raise_compiler_error("icecore: setup compat must be 'none' or 'elementary', got " ~ compat ~ "; no step was run") }}
+  {%- endif -%}
   {%- set state = {
       'database': target.database | string | upper,
       'schema': icecore.obs_schema_name(schema),
@@ -117,16 +120,16 @@
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- elif name == 'create_views' -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
+  {%- elif name == 'create_compat_views' -%}
+    {%- set compat_schema = icecore._icecore_compat_schema(state['schema']) -%}
+    {%- do state.update({'compat_schema': compat_schema}) -%}
+    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
   {%- elif name == 'create_tasks' -%}
     {%- set t = icecore.create_silence_task(state['schema']) -%}
     {%- do state.update({'tasks': t}) -%}
     {{ return(('no model declares meta.sla: silence task not created' if t['status'] == 'skipped'
         else (t['task'] ~ (' (resumed)' if t['resumed'] else ' (suspended)') if t['status'] == 'ok'
         else 'could not create ' ~ t['task'] ~ ': ' ~ t['status']))) }}
-  {%- elif name == 'create_compat_views' -%}
-    {%- set compat_schema = icecore._icecore_compat_schema(state['schema']) -%}
-    {%- do state.update({'compat_schema': compat_schema}) -%}
-    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

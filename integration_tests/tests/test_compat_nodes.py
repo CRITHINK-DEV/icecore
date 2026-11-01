@@ -21,7 +21,7 @@ from helpers.run_hooks import (
 )
 
 S4 = json.load(open(IT_DIR.parent / "spikes" / "results" / "s4.json"))
-RELATIONS = {"dbt_models": 25, "dbt_tests": 29, "dbt_sources": 22}
+RELATIONS = {"dbt_models": 23, "dbt_tests": 29, "dbt_sources": 22}
 CORE = {"NODE_EXECUTIONS", "TEST_RESULTS", "LINEAGE_LATEST", "LINEAGE", "INVOCATIONS"}
 
 
@@ -71,7 +71,7 @@ def test_models_fill_identity_materialization_relation_parts_and_parents_and_nul
     assert columns["depends_on_nodes"] == "t.parents" and '"DB"."OBS"."LINEAGE_LATEST"' in rendered()["models_sql"]
     assert sorted(n for n, e in columns.items() if e is None) == sorted([
         "checksum", "tags", "meta", "owner", "depends_on_macros", "description", "original_path", "path", "patch_path",
-        "metadata_hash", "unique_key", "incremental_strategy", "group_name", "access", "bigquery_partition_by", "bigquery_cluster_by"])
+        "metadata_hash", "unique_key", "incremental_strategy", "group_name", "access"])
 
 
 def test_tests_fill_name_short_name_column_severity_and_type_and_null_the_rest():

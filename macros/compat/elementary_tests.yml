@@ -8,7 +8,7 @@ macros:
       row count is the core view's. Filled: id and test_execution_id (invocation_id and test_unique_id joined by a
       dot), test_unique_id, invocation_id, detected_at and created_at (executed_at), column_name, test_type
       (anomaly_detection when the test was scored, else dbt_test), test_sub_type, test_results_description
-      (message), test_name, test_short_name, severity and status (lower case), failures and failed_row_count, and
+      (message), test_name, test_short_name, severity (dbt's configured value as it is, default ERROR) and status (lower case), failures and failed_row_count, and
       other (a JSON object of the anomaly result for scored tests). Typed NULLs: data_issue_id, model_unique_id,
       database_name, schema_name, table_name, owners, tags, test_results_query, test_params, test_alias,
       result_rows."

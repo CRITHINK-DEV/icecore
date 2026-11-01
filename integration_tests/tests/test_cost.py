@@ -111,6 +111,36 @@ def test_lookup_sql_reads_attribution_history_for_the_ids_and_escapes_them():
     assert "query_id in ('01a', 'x\\'y')" in sql
 
 
+BACKFILL_NODE = {"invocation_id": "inv-old", "unique_id": "model.p.a", "type": "model", "name": "a",
+                 "materialization": "view", "relation": '"DB"."S"."A"', "query_ids": ["q1"]}
+
+
+def test_backfilled_cost_keeps_the_original_invocation_on_every_record():
+    out = run_macro("it_backfill_items", {"node": BACKFILL_NODE, "cost": {"credits": 0.5, "warehouse": "WH"},
+                                          "backfilled_by": "inv-new", "now_ns": 1762000000000000000})
+    assert out["current_invocation_id"] != "inv-old"
+    log, span = out["records"]
+    assert log["type"] == "log" and log["attrs"]["icecore.kind"] == "cost"
+    assert log["attrs"]["dbt.invocation_id"] == "inv-old"
+    assert log["attrs"]["dbt.cost.credits"] == 0.5 and log["attrs"]["dbt.cost.warehouse"] == "WH"
+    assert log["attrs"]["dbt.node.unique_id"] == "model.p.a" and log["attrs"]["dbt.node.relation"] == '"DB"."S"."A"'
+    assert log["attrs"]["icecore.backfill"] is True and log["attrs"]["icecore.backfilled_by"] == "inv-new"
+    assert span["name"] == "icecore.cost_backfill" and span["attrs"]["dbt.invocation_id"] == "inv-old"
+    metric, = span["events"]
+    assert metric["name"] == "icecore.metric" and metric["ts_ns"] == 1762000000000000000
+    assert metric["attrs"]["dbt.invocation_id"] == "inv-old"
+    assert metric["attrs"]["dbt.metric.name"] == "credits" and metric["attrs"]["dbt.metric.value"] == 0.5
+    assert metric["attrs"]["dbt.node.relation"] == '"DB"."S"."A"' and metric["attrs"]["dbt.node.unique_id"] == "model.p.a"
+
+
+def test_pending_sql_skips_costed_nodes_and_the_current_invocation_and_is_bounded():
+    sql = run_macro("it_pending_cost_sql", {"events_sql": "select 1 as x", "days": 7, "limit": 50,
+                                            "current_invocation_id": "inv-now"})
+    assert "cost_credits is not null" in sql and "c.node_unique_id is null" in sql
+    assert "invocation_id <> 'inv-now'" in sql and "dateadd(day, -7, current_timestamp())" in sql
+    assert "limit 50" in sql and "array_agg(distinct w.node_query_id)" in sql
+
+
 # --- sandbox --------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -121,13 +151,13 @@ def obs(sf):
 
 @pytest.fixture(scope="module")
 def old_queries(sf):
-    """Three attributed queries older than 12 hours: {query_id: (warehouse, credits)}."""
+    """Four attributed queries older than 12 hours: {query_id: (warehouse, credits)}."""
     rows = sf.cursor().execute(
         "select query_id, warehouse_name, credits_attributed_compute + coalesce(credits_used_query_acceleration, 0)"
         " from snowflake.account_usage.query_attribution_history"
         " where start_time between dateadd(day, -6, current_timestamp()) and dateadd(hour, -12, current_timestamp())"
-        " and credits_attributed_compute > 0 order by start_time limit 3").fetchall()
-    assert len(rows) == 3, "the sandbox has no attributed query from previous days"
+        " and credits_attributed_compute > 0 order by start_time limit 4").fetchall()
+    assert len(rows) == 4, "the sandbox has no attributed query from previous days"
     return {r[0]: (r[1], float(r[2])) for r in rows}
 
 
@@ -145,7 +175,7 @@ def attach(obs, results):
 @pytest.mark.sandbox
 def test_attributed_nodes_get_credits_a_cost_log_and_a_metric(sf, obs, old_queries):
     since = snowflake_since(sf)
-    ids = list(old_queries)
+    ids = list(old_queries)[:3]
     results = [result_for(f"model.p.n{i}", q) for i, q in enumerate(ids)]
     out, _ = attach(obs, results)
     costs = [i for i in out["items"] if i["attrs"].get("icecore.kind") == "cost"]
@@ -207,3 +237,86 @@ def test_var_cost_true_never_fails_the_run_when_attribution_lags(builds):
     for r in builds[True]:
         if r["record_type"] == "LOG" and r["record_attributes"].get("icecore.kind") == "cost":
             assert r["record_attributes"]["dbt.cost.credits"] >= 0
+
+
+# --- backfill (sandbox) ---------------------------------------------------------------------------
+
+def seed_log(inv, unique_id, query_id=None, kind="node_result", **attrs):
+    a = {"icecore.kind": kind, "dbt.invocation_id": inv, "dbt.node.unique_id": unique_id,
+         "dbt.node.type": "model", "dbt.node.name": unique_id.split(".")[-1],
+         "dbt.node.relation": f'"ICECORE_SANDBOX"."SPIKES"."{unique_id.split(".")[-1].upper()}"', **attrs}
+    if query_id:
+        a["snow.query.id"] = query_id
+    return {"type": "log", "level": "info", "message": f"{unique_id} {kind}", "attrs": a}
+
+
+def seed_query_span(inv, unique_id, query_id):
+    now = time.time_ns()
+    return {"name": "icecore.node", "start_ns": now, "end_ns": now, "attrs": {"dbt.invocation_id": inv, "dbt.node.unique_id": unique_id},
+            "events": [{"name": "icecore.query", "ts_ns": now,
+                        "attrs": {"dbt.invocation_id": inv, "snow.query.id": query_id, "dbt.node.unique_id": unique_id}}]}
+
+
+@pytest.fixture(scope="module")
+def earlier_run(sf, obs, old_queries):
+    """An earlier invocation whose costs were never recorded: n1 (one query), n2 (two queries, one from a node
+    result and one from a query event), n3 already costed, n4 with a query that is not attributed."""
+    inv = f"old-{uuid.uuid4().hex}"
+    q1, q2, q3, q4 = list(old_queries)
+    since = snowflake_since(sf)
+    items = [seed_log(inv, "model.p.n1", q1), seed_log(inv, "model.p.n2", q2), seed_query_span(inv, "model.p.n2", q3),
+             seed_log(inv, "model.p.n3", q4), seed_log(inv, "model.p.n3", kind="cost", **{"dbt.cost.credits": 9.0}),
+             seed_log(inv, "model.p.n4", "01c00000-0000-0000-0000-000000000000")]
+    extra = ["--vars", json.dumps({"icecore": {"obs_schema": obs}})]
+    run_macro("it_emit_items", {"items": items}, extra)
+    invocation_records(sf, obs, inv, min_rows=7, since=since)
+    return {"inv": inv, "since": since, "queries": old_queries, "ids": [q1, q2, q3, q4]}
+
+
+def build_with_cost(sf, obs, since):
+    run_id = uuid.uuid4().hex
+    try:
+        res, run_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, obs, cost=True)
+        assert res.success, res.exception
+        return run_results["metadata"]["invocation_id"]
+    finally:
+        drop_fixture_views(sf, run_id)
+
+
+def landed_costs(sf, obs, earlier_run, min_rows, settle_s=20):
+    rows = invocation_records(sf, obs, earlier_run["inv"], min_rows=min_rows, since=earlier_run["since"], settle_s=settle_s)
+    logs = [r["record_attributes"] for r in rows
+            if r["record_type"] == "LOG" and r["record_attributes"].get("icecore.kind") == "cost"]
+    metrics = [r["record_attributes"] for r in rows
+               if r["record_type"] == "SPAN_EVENT" and r["record"].get("name") == "icecore.metric"]
+    return logs, metrics
+
+
+@pytest.mark.sandbox
+def test_next_run_backfills_earlier_nodes_once_without_duplicates(sf, obs, earlier_run):
+    q = earlier_run["queries"]
+    q1, q2, q3, q4 = earlier_run["ids"]
+    new_invocation = build_with_cost(sf, obs, earlier_run["since"])
+    # seeded rows: 6 + 1 query event = 7; backfill adds 2 cost logs, 2 spans and 2 metric events on the original run
+    logs, metrics = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2)
+    backfilled = {a["dbt.node.unique_id"]: a for a in logs if a.get("icecore.backfill")}
+    assert sorted(backfilled) == ["model.p.n1", "model.p.n2"]
+    assert backfilled["model.p.n1"]["dbt.cost.credits"] == pytest.approx(q[q1][1])
+    assert backfilled["model.p.n2"]["dbt.cost.credits"] == pytest.approx(q[q2][1] + q[q3][1])
+    assert all(a["dbt.invocation_id"] == earlier_run["inv"] and a["icecore.backfilled_by"] == new_invocation
+               for a in backfilled.values())
+    assert backfilled["model.p.n1"]["dbt.cost.warehouse"] == q[q1][0]
+    by_node = {m["dbt.node.unique_id"]: m for m in metrics if m["dbt.metric.name"] == "credits"}
+    assert sorted(by_node) == ["model.p.n1", "model.p.n2"]
+    assert by_node["model.p.n1"]["dbt.metric.value"] == pytest.approx(q[q1][1])
+    # n3 (already costed) kept its one record; n4 (not attributed) has none
+    assert [a["dbt.cost.credits"] for a in logs if a["dbt.node.unique_id"] == "model.p.n3"] == [9.0]
+    assert not [a for a in logs if a["dbt.node.unique_id"] == "model.p.n4"]
+
+    # the next run finds nothing new for them: no duplicate
+    since = snowflake_since(sf, 2)
+    build_with_cost(sf, obs, since)
+    time.sleep(60)
+    logs, metrics = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2)
+    assert sorted(a["dbt.node.unique_id"] for a in logs) == ["model.p.n1", "model.p.n2", "model.p.n3"]
+    assert len([m for m in metrics if m["dbt.metric.name"] == "credits"]) == 2

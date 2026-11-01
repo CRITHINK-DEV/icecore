@@ -14,7 +14,10 @@
     on-run-end is "not available yet": the run then logs one warning and writes nothing for those nodes;
     backfill_cost (backfill_cost.sql) fills them on a later run. A missing privilege (the role needs
     SNOWFLAKE.USAGE_VIEWER, or IMPORTED PRIVILEGES on the SNOWFLAKE database) or an empty result is the same
-    outcome: a warning, never a failed run. -#}
+    outcome: a warning, never a failed run.
+
+    The same call then runs backfill_cost (below): nodes of EARLIER runs that have no cost record yet and whose
+    attribution is available now get theirs, keyed to their original invocation. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -49,6 +52,7 @@
           ~ '; a later run backfills them (QUERY_ATTRIBUTION_HISTORY lags by hours)', info=True) -%}
     {%- endif -%}
   {%- endif -%}
+  {%- do icecore.backfill_cost(batch) -%}
 {% endmacro %}
 
 
@@ -84,10 +88,10 @@
 
 {#- {costs: {query_id: {credits, warehouse}}, error: text or none}. The query runs in a block that catches every
     error (_icecore_try_scalar), 500 ids at a time; a failed chunk leaves its ids out and reports the error. -#}
-{% macro _icecore_query_costs(query_ids) %}
+{% macro _icecore_query_costs(query_ids, lookback_days=none) %}
   {%- set out = {'costs': {}, 'error': none} -%}
   {%- for start in range(0, query_ids | length, 500) -%}
-    {%- set chunk = icecore._icecore_try_scalar(icecore._icecore_cost_lookup_sql(query_ids[start:start + 500])) -%}
+    {%- set chunk = icecore._icecore_try_scalar(icecore._icecore_cost_lookup_sql(query_ids[start:start + 500], lookback_days)) -%}
     {%- if 'error' in chunk -%}
       {%- do out.update({'error': chunk['error']}) -%}
     {%- else -%}
@@ -187,4 +191,133 @@
 {#- true when a node of age_hours (hours since its run) is settled. -#}
 {% macro _icecore_cost_settled(age_hours) %}
   {{ return((age_hours or 0) >= icecore._icecore_cost_settle_hours()) }}
+
+{#- Backfill ---------------------------------------------------------------------------------------- -#}
+
+{#- Called by attach_cost (so behind var cost) after the run's own nodes. Finds the nodes of earlier invocations
+    (the last cost_lookback_days, default 7, at most cost_backfill_limit nodes per run, default 500) that have
+    query ids in the event table and no cost record, reads their attribution, and adds to the batch, for each node
+    whose queries are ALL attributed now:
+      - the same cost LOG as attach_cost, with EXPLICIT `dbt.invocation_id` = the original invocation (the
+        base attribute of the current run is overridden), `dbt.node.unique_id`, `icecore.backfill = true` and
+        `icecore.backfilled_by` = the current invocation id;
+      - a span `icecore.cost_backfill` carrying the METRIC `credits` as an `icecore.metric` span event, also with
+        the original invocation id, written at the time the cost became known.
+    How to join a backfilled cost back to its node: on (`invocation_id`, `node_unique_id`), never on `command` or
+    `target`, which describe the run that backfilled it. node_executions takes `credits` as the maximum of
+    `cost_credits` over the rows of its (invocation_id, node_unique_id).
+    No duplicates: a node with a cost record of any invocation in the window (written by attach_cost or by an
+    earlier backfill) is left out, checked through icecore.base_events(). A record written less than the ingestion
+    lag (about 20 s, S3) ago is not seen yet; the backfill of runs that start within that lag can write it twice.
+    Everything is guarded: no active event table, an unreadable event table or attribution view, or nothing
+    pending is a warning or silence, never a failed run. -#}
+{% macro backfill_cost(batch) %}
+  {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- set pending = icecore._icecore_pending_cost_nodes() -%}
+  {%- if not pending -%}{{ return(none) }}{%- endif -%}
+  {%- set ids_by_node = {} -%}
+  {%- for node in pending -%}
+    {%- do ids_by_node.update({node['invocation_id'] ~ '|' ~ node['unique_id']: node['query_ids']}) -%}
+  {%- endfor -%}
+  {%- set days = (icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7) | int -%}
+  {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node), days + 1) -%}
+  {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs']) -%}
+  {%- set now_ns = (batch.get('timing') or {}).get('completed_ns') or icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
+  {%- for node in pending -%}
+    {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
+    {%- if cost is not none -%}
+      {%- do batch['items'].extend(icecore._icecore_backfill_items(node, cost, invocation_id, now_ns)) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if found['error'] -%}
+    {%- do log('icecore: warning: cost backfill: attribution could not be read (' ~ found['error'] ~ ')', info=True) -%}
+  {%- endif -%}
+  {%- if costs -%}
+    {%- do log('icecore: cost backfill: ' ~ (costs | length) ~ ' of ' ~ (pending | length) ~ ' earlier nodes got their cost', info=True) -%}
+  {%- endif -%}
+{% endmacro %}
+
+
+{#- The cost LOG and the metric span of one backfilled node, both on the original invocation. -#}
+{% macro _icecore_backfill_items(node, cost, backfilled_by, now_ns) %}
+  {%- set attrs = {} -%}
+  {%- for key, name in [('unique_id', 'dbt.node.unique_id'), ('type', 'dbt.node.type'), ('name', 'dbt.node.name'),
+                        ('materialization', 'dbt.node.materialization'), ('relation', 'dbt.node.relation')] -%}
+    {%- do icecore._icecore_put(attrs, name, node.get(key)) -%}
+  {%- endfor -%}
+  {%- set explicit = {'dbt.invocation_id': node['invocation_id'], 'icecore.backfill': true,
+                      'icecore.backfilled_by': backfilled_by} -%}
+  {%- set span_events = [] -%}
+  {%- for event in icecore._icecore_cost_metric_events(attrs, cost) -%}
+    {%- set event_attrs = {'icecore.level': event['level']} -%}
+    {%- do event_attrs.update(event['attributes']) -%}
+    {%- do event_attrs.update(explicit) -%}
+    {%- do span_events.append({'name': 'icecore.' ~ event['kind'], 'ts_ns': now_ns, 'attrs': event_attrs}) -%}
+  {%- endfor -%}
+  {%- set span_attrs = {} -%}
+  {%- do span_attrs.update(attrs) -%}
+  {%- do span_attrs.update(explicit) -%}
+  {{ return([
+      icecore._icecore_cost_log(attrs, cost, explicit),
+      {'name': 'icecore.cost_backfill', 'start_ns': now_ns, 'end_ns': now_ns, 'attrs': span_attrs, 'events': span_events},
+  ]) }}
+{% endmacro %}
+
+
+{#- The pending nodes: [{invocation_id, unique_id, type, name, materialization, relation, query_ids}], oldest first.
+    The SELECT reads base_events (record attributes, including the node results' and query events' snow.query.id);
+    a node is pending when it has a query id and no row with cost_credits in the window. -#}
+{% macro _icecore_pending_cost_nodes() %}
+  {%- set rows = run_query("show parameters like 'EVENT_TABLE' in database " ~ icecore._icecore_identifier(target.database)).rows -%}
+  {%- set table = icecore.event_table_to_read(rows[0]['value'] if rows | length > 0 else none) -%}
+  {%- if table is none -%}
+    {%- do log('icecore: warning: cost backfill: the database has no active event table, nothing to backfill', info=True) -%}
+    {{ return([]) }}
+  {%- endif -%}
+  {%- set days = (icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7) | int -%}
+  {%- set limit = (icecore._icecore_number(icecore._icecore_setting('cost_backfill_limit', 500)) or 500) | int -%}
+  {%- set out = icecore._icecore_try_scalar(icecore._icecore_pending_cost_sql(icecore.base_events(event_table=table), days, limit, invocation_id)) -%}
+  {%- if 'error' in out -%}
+    {%- do log('icecore: warning: cost backfill: the event table could not be read (' ~ out['error'] ~ ')', info=True) -%}
+    {{ return([]) }}
+  {%- endif -%}
+  {{ return(out.get('value') or []) }}
+{% endmacro %}
+
+
+{#- The SELECT (one array of objects) behind _icecore_pending_cost_nodes, over `events_sql` (base_events).
+    The current invocation is left out: attach_cost has just tried it. -#}
+{% macro _icecore_pending_cost_sql(events_sql, days, limit, current_invocation_id) %}
+  {%- set sql -%}
+with events as (
+{{ events_sql }}
+),
+window_events as (
+  select * from events
+  where event_at >= dateadd(day, -{{ days | int }}, current_timestamp())
+    and node_unique_id is not null and invocation_id is not null
+    and invocation_id <> {{ icecore._icecore_sql_literal(current_invocation_id) }}
+),
+costed as (
+  select distinct invocation_id, node_unique_id from window_events where cost_credits is not null
+),
+pending as (
+  select w.invocation_id, w.node_unique_id,
+         max(w.node_type) as node_type, max(w.node_name) as node_name,
+         max(w.node_materialization) as node_materialization, max(w.node_relation) as node_relation,
+         array_agg(distinct w.node_query_id) as query_ids, min(w.event_at) as first_at
+  from window_events w
+  left join costed c on c.invocation_id = w.invocation_id and c.node_unique_id = w.node_unique_id
+  where c.node_unique_id is null
+  group by w.invocation_id, w.node_unique_id
+  having array_size(array_agg(distinct w.node_query_id)) > 0
+  order by min(w.event_at)
+  limit {{ limit | int }}
+)
+select array_agg(object_construct('invocation_id', invocation_id, 'unique_id', node_unique_id, 'type', node_type,
+       'name', node_name, 'materialization', node_materialization, 'relation', node_relation,
+       'query_ids', query_ids))
+from pending
+  {%- endset -%}
+  {{ return(sql | trim) }}
 {% endmacro %}

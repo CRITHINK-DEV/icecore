@@ -25,6 +25,22 @@
 
 {% macro it_cost_settled(age_hours) %}
   {% do _it_result({'settled': icecore._icecore_cost_settled(age_hours), 'hours': icecore._icecore_cost_settle_hours()}) %}
+
+{#- The items backfill_cost adds for one node, and how emit_run records them (the original invocation id must win
+    over the base attribute of this run). -#}
+{% macro it_backfill_items(node, cost, backfilled_by, now_ns) %}
+  {% set items = icecore._icecore_backfill_items(node, cost, backfilled_by, now_ns) %}
+  {% do _it_result({'items': items, 'records': icecore._icecore_emit_run_records(items),
+                    'current_invocation_id': invocation_id}) %}
+{% endmacro %}
+
+{% macro it_pending_cost_sql(events_sql, days, limit, current_invocation_id) %}
+  {% do _it_result(icecore._icecore_pending_cost_sql(events_sql, days, limit, current_invocation_id)) %}
+{% endmacro %}
+
+{#- Send these items to the obs schema with emit_run, as end_run would (seeds an "earlier run"). -#}
+{% macro it_emit_items(items) %}
+  {% do _it_result(icecore.emit_run(items)) %}
 {% endmacro %}
 
 {% macro it_settled_at_run_end(ids_by_node, found) %}

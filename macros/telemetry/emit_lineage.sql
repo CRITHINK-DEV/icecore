@@ -28,12 +28,12 @@
 {% endmacro %}
 
 
-{#- Add the LOG items for these edges to batch['items']: as few records as fit under the payload cap. -#}
-{% macro _icecore_lineage_append(edges, batch) %}
+{#- The edges split into parts: as few as fit under the payload cap, in order. One count for the log, the row counts and the tests. -#}
+{% macro _icecore_lineage_parts(edges) %}
+  {%- set parts = [] -%}
   {%- if edges -%}
     {#- room for the edges: the cap less the base attributes and this record's own attributes and message -#}
     {%- set room = icecore._icecore_payload_cap_bytes() - (tojson(icecore.base_attributes()) | length) - 700 -%}
-    {%- set parts = [] -%}
     {%- set ns = namespace(current=[], size=0) -%}
     {%- for edge in edges -%}
       {#- the pair as it sits in the JSON string attribute, which JSON escapes once more, plus the comma -#}
@@ -47,20 +47,27 @@
       {%- set ns.size = ns.size + size -%}
     {%- endfor -%}
     {%- do parts.append(ns.current) -%}
-    {%- for part in parts -%}
-      {%- do batch['items'].append({
-          'type': 'log',
-          'level': 'info',
-          'message': 'dbt lineage ' ~ loop.index ~ '/' ~ (parts | length) ~ ': ' ~ (part | length) ~ ' of ' ~ (edges | length) ~ ' edges',
-          'attrs': {
-              'icecore.kind': 'lineage',
-              'dbt.lineage.edges': tojson(part),
-              'dbt.lineage.edge_count': part | length,
-              'dbt.lineage.edges_total': edges | length,
-              'dbt.lineage.part': loop.index,
-              'dbt.lineage.parts': parts | length,
-          },
-      }) -%}
-    {%- endfor -%}
   {%- endif -%}
+  {{ return(parts) }}
+{% endmacro %}
+
+
+{#- Add the LOG items for these edges to batch['items']. -#}
+{% macro _icecore_lineage_append(edges, batch) %}
+  {%- set parts = icecore._icecore_lineage_parts(edges) -%}
+  {%- for part in parts -%}
+    {%- do batch['items'].append({
+        'type': 'log',
+        'level': 'info',
+        'message': 'dbt lineage ' ~ loop.index ~ '/' ~ (parts | length) ~ ': ' ~ (part | length) ~ ' of ' ~ (edges | length) ~ ' edges',
+        'attrs': {
+            'icecore.kind': 'lineage',
+            'dbt.lineage.edges': tojson(part),
+            'dbt.lineage.edge_count': part | length,
+            'dbt.lineage.edges_total': edges | length,
+            'dbt.lineage.part': loop.index,
+            'dbt.lineage.parts': parts | length,
+        },
+    }) -%}
+  {%- endfor -%}
 {% endmacro %}

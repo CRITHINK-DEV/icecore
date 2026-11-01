@@ -133,7 +133,7 @@ role (whether a view owned by another role can pass that access through is unmea
 | Role | Needs | Why |
 |---|---|---|
 | The role that runs `setup` (owns the procedures, views, alerts and tasks) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table). CREATE STREAMLIT on `ICECORE_OBS` for `setup(app=true)` and a deploy source the package does not create (a stage or a Git repository the role can read); CREATE SNOWFLAKE.ML.ANOMALY_DETECTION on `ICECORE_OBS` and the Cortex privileges of spec section 6 for the optional refresh task; CREATE DYNAMIC TABLE on `ICECORE_OBS` for the optional metrics table and USAGE on the warehouse that table refreshes on | `EXECUTE AS OWNER`: the procedures write with this role's rights. Alerts and tasks run as their owner and push through the notification integration (spec section 3, control path) |
-| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read; with the Cortex engine, USAGE on the trained model instances in `ICECORE_OBS` (`cortex__score` runs SHOW and `<model>!DETECT_ANOMALIES` as this role; the Snowflake docs do not state the model privilege, so it is unmeasured); with cost attribution on, `SNOWFLAKE.USAGE_VIEWER` or `IMPORTED PRIVILEGES` on the `SNOWFLAKE` database (`attach_cost` reads `QUERY_ATTRIBUTION_HISTORY` at on-run-end in this role's session, spec section 5). No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
+| The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views, which anomaly history and root cause read; with the Cortex engine, USAGE on the owner's-rights procedure `ICECORE_SCORE` that setup creates (not on the models: the Snowflake anomaly detection documentation says "You cannot clone models or share models across roles or accounts", so training and scoring run in the setup role and the dbt role scores through that procedure; open item 10); with cost attribution on, `SNOWFLAKE.USAGE_VIEWER` or `IMPORTED PRIVILEGES` on the `SNOWFLAKE` database (`attach_cost` reads `QUERY_ATTRIBUTION_HISTORY` at on-run-end in this role's session, spec section 5). No session-level setting. Writing needs no `EVENTS_VIEWER`; reading the views does when they read the account table, as for any reader | S1.md, open point 2 |
 | Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table (open item 9). The app also needs USAGE on `ICECORE_EMIT` for acknowledgements | Views are the public interface |
 
 - A missing procedure or grant does not fail a run (the guard), but the telemetry is lost. `icecore.doctor` therefore makes a
@@ -218,6 +218,15 @@ role (whether a view owned by another role can pass that access through is unmea
    `READER_PROBE` run `SELECT COUNT(*) FROM` that view. Record whether it returns rows, errors with 2003 or 3001, or returns
    zero rows; repeat for a view over `SNOWFLAKE.TELEMETRY.EVENTS`. Drop the view and role. Until then the spec states
    `EVENTS_VIEWER` for readers when the views read the account table.
+10. **Models cannot be shared across roles (ruling of the lead, 1 Nov 2026; unmeasured).** The Snowflake documentation of the
+   anomaly detection class (Limitations) says: "You cannot clone models or share models across roles or accounts." So the
+   dbt role cannot be granted access to models that the setup role trained. Ruling: training and scoring run in the setup
+   role; the dbt role scores through an owner's-rights procedure `ICECORE_SCORE` that setup creates, and its grant is USAGE
+   on that procedure, not on the models. The engines story implements the procedure; this record changes documents only.
+   The test to run with two roles: as the role that trains, create a model in `ICECORE_SANDBOX.SPIKES.ML_PROBE_<run_id>` and
+   `GRANT USAGE` on the schema to a second role; as the second role, call `<model>!DETECT_ANOMALIES` directly (expected:
+   refused, per the documentation); then create an owner's-rights procedure that calls it, grant USAGE on the procedure to the
+   second role, and call it as that role (expected: works). The sandbox has one role, so none of this is measured here.
 
 ## Consequences for the build (sprint 3: UC1 and UC5)
 

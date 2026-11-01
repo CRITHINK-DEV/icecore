@@ -1,6 +1,6 @@
 """UC3 engine contract: icecore.score returns the same fields whatever engine scores (spec section 6).
 
-Cortex is not shipped yet: no test here may reach SNOWFLAKE.ML. Selection rules are checked offline
+Cortex scoring is tested in test_cortex_engine.py: no test here may reach SNOWFLAKE.ML. Selection rules are checked offline
 through icecore._select_engine; score itself runs in the sandbox on fixed VALUES series.
 """
 from datetime import datetime, timedelta
@@ -121,10 +121,14 @@ def test_a_model_calling_score_parses():
     assert invoke(["parse", "--no-partial-parse"]).success
 
 
-def test_engine_macros_never_call_cortex_or_write():
-    sql = "\n".join(p.read_text() for p in (REPO / "macros" / "engines").glob("*.sql")).lower()
-    for forbidden in ("snowflake.ml", "anomaly_detection", "insert ", "merge ", "create table", "create stage"):
-        assert forbidden not in sql, forbidden
+def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():
+    engines = REPO / "macros" / "engines"
+    everything = "\n".join(p.read_text() for p in engines.glob("*.sql")).lower()
+    for forbidden in ("insert ", "merge ", "create table", "create stage", "create snowflake.ml"):
+        assert forbidden not in everything, forbidden
+    others = "\n".join(p.read_text() for p in engines.glob("*.sql") if p.name != "cortex.sql").lower()
+    for forbidden in ("snowflake.ml", "anomaly_detection", "detect_anomalies"):
+        assert forbidden not in others, forbidden
 
 
 # --- score in the sandbox ------------------------------------------------------------------------

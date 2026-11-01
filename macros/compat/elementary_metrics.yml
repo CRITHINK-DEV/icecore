@@ -1,0 +1,15 @@
+version: 2
+
+macros:
+  - name: elementary_data_monitoring_metrics_view_sql
+    description: "The SELECT of the compat view data_monitoring_metrics: one row per row of the core view METRICS, with the 15 columns, the order and the types of Elementary's table of that name (Elementary dbt package 0.26.1, pinned in macros/compat/ELEMENTARY_VERSION). It selects only from METRICS. Filled: id (md5 of the series key and observed_at), full_table_name (DB.SCHEMA.NAME, upper case, unquoted, as Elementary writes it), column_name, metric_name and metric_type (the metric), metric_value as FLOAT, bucket_start, bucket_end, updated_at and created_at (observed_at), and dimension and dimension_value (icecore's name=value dimension split at the first equals sign). Typed NULLs: source_value, bucket_duration_hours, metric_properties."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema, as obs_schema() renders it. Default the current obs schema."
+  - name: elementary_schema_columns_snapshot_view_sql
+    description: "The SELECT of the compat view schema_columns_snapshot, with the 8 columns, the order and the types of Elementary's table of that name (Elementary dbt package 0.26.1). It selects only from the core view SCHEMA_CHANGES and keeps the changes that leave the column in the table, added and type_changed: a removed change leaves no column state, so it has no row. Filled: column_state_id (md5 of table, column and type), full_column_name, full_table_name (DB.SCHEMA.NAME upper case unquoted), column_name, data_type (to_type), is_new (the change is an addition), detected_at and created_at (detected_at)."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema, as obs_schema() renders it. Default the current obs schema."

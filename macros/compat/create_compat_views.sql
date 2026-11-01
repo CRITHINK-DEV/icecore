@@ -47,6 +47,7 @@
   {%- set obs = icecore.obs_schema(schema) -%}
   {%- set views = [] -%}
   {%- do views.extend(icecore._icecore_elementary_test_views(obs)) -%}
+  {%- do views.extend(icecore._icecore_elementary_metric_views(obs)) -%}
   {{ return(views) }}
 {% endmacro %}
 

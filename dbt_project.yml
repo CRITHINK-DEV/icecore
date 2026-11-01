@@ -20,6 +20,7 @@ vars:
     monitors: true
     cost: false
     root_cause: false
+    root_cause_lookback_hours: 24       # root cause: how far back SCHEMA_CHANGES and METRICS signals count (UC4)
     alerts: false
     anomaly_engine: auto
     anomaly_sensitivity: medium
@@ -30,5 +31,6 @@ vars:
     payload_cap_kb: 64
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
-    metadata_fallback_kinds: [iceberg]   # table kinds whose metadata row count is not trusted (spike S5)
+    metadata_fallback_kinds: [iceberg, materialized_view]   # table kinds whose metadata row count is not trusted (spike S5; materialized views: uc2-table-kinds)
+    baseline_lookback_days: 30          # how far the generic tests look back for a baseline (schema signature, previous window); older counts as first run
     dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

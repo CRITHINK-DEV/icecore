@@ -130,11 +130,17 @@ WRITE_STATEMENTS = [
 ]
 
 
+def strip_sql_comments_and_strings(sql: str) -> str:
+    """One left-to-right pass: a string literal, a line comment or a block comment, whichever starts first, becomes a space.
+    Two passes let `-- see /* x` hide real SQL (the block comment never closes on that line) and let `'--'` or `'/*'`
+    inside a string do the same."""
+    return re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/", " ", sql, flags=re.S)
+
+
 def writes_in(sql: str) -> list[str]:
     """The write statements found in macro text, ignoring Jinja comments, SQL comments, case and whitespace."""
     sql = re.sub(r"\{#.*?#\}", " ", sql, flags=re.S)          # Jinja comments
-    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)           # SQL block comments: create/**/table is create table
-    sql = re.sub(r"--[^\n]*", " ", sql).lower()                 # SQL line comments
+    sql = strip_sql_comments_and_strings(sql).lower()
     return [pattern for pattern in WRITE_STATEMENTS if re.search(pattern, sql)]
 
 
@@ -148,6 +154,14 @@ def writes_in(sql: str) -> list[str]:
 ])
 def test_the_no_write_check_catches_what_a_substring_match_missed(sql):
     assert writes_in(sql), sql
+
+
+def test_a_comment_or_string_cannot_hide_real_sql():
+    hidden = "select 1 -- see /* x\ncreate table t(a int);\n-- */"
+    assert writes_in(hidden) == [r"(?<!\.)\bcreate\b"]
+    assert writes_in("select '/*' as a; drop table t; select '*/'") == [r"(?<!\.)\bdrop\b"]
+    assert writes_in("select '--' as a;\ndelete from t") == [r"(?<!\.)\bdelete\b"]
+    assert writes_in("select 'it''s' as a, '\\'' as b; truncate table t") == [r"\btruncate\b"]
 
 
 def test_the_no_write_check_ignores_reads_and_comments():

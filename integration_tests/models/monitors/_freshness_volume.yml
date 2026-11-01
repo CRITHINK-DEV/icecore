@@ -2,7 +2,9 @@ version: 2
 
 # Fixtures for icecore.freshness and icecore.volume (tests/test_freshness_volume.py). The tables are created by the
 # sandbox test under names that carry its run_id and passed as vars; the defaults only let the project parse.
-# Nothing is built from here: sources only.
+# Nothing is built from here: sources only. Tagged icecore_fixture by dbt_project.yml (data_tests: monitors) and left
+# out of the default selector (selectors.yml): their tests error by design on the placeholder table until a sandbox
+# test passes real names.
 sources:
   - name: it_uc2_monitors
     schema: spikes

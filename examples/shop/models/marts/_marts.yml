@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: "One row per order."
+    data_tests:
+      # icecore: zero-scan volume and freshness, recorded as metrics on every run.
+      - icecore.volume:
+          min_rows: 1
+      - icecore.freshness:
+          max_lag: 1d
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null    # fails with --vars '{shop_fail: true}'
+  - name: dim_customers
+    description: "One row per customer, with order count and lifetime amount."
+    data_tests:
+      - icecore.volume:
+          min_rows: 1
+      - icecore.freshness:
+          max_lag: 1d
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]

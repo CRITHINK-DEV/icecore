@@ -68,7 +68,7 @@ The tests do not score anomalies yet. These keys are read today by the scoring m
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why. | Cost: none today. |
+| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why at debug level only: run dbt with `--debug` to see it. | Cost: none today. |
 | `anomaly_sensitivity` | `medium` | string | `low`, `medium` or `high`. Sets the band width to 4, 3 or 2 median absolute deviations. | None. |
 | `anomaly_min_consecutive` | `1` | integer | How many points in a row must be outside the band. At least 1. | None. |
 | `anomaly_mad_floor_pct` | `0.01` | number | Smallest band half-width as a share of the expected value. | None. |
@@ -133,11 +133,11 @@ Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 prin
 The role that runs `setup` needs:
 
 - USAGE on the target database;
-- CREATE SCHEMA on it, or an existing schema it can use;
+- CREATE SCHEMA on it, or ownership of the schema;
 - CREATE PROCEDURE and CREATE VIEW on the schema;
 - read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table).
 
-`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It never runs `ALTER ACCOUNT`.
+`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
 
 ### `icecore.doctor`
 
@@ -151,7 +151,7 @@ dbt run-operation icecore.doctor --args '{schema: ICECORE_OBS}'
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var | string | Schema to check. |
 
-It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause.
+It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, or with `<n> records ..., but <problems>` when records exist and a check failed or the count could not be read.
 
 ### `icecore.estimate_telemetry_cost`
 
@@ -187,7 +187,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | `LINEAGE_LATEST` | view | The edges of each project's latest invocation that wrote lineage. |
 | `CAPABILITIES` | view | The latest detection of edition, event table, levels and Cortex, per database. |
 
-The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. Readers need SELECT on the views.
+The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. The role that runs dbt also needs SELECT on the views. Readers need USAGE on the database and schema, SELECT on the views, and the `EVENTS_VIEWER` application role when the views read the account table.
 
 Which view fills from which record today: `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness` and `icecore.volume` tests. `SCHEMA_CHANGES` stays empty until the test that writes it is merged.
 
@@ -222,10 +222,10 @@ Reads the relation's total row count from `INFORMATION_SCHEMA.TABLES`, writes it
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
-| `min_rows` | none | integer | Smallest accepted row count. |
-| `max_rows` | none | integer | Largest accepted row count. |
+| `min_rows` | none | number | Smallest accepted row count. |
+| `max_rows` | none | number | Largest accepted row count. |
 
-Each must be a non-negative number. `min_rows` above `max_rows` is a compile error. With neither, the test records the metric and always passes.
+Each accepts any non-negative number, not only integers. `min_rows` above `max_rows` is a compile error. With neither, the test records the metric and always passes.
 
 ### When a metric cannot be read
 

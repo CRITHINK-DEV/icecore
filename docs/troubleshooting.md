@@ -5,7 +5,7 @@ Start with `dbt run-operation icecore.doctor`. It never fails the run, and it na
 Messages below were produced on a Snowflake sandbox with dbt Core 1.8.10, unless an entry says otherwise. Schema names are shortened.
 
 - [Read doctor's output](#read-doctors-output)
-- [`doctor` says no records, and `event_table` failed](#no-event-table)
+- [`doctor` says no records, and `event_table` failed](#no-records-and-event_table-failed)
 - [`doctor` says `levels` failed](#levels-too-low)
 - [A warning says `icecore-error 2141`](#missing-procedure-or-grant-icecore-error-2141)
 - [Records appear a few seconds late](#records-arrive-late)
@@ -49,7 +49,7 @@ The last line is one of three:
 
 ## No records, and `event_table` failed
 
-**Symptom.** `doctor` prints:
+**Symptom.** `doctor` prints the line below. The text is taken from `doctor.sql`, not run live: the sandbox has an event table, so this check passes there.
 
 ```text
 icecore: doctor: check event_table: FAILED (no active event table; an admin must set one (icecore.set_telemetry_levels prints the statement))
@@ -110,14 +110,14 @@ Unknown user-defined function <db>.<schema>.ICECORE_EMIT.
 
 **Why it does not fail the run.** Every `CALL` is guarded: a failing `CALL` returns an error text and becomes a warning, one per hook. An unguarded `CALL` would have failed the run with `002141` (S1.md, `proc.missing_guarded`, `proc.missing_unguarded`).
 
-**Confirm.** Snowflake gives the same error for three different causes (S1.md, `proc.no_usage_guarded`): the procedure does not exist, it is in another schema than `obs_schema` names, or the role that runs dbt has no USAGE on it. Check each:
+**Confirm.** Snowflake gives the same error whether an object is missing or the role is not allowed to see it. S1 measured this for a schema the role has no USAGE on (S1.md, `proc.no_usage_guarded`). A missing grant on an existing procedure was not measured. So the error alone does not say which cause it is. Run this as the role that runs dbt, not as an admin:
 
 ```sql
 SHOW PROCEDURES LIKE 'ICECORE_EMIT%' IN SCHEMA <db>.<obs_schema>;
 ```
 
-- No rows: `setup` has not run in that schema, or `obs_schema` names another schema. Run `dbt run-operation icecore.setup`. If you gave `setup` a `schema` argument, set the `obs_schema` var to the same name.
-- Rows, but the role that runs dbt cannot see them: grant USAGE.
+- **Rows, with both procedures:** they exist, and the role can see them. The cause is elsewhere: check `obs_schema` against the schema `setup` created.
+- **No rows:** either the procedures do not exist, or this role has no grant that lets it see them. Run the same statement as an admin or as the role that ran `setup`. If the admin sees rows, a grant is missing: use the fix below. If the admin also sees none, `setup` has not run in that schema, or `obs_schema` names another schema. Run `dbt run-operation icecore.setup`, and if you gave `setup` a `schema` argument, set the `obs_schema` var to the same name.
 
 **Fix.** An admin, or the role that owns the procedures, runs:
 
@@ -220,7 +220,7 @@ vars:
     obs_schema: "{{ env_var('QS_OBS') }}"   # not rendered
 ```
 
-dbt does not render Jinja in `vars:` of `dbt_project.yml`. The same holds for every key of the `icecore` var.
+Jinja is not rendered inside `vars:` keys that are nested in a mapping, as every key of the `icecore` var is. A top-level var with a string value, such as `my_var: "{{ env_var('X') }}"`, is rendered when `var()` reads it. The `icecore` keys are nested, so they are not.
 
 **Fix.** Write a literal:
 

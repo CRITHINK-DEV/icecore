@@ -39,8 +39,8 @@ def call(name, kwargs=None, extra=None):
 def test_model_name_is_the_hash_of_the_relation_not_its_text():
     name, _ = call("cortex_model_name", {"relation": HOSTILE, "schema": "icecore_obs_x"})
     digest = hashlib.md5(HOSTILE.encode()).hexdigest()[:16].upper()
-    assert name.endswith(f".ICECORE_OBS_X.ICECORE_M_{digest}"), name
-    assert re.fullmatch(r"[A-Z0-9_$]+\.ICECORE_OBS_X\.ICECORE_M_[0-9A-F]{16}", name), name  # plain, no relation text
+    assert name == f"ICECORE_M_{digest}", name
+    assert re.fullmatch(r"ICECORE_M_[0-9A-F]{16}", name), name  # the shape ICECORE_SCORE accepts, no relation text
     other, _ = call("cortex_model_name", {"relation": RELATION, "schema": "icecore_obs_x"})
     assert other != name
 
@@ -185,7 +185,7 @@ def test_the_task_exists_and_is_suspended(refreshed):
 @pytest.mark.sandbox
 def test_running_the_task_leaves_one_model_named_by_the_hash(refreshed):
     name, _ = call("cortex_model_name", {"relation": HOSTILE, "schema": refreshed["schema"]})
-    assert refreshed["models"] == [name.split(".")[-1]], (refreshed["models"], refreshed.get("ran"), refreshed.get("body_result"))
+    assert refreshed["models"] == [name], (refreshed["models"], refreshed.get("ran"), refreshed.get("body_result"))
     assert refreshed["body_result"].startswith("ok 1 models, 1 skipped"), refreshed["body_result"]  # the invalid relation was skipped
 
 
@@ -214,5 +214,5 @@ def test_the_model_scores_both_series_through_the_score_procedure(refreshed):
 @pytest.mark.sandbox
 def test_the_mapping_is_recorded_and_the_dbt_role_needs_only_the_procedure_grant(refreshed):
     printed = refreshed["created"]["printed"]
-    assert len(printed) == 1 and printed[0].startswith("GRANT USAGE ON PROCEDURE ") and '"ICECORE_SCORE"(STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT)' in printed[0], printed
+    assert len(printed) == 1 and printed[0].startswith("GRANT USAGE ON PROCEDURE ") and '"ICECORE_SCORE"(STRING, STRING, ARRAY, FLOAT, FLOAT)' in printed[0], printed
     assert not [p for p in printed if "ANOMALY_DETECTION" in p]  # no grant on a model: models cannot be shared across roles

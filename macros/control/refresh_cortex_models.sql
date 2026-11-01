@@ -15,13 +15,13 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- Name of a table's model, the hash of its relation, never its text: DB.SCHEMA.ICECORE_M_<first 16 hex of md5(relation),
-    upper> in the obs schema, as the plain qualified name ICECORE_SCORE takes. `relation` is the quoted "DB"."SCHEMA"."NAME" the
-    metrics view carries, or a dbt relation. The task computes the same name in SQL and records the mapping on an
-    `icecore.cortex_model` event. -#}
+{#- Name of a table's model, the hash of its relation, never its text: ICECORE_M_<first 16 hex of md5(relation), upper>, the bare name
+    ICECORE_SCORE accepts (it must match ICECORE_M_ and 16 upper-case hex digits) in the obs schema. `relation` is the quoted
+    "DB"."SCHEMA"."NAME" the metrics view carries, or a dbt relation. The task computes the same name in SQL and records the mapping
+    on an `icecore.cortex_model` event. -#}
 {% macro cortex_model_name(relation, schema=none) %}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
-  {{ return([target.database | string | upper, icecore.obs_schema_name(schema), 'ICECORE_M_' ~ (local_md5(name)[:16] | upper)] | join('.')) }}
+  {{ return('ICECORE_M_' ~ (local_md5(name)[:16] | upper)) }}
 {% endmacro %}
 
 
@@ -153,7 +153,7 @@ END;
   {#- Models cannot be shared across roles: they are trained and scored in setup's role, through ICECORE_SCORE. The dbt role needs
       only USAGE on that procedure, never on a model. -#}
   {%- do out['printed'].append('GRANT USAGE ON PROCEDURE ' ~ icecore._icecore_procedure('ICECORE_SCORE', schema)
-      ~ '(STRING, STRING, STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE ' ~ target.role) -%}
+      ~ '(STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE ' ~ target.role) -%}
   {%- do log('icecore: the role that runs dbt scores with Cortex through ICECORE_SCORE and needs only USAGE on it; an admin must run: '
       ~ out['printed'][0], info=True) -%}
   {%- if status != 'ok' -%}

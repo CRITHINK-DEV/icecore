@@ -58,7 +58,7 @@ def test_wrong_types_are_skipped_or_coerced_never_raised():
     assert first["attrs"]["icecore.level"] == "info" and "bad" not in first["attrs"].values()
     assert second["name"] == "icecore.event"
     assert second["attrs"]["ok"] == 1 and second["attrs"]["7"] == "int key"
-    assert second["attrs"]["obj"] == {"nested": [1, "a"]}
+    assert second["attrs"]["obj"] == '{"nested": [1, "a"]}'  # nested values are JSON text on the ICECORE_EMIT path
 
 
 @pytest.mark.parametrize("events", [None, [], "text", 5, [None], ["x", 3]])
@@ -109,6 +109,14 @@ def test_chunks_measure_the_escaped_literal_not_the_raw_json():
     chunks = run_macro("it_chunk_literals", {"events": events, "max_bytes": 512 * KB})
     assert sum(c["records"] for c in chunks) == 12 and len(chunks) >= 3
     assert all(c["literal_bytes"] <= 512 * KB for c in chunks), chunks
+
+
+def test_emit_writes_nested_values_as_json_text_and_emit_run_keeps_them_native():
+    attrs = {"a": {"k": [1, {"d": "x"}]}, "b": [1, 2], "c": "text", "d": 5}
+    emit_rec = run_macro("it_emit_render", {"events": [{"kind": "k", "attributes": attrs}]})["records"][0]["attrs"]
+    assert emit_rec["a"] == '{"k": [1, {"d": "x"}]}' and emit_rec["b"] == "[1, 2]" and emit_rec["c"] == "text" and emit_rec["d"] == 5
+    run_rec = run_macro("it_emit_run_render", {"items": [{"type": "log", "message": "m", "attrs": attrs}]})["records"][0]["attrs"]
+    assert run_rec["a"] == {"k": [1, {"d": "x"}]} and run_rec["b"] == [1, 2]
 
 
 def test_dates_are_iso_and_nested_values_are_cleaned_recursively():
@@ -209,9 +217,12 @@ def test_run_query_values_decimal_dates_and_nested_land_as_json(sf, obs, run_id)
     a = rows[0]["record_attributes"]
     assert a["it.decimal"] == 1.5 and a["it.int"] == 7
     assert a["it.date"] == out["types"][1] and a["it.ts"].startswith(out["types"][2][:10])
-    # The nested values were serialisable, so the CALL succeeded. SYSTEM$ADD_EVENT itself keeps only scalar
-    # attributes (it silently drops an object, measured 1 Nov 2026), so the nested ones are absent from the row.
-    assert "it.nested" not in a and "it.list" not in a
+    # SYSTEM$ADD_EVENT silently drops object and list attributes (measured 1 Nov 2026): emit sends them as JSON text.
+    # emit writes a mapping or list value as JSON text, so it lands instead of being dropped
+    assert isinstance(a["it.nested"], str) and isinstance(a["it.list"], str)
+    nested, items = json.loads(a["it.nested"]), json.loads(a["it.list"])
+    assert nested["dec"] == 1.5 and nested["when"] == a["it.ts"] and nested["list"][0] == 1.5
+    assert items[0] == 1.5 and items[1] == {"ts": a["it.ts"]}
 
 
 def epoch_ns(sf) -> int:

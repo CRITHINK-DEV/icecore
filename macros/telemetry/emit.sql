@@ -57,7 +57,7 @@
     {%- set kind = (event.get('kind') or 'event') | string -%}
     {%- set attrs = {} -%}
     {%- do attrs.update(base) -%}
-    {%- do attrs.update(icecore._icecore_safe_attributes(event.get('attributes'))) -%}
+    {%- do attrs.update(icecore._icecore_safe_attributes(event.get('attributes'), true)) -%}
     {%- do attrs.update({'icecore.level': (event.get('level') or 'info') | string | lower}) -%}
     {%- if event.get('message') is not none -%}
       {%- do attrs.update({'icecore.message': event.get('message') | string}) -%}
@@ -72,12 +72,15 @@
 
 
 {#- Attributes as a dict that tojson can always serialise: not a mapping reads as none, keys become strings, and
-    every value is cleaned by _icecore_safe_value, nested ones too. A bad value never raises. -#}
-{% macro _icecore_safe_attributes(attrs) %}
+    every value is cleaned by _icecore_safe_value, nested ones too. A bad value never raises. With as_json, a mapping
+    or list value is then written as a JSON string (tojson): SYSTEM$ADD_EVENT, behind ICECORE_EMIT, silently drops
+    object and list values, so emit keeps them as text. ICECORE_EMIT_RUN LOG records keep native nesting. -#}
+{% macro _icecore_safe_attributes(attrs, as_json=false) %}
   {%- set out = {} -%}
   {%- if attrs is mapping -%}
     {%- for key, value in attrs.items() -%}
-      {%- do out.update({key | string: icecore._icecore_safe_value(value)}) -%}
+      {%- set clean = icecore._icecore_safe_value(value) -%}
+      {%- do out.update({key | string: tojson(clean) if as_json and (clean is mapping or (clean is sequence and clean is not string)) else clean}) -%}
     {%- endfor -%}
   {%- endif -%}
   {{ return(out) }}

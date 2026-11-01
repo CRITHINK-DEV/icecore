@@ -174,7 +174,7 @@ models:
   - name: fct_orders
     meta:
       sla: {expected_every: 1h, grace: 15m}
-      alerts: {channel: data-platform, severity: warn}
+      alerts: {channel: data_platform, severity: warn}
     tests:
       - icecore.volume            # zero-scan, native engine by default
       - icecore.freshness:

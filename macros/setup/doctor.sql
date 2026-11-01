@@ -9,9 +9,9 @@
       3. ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK
                            one guarded test CALL of each, tagged icecore.doctor.probe = true (an
                            icecore.doctor_probe span event and an INFO LOG record): a missing procedure or grant
-                           shows here. ICECORE_ACK is called with a key that is no incident: the expected answer is
-                           the refusal `not_an_open_incident`, which proves the procedure and the ALERTS_FEED view it
-                           reads exist and are callable (nothing is written);
+                           shows here. ICECORE_ACK is probed with a key that is no incident and reported as
+                           INFORMATION only (never a failure, never a grant suggestion): the dbt role must not hold
+                           it, so "cannot call" is the normal answer for that role (nothing is written);
       4. records           icecore records of the last 24 hours, counted through base_events() on Snowflake's clock,
                            without doctor's probes and the icecore.capabilities records of setup and doctor.
     The likely cause of "no records in 24 h" is the first failed check of 1-3, else the telemetry hooks.
@@ -121,13 +121,23 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
       ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS on the database; an admin can run: '
       ~ (plan['attempt'] | join('; '))}) -%}
 
-  {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_ACK'] if name in (probes or {}) or name != 'ICECORE_ACK' -%}
+  {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
     {%- set status = (probes or {}).get(name) or 'not called' -%}
-    {#- ICECORE_ACK is probed with a key that is no incident: its refusal is the healthy answer -#}
-    {%- set ok = status.startswith('ok') or (name == 'ICECORE_ACK' and 'not_an_open_incident' in status) -%}
+    {%- set ok = status.startswith('ok') -%}
     {%- do checks.append({'name': name, 'ok': ok, 'detail': 'test CALL: ' ~ status if ok else 'test CALL: ' ~ status
         ~ '; run icecore.setup, and grant USAGE on the database, the schema and the procedure to the role that runs dbt'}) -%}
   {%- endfor -%}
+  {#- ICECORE_ACK is informational and never a failure: the dbt role must NOT hold it (only the roles that acknowledge
+      incidents do), so a refusal to call it is the normal answer here. No grant is ever suggested for it. -#}
+  {%- if 'ICECORE_ACK' in (probes or {}) -%}
+    {%- set ack = probes['ICECORE_ACK'] | string -%}
+    {%- if 'not_an_open_incident' in ack -%}
+      {%- set ack_detail = 'informational: this role can call it (it refused the probe key, nothing was written)' -%}
+    {%- else -%}
+      {%- set ack_detail = 'informational: this role cannot call it (' ~ ack ~ '); expected for the role that runs dbt, which must not hold ICECORE_ACK' -%}
+    {%- endif -%}
+    {%- do checks.append({'name': 'ICECORE_ACK', 'ok': true, 'detail': ack_detail}) -%}
+  {%- endif -%}
 
   {%- if count_error -%}
     {%- set records_detail = 'could not count icecore records: ' ~ count_error -%}
@@ -145,7 +155,7 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
 
   {%- if count == 0 or (count is none and not count_error and failed) -%}
     {%- set first = failed[0]['name'] if failed else 'hooks' -%}
-    {%- set cause = 'procedures' if first in ('ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_ACK') else first -%}
+    {%- set cause = 'procedures' if first in ('ICECORE_EMIT', 'ICECORE_EMIT_RUN') else first -%}
     {%- if cause == 'hooks' -%}
       {%- set why = 'the telemetry hooks: check that dbt_project.yml has on-run-start: icecore.start_run() and on-run-end: icecore.end_run(results), '
           ~ 'and that a dbt command has run since (on dbt 1.8, source freshness fires them only with flags: source_freshness_run_project_hooks: true)' -%}

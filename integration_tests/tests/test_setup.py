@@ -270,18 +270,23 @@ def test_doctor_never_fails_when_the_procedures_are_missing(sf, run_id):
 
 # --- ICECORE_ACK probe (UC6) -----------------------------------------------------------------------
 
-def test_doctor_checks_the_ack_procedure_when_probed():
+def test_doctor_reports_the_ack_probe_as_information_when_the_role_can_call_it():
     healthy = {**OK_PROBES, "ICECORE_ACK": "icecore-error not_an_open_incident: 000 is not a current unacknowledged incident"}
     r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=healthy, count=5)
     ack = next(c for c in r["checks"] if c["name"] == "ICECORE_ACK")
-    assert ack["ok"] is True and r["status"] == "ok"
+    assert ack["ok"] is True and ack["detail"].startswith("informational") and r["status"] == "ok"
 
 
-def test_doctor_flags_a_missing_ack_procedure_or_feed():
-    broken = {**OK_PROBES, "ICECORE_ACK": "icecore-error 2003: Procedure or view does not exist"}
-    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=broken, count=5)
-    assert next(c for c in r["checks"] if c["name"] == "ICECORE_ACK")["ok"] is False
-    assert r["status"] == "warn" and r["cause"] == "ICECORE_ACK"
+def test_doctor_never_fails_nor_suggests_a_grant_when_the_role_cannot_call_ack():
+    """The dbt role must not hold ICECORE_ACK: a refusal is expected, never a warning, never a grant to suggest."""
+    for refusal in ["icecore-error 2003: Procedure or view does not exist",
+                    "icecore-error 3001: Insufficient privileges to operate on procedure 'ICECORE_ACK'"]:
+        r = call_macro("_icecore_doctor_report", capabilities=caps(), probes={**OK_PROBES, "ICECORE_ACK": refusal}, count=5)
+        ack = next(c for c in r["checks"] if c["name"] == "ICECORE_ACK")
+        assert ack["ok"] is True and r["status"] == "ok" and r["cause"] is None, r
+        assert "grant" not in ack["detail"].lower() and "must not hold" in ack["detail"]
+    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes={**OK_PROBES, "ICECORE_ACK": "icecore-error x"}, count=0)
+    assert r["cause"] != "ICECORE_ACK" and "ICECORE_ACK" not in r["message"]
 
 
 def test_doctor_without_an_ack_probe_does_not_check_it():

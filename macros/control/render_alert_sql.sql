@@ -7,7 +7,7 @@
           chat: {type: slack, integration: ICECORE_SLACK}
           teams: {type: teams, integration: ICECORE_TEAMS}
     type is email, slack or teams; integration is the name of the notification integration (an admin creates it);
-    recipients (email only) are the allowed and default recipients. Names, types, integrations and recipients are
+    recipients (email only) are the allowed and default recipients. With two or more channels exactly one is `default: true`. Names, types, integrations and recipients are
     validated against strict patterns and render only through _icecore_sql_literal / _icecore_identifier.
     Which incidents a channel gets comes from meta.alerts (collect_sla_config): a node whose meta.alerts.channel is the
     channel's name sends its incidents there (matched on the feed's node_key, the node's unique id) and only its
@@ -23,15 +23,18 @@
                   then one CALL of ICECORE_NOTIFIED(incident_key, channel) per incident (never an INSERT, never ICECORE_EMIT, which
                   refuses `icecore.notified`), so the incident is not sent again inside the dedup window. The alerts' owner
                   role needs USAGE on ICECORE_NOTIFIED; the dbt role must not have it. At most 50 incidents per run.
-    Alerts are created SUSPENDED (Snowflake's default) and stay so unless var icecore.alert_resume is true: nothing
-    sends or costs anything without consent. Re-running setup replaces an alert and so suspends it again.
+    Alerts are created SUSPENDED (Snowflake's default) and icecore never resumes one: create_alerts prints the
+    `ALTER ALERT ... RESUME` statements for an admin (nothing sends or costs anything without consent). Re-running
+    setup replaces an alert and so suspends it again.
+    The alert text is constant: node ids from meta, the channel, the integration and the recipients enter only as one
+    PARSE_JSON string literal of a JSON config object (condition and action each have one), read inside the text.
     Notification integrations need an admin: create_alerts prints the CREATE NOTIFICATION INTEGRATION statements and
     the grants, and never runs them. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- Creates every channel's alert in <target db>.<schema>; returns [{channel, alert, status, resumed}]. Prints the
+{#- Creates every channel's alert in <target db>.<schema>; returns [{channel, alert, status}]. Prints the
     integration statements and grants. With no channel configured it creates nothing and says how to configure. -#}
 {% macro create_alerts(schema=none) %}
   {%- set created = [] -%}
@@ -43,19 +46,11 @@
     {%- set entries = icecore.collect_sla_config() -%}
     {%- for channel in channels -%}
       {%- set status = icecore._icecore_guarded_ddl(icecore.render_alert_sql(channel, entries, schema)) -%}
-      {%- set resumed = false -%}
-      {%- if status == 'ok' and icecore._icecore_flag('alert_resume', false) -%}
-        {%- set resume_status = icecore._icecore_guarded_ddl('ALTER ALERT ' ~ icecore.alert_name(channel, schema) ~ ' RESUME') -%}
-        {%- set resumed = resume_status == 'ok' -%}
-        {%- if not resumed -%}
-          {%- do log('icecore: warning: alert ' ~ channel['name'] ~ ' not resumed (' ~ resume_status ~ '); the role needs EXECUTE ALERT on the account', info=True) -%}
-        {%- endif -%}
-      {%- endif -%}
       {%- if status != 'ok' -%}
         {%- do log('icecore: warning: alert ' ~ channel['name'] ~ ' not created (' ~ status ~ '); the role needs CREATE ALERT on the schema, USAGE on the warehouse and on the notification integration', info=True) -%}
       {%- endif -%}
-      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status, 'resumed': resumed}) -%}
-      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ (', resumed' if resumed else ', suspended'), info=True) -%}
+      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status}) -%}
+      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ ', suspended', info=True) -%}
     {%- endfor -%}
     {%- if channels -%}
       {%- do log('icecore: an admin runs these once (icecore never creates integrations):\n' ~ (icecore.alert_integration_sql(channels, schema) | join('\n')), info=True) -%}
@@ -74,6 +69,7 @@
     {{ exceptions.raise_compiler_error('icecore: var alert_channels must be a mapping of channel name to {type, integration}') }}
   {%- endif -%}
   {%- set channels = [] -%}
+  {%- set defaults = [] -%}
   {%- for name in raw.keys() | sort -%}
     {%- set cfg = raw[name] -%}
     {%- if not modules.re.match('^[A-Za-z][A-Za-z0-9_]{0,39}$', name | string) -%}
@@ -100,9 +96,14 @@
     {%- if type == 'email' and not recipients -%}
       {{ exceptions.raise_compiler_error('icecore: alert channel ' ~ name ~ ' is an email channel and needs recipients') }}
     {%- endif -%}
+    {%- set is_default = (cfg.get('default') is sameas true) or (raw | length == 1) -%}
+    {%- if is_default -%}{%- do defaults.append(name | string) -%}{%- endif -%}
     {%- do channels.append({'name': name | string, 'type': type, 'integration': integration, 'recipients': recipients | list,
-        'default': (cfg.get('default') is sameas true) or (raw | length == 1)}) -%}
+        'default': is_default}) -%}
   {%- endfor -%}
+  {%- if channels | length >= 2 and defaults | length != 1 -%}
+    {{ exceptions.raise_compiler_error('icecore: with two or more alert channels exactly one must have default: true (it gets the incidents no node routes elsewhere); found ' ~ (defaults | length) ~ (': ' ~ (defaults | join(', ')) if defaults else '')) }}
+  {%- endif -%}
   {{ return(channels) }}
 {% endmacro %}
 
@@ -116,7 +117,7 @@
 {#- SQL text of one channel's CREATE OR REPLACE ALERT. `channel` is an entry of alert_channels(); `entries` the
     collect_sla_config() result (default: read from the graph); `all_channels` every configured channel, for the
     routing (default: the configured ones). -#}
-{% macro render_alert_sql(channel, entries=none, schema=none, event_table=none, warehouse=none, schedule_minutes=none, all_channels=none) %}
+{% macro render_alert_sql(channel, entries=none, schema=none, event_table=none, warehouse=none, schedule_minutes=none, all_channels=none, nodes=none) %}
   {%- set entries = entries if entries is not none else icecore.collect_sla_config() -%}
   {%- set all_channels = all_channels if all_channels is not none else icecore.alert_channels() -%}
   {%- set warehouse = warehouse or icecore._icecore_setting('alert_warehouse', none) or target.warehouse -%}
@@ -124,12 +125,16 @@
     {{ exceptions.raise_compiler_error('icecore: alerts run on a warehouse; set var icecore.alert_warehouse or the target warehouse') }}
   {%- endif -%}
   {%- set minutes = schedule_minutes if schedule_minutes is not none else icecore._icecore_alert_schedule_minutes() -%}
-  {%- set condition = 'select * from (\n' ~ icecore.dedup_window_sql(channel['name'], schema, event_table) ~ '\n) as pending\nwhere ' ~ icecore._icecore_alert_routing_sql(channel, entries, all_channels) -%}
+  {%- set routing = icecore._icecore_alert_routing_config(channel, entries, all_channels, nodes) -%}
+  {%- set routing_json = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson(routing)) ~ ')' -%}
+  {%- set channel_sql = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson({'channel': channel['name']})) ~ '):channel::string' -%}
+  {%- set dedup = icecore.dedup_window_sql(channel['name'], schema, event_table, channel_sql=channel_sql) -%}
+  {%- set condition = 'with cfg as (select ' ~ routing_json ~ ' as c)\nselect pending.* from (\n' ~ dedup ~ '\n) as pending cross join cfg\nwhere ' ~ icecore._icecore_alert_routing_sql() -%}
   {%- set sql -%}
 CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   WAREHOUSE = {{ icecore._icecore_identifier(warehouse) }}
   SCHEDULE = '{{ minutes }} MINUTE'
-  COMMENT = {{ icecore._icecore_sql_literal('icecore: new unacknowledged incidents of ALERTS_FEED to channel ' ~ channel['name']) }}
+  COMMENT = 'icecore: new unacknowledged incidents of ALERTS_FEED to one channel'
   IF (EXISTS (
 {{ condition }}
   ))
@@ -159,6 +164,9 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
     {%- endif -%}
     {%- do out.append('GRANT USAGE ON INTEGRATION ' ~ i ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- endfor -%}
+  {%- for c in channels -%}
+    {%- do out.append('ALTER ALERT ' ~ icecore.alert_name(c, schema) ~ ' RESUME;  -- only once the integration and its grants exist; icecore never resumes an alert') -%}
+  {%- endfor -%}
   {%- do out.append('GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- do out.append('GRANT USAGE ON WAREHOUSE ' ~ icecore._icecore_identifier(wh) ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {{ return(out) }}
@@ -175,41 +183,99 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
 {% endmacro %}
 
 
-{#- The WHERE predicate on the feed's columns that keeps the channel's incidents. Literals come from config only
-    (node unique ids, through _icecore_sql_literal). -#}
-{% macro _icecore_alert_routing_sql(channel, entries, all_channels) %}
+{#- The routing config of one channel's condition: {channel, default, any, error, claimed}. `any` are the keys of the
+    nodes that route to this channel (every severity), `error` those limited to error rows, `claimed` the keys of every
+    node routed to any configured channel. A key is what the feed's node_key holds for the node's signals: the node's
+    unique id, its relation (anomalies and schema changes: relation|...) and the unique ids of its tests
+    (_icecore_alert_node_keys), so a model's meta.alerts routes its tests and its relation. A meta.alerts.channel that
+    is not a configured channel is a compile error naming the node. -#}
+{% macro _icecore_alert_routing_config(channel, entries, all_channels, nodes=none) %}
   {%- set names = [] -%}
   {%- for c in all_channels -%}{%- do names.append(c['name']) -%}{%- endfor -%}
-  {%- set mine = [] -%}
-  {%- set claimed = [] -%}
-  {%- for e in entries if e.get('channel') in names -%}
-    {%- do claimed.append(icecore._icecore_sql_literal(e['unique_id'])) -%}
+  {%- if nodes is none -%}
+    {%- set nodes = graph.nodes if execute else {} -%}
+  {%- endif -%}
+  {%- set out = {'channel': channel['name'], 'default': channel['default'] is sameas true, 'any': [], 'error': [], 'claimed': []} -%}
+  {%- for e in entries if e.get('channel') is not none -%}
+    {%- if e['channel'] not in names -%}
+      {{ exceptions.raise_compiler_error('icecore: ' ~ (e.get('resource_type') or 'node') ~ " '" ~ e.get('name') ~ "' (" ~ e.get('unique_id') ~ "): meta.alerts.channel '" ~ (e['channel'] | string | truncate(60)) ~ "' is not a configured alert channel (configured: " ~ (names | join(', ') or 'none') ~ '); channel names match [A-Za-z][A-Za-z0-9_]{0,39}') }}
+    {%- endif -%}
+    {%- set keys = icecore._icecore_alert_node_keys(e, nodes) -%}
+    {%- do out['claimed'].extend(keys) -%}
     {%- if e['channel'] == channel['name'] -%}
-      {%- do mine.append('(node_key = ' ~ icecore._icecore_sql_literal(e['unique_id']) ~ (" and severity = 'error'" if e.get('severity') == 'error' else '') ~ ')') -%}
+      {%- do out['error' if e.get('severity') == 'error' else 'any'].extend(keys) -%}
     {%- endif -%}
   {%- endfor -%}
-  {%- set parts = [] -%}
-  {%- do parts.extend(mine) -%}
-  {%- if channel['default'] -%}
-    {%- do parts.append('node_key not in (' ~ claimed | join(', ') ~ ')' if claimed else 'true') -%}
-  {%- endif -%}
-  {{ return('(' ~ (parts | join(' or ') if parts else 'false') ~ ')') }}
+  {{ return(out) }}
 {% endmacro %}
 
 
-{#- The action: a block that builds the message and the notified events from the condition's result in SQL, sends the
-    notification (send=false leaves that CALL out, for tests that must not send) and records the notified events.
-    qid is the SQL that yields the condition query's id. -#}
+{#- The feed keys of a node declaring meta.alerts: its unique id; for a model, seed or snapshot also its relation
+    ("DB"."SCHEMA"."NAME", as the metric and schema-change records carry it) and the unique id of every test attached
+    to it (the test's attached_node, else its first model dependency). `nodes` maps unique_id -> node. -#}
+{% macro _icecore_alert_node_keys(entry, nodes) %}
+  {%- set uid = entry['unique_id'] -%}
+  {%- set keys = [uid] -%}
+  {%- set node = nodes.get(uid) if nodes else none -%}
+  {%- if node is not none and node.get('resource_type') in ['model', 'seed', 'snapshot'] -%}
+    {%- set relation = icecore._icecore_node_relation(node) -%}
+    {%- if relation -%}{%- do keys.append(relation | string) -%}{%- endif -%}
+    {%- for t in nodes.values() if t.get('resource_type') == 'test' -%}
+      {%- set deps = [] -%}
+      {%- for d in ((t.get('depends_on') or {}).get('nodes') or []) | sort -%}
+        {%- if d is string and (d.startswith('model.') or d.startswith('seed.') or d.startswith('snapshot.')) -%}{%- do deps.append(d) -%}{%- endif -%}
+      {%- endfor -%}
+      {%- set attached = t.get('attached_node') or (deps[0] if deps else none) -%}
+      {%- if attached == uid -%}{%- do keys.append(t.get('unique_id')) -%}{%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {{ return(keys) }}
+{% endmacro %}
+
+
+{#- The WHERE predicate of the condition on pending (the dedup rows) and cfg.c (the routing config). Constant text. -#}
+{% macro _icecore_alert_routing_sql() %}
+  {%- set k = "array_contains(pending.node_key::variant, cfg.c:{a}::array) or array_contains(split_part(pending.node_key, '|', 1)::variant, cfg.c:{a}::array)" -%}
+  {{ return("(" ~ k.replace('{a}', 'any') ~ "\n  or (pending.severity = 'error' and (" ~ k.replace('{a}', 'error') ~ "))\n  or (cfg.c:default::boolean and not (" ~ k.replace('{a}', 'claimed') ~ ")))") }}
+{% endmacro %}
+
+
+{#- The action: a constant block. Its one config literal is PARSE_JSON of {channel, integration, recipients}. For each
+    incident of the condition's result (RESULT_SCAN of the condition query; at most 50, oldest first) it first CALLs
+    ICECORE_NOTIFIED(incident_key, channel) and checks the returned status. Only incidents recorded ok are sent, in one
+    notification; one whose recording failed is NOT sent (it would repeat on every run) and is logged instead as an
+    `icecore.alert_record_failed` event through ICECORE_EMIT. The send is last, so a failed send leaves the incidents
+    recorded and not re-sent (at most once; the failure shows in ALERT_HISTORY). send=false leaves the send out, for
+    tests with no integration. qid is the SQL yielding the condition query's id. -#}
 {% macro _icecore_alert_action_sql(channel, schema=none, send=true, qid="SNOWFLAKE.ALERT.GET_CONDITION_QUERY_UUID()") %}
   {%- set source = 'table(result_scan(:qid))' -%}
+  {%- set config = {'channel': channel['name'], 'integration': channel['integration'], 'recipients': channel['recipients']} -%}
   {%- set sql -%}
   BEGIN
+    LET cfg VARIANT := PARSE_JSON({{ icecore._icecore_block_literal(tojson(config)) }});
     LET qid STRING := {{ qid }};
-    LET msg STRING := ({{ icecore.alert_message_sql(channel['type'], source) }});
-    {% if send -%}
-    CALL SYSTEM$SEND_SNOWFLAKE_NOTIFICATION({{ icecore._icecore_alert_payload_sql(channel) }}, {{ icecore._icecore_alert_config_sql(channel) }});
-    {% endif -%}
-    {{ icecore.alert_record_sql(channel['name'], source, schema) }}
+    LET ch STRING := cfg:channel::STRING;
+    LET k STRING := '';
+    LET st STRING := '';
+    LET msg STRING := '';
+    LET recorded ARRAY := ARRAY_CONSTRUCT();
+    LET rs RESULTSET := (select incident_key from {{ source }} order by first_detected_at, incident_key limit 50);
+    LET c CURSOR FOR rs;
+    FOR r IN c DO
+      k := r.incident_key;
+      CALL {{ icecore._icecore_procedure('ICECORE_NOTIFIED', schema) }}(:k, :ch) INTO :st;
+      IF (STARTSWITH(st, 'ok')) THEN
+        recorded := ARRAY_APPEND(recorded, :k);
+      ELSE
+        CALL {{ icecore._icecore_procedure('ICECORE_EMIT', schema) }}(ARRAY_CONSTRUCT(OBJECT_CONSTRUCT('name', 'icecore.alert_record_failed', 'attrs', OBJECT_CONSTRUCT('icecore.alert.channel', :ch, 'icecore.alert.incident_key', :k, 'icecore.alert.status', LEFT(:st, 500)))));
+      END IF;
+    END FOR;
+    IF (ARRAY_SIZE(recorded) > 0) THEN
+      msg := ({{ icecore.alert_message_sql(channel['type'], '(select * from ' ~ source ~ ' where array_contains(incident_key::variant, :recorded))') }});
+{%- if send %}
+      CALL SYSTEM$SEND_SNOWFLAKE_NOTIFICATION({{ icecore._icecore_alert_payload_sql(channel) }}, {{ icecore._icecore_alert_config_sql(channel) }});
+{%- endif %}
+    END IF;
   END
   {%- endset -%}
   {{ return(sql | trim) }}
@@ -217,32 +283,45 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
 
 
 {#- SELECT of the notification text from `source` (a FROM item with the feed's columns): constant SQL, the rows only
-    ever read as columns. At most 50 incidents, oldest first; the text is cut at 3000 characters. -#}
+    ever read as columns. At most 50 incidents, oldest first; the text is cut at 3000 characters. For email the fields
+    are plain text and lines are separated by newlines. For Slack and Teams every field is cleaned (a webhook body
+    template is JSON and how Snowflake substitutes SNOWFLAKE_WEBHOOK_MESSAGE is not documented, so no quote, backslash
+    or control character may reach it; SANITIZE_WEBHOOK_CONTENT only redacts the secret token and escapes none of
+    them) and Slack's & < > are escaped; lines are joined with ' | ' on one line. -#}
 {% macro alert_message_sql(type, source) %}
+  {%- set kind = icecore._icecore_alert_field('kind', type, '?') -%}
+  {%- set title = icecore._icecore_alert_field('title', type, '') -%}
+  {%- set node = icecore._icecore_alert_field('node_key', type, '?') -%}
+  {%- set rcu = icecore._icecore_alert_field('root_cause_unique_id', type, '?') -%}
+  {%- set rck = icecore._icecore_alert_field('root_cause_kind', type, '?') -%}
   {%- set rc = "iff(root_cause_unique_id is not null or root_cause_kind is not null, " -%}
   {%- if type == 'slack' -%}
-    {%- set line = "'• *' || coalesce(kind, '?') || '* ' || coalesce(title, '') || ' (node `' || coalesce(node_key, '?') || '`)' || " ~ rc ~ "', root cause: `' || coalesce(root_cause_unique_id, '?') || '` (' || coalesce(root_cause_kind, '?') || ')', '')" -%}
-    {%- set sep = "'\\n'" -%}
+    {%- set line = "'• *' || " ~ kind ~ " || '* ' || " ~ title ~ " || ' (node `' || " ~ node ~ " || '`)' || " ~ rc ~ "', root cause: `' || " ~ rcu ~ " || '` (' || " ~ rck ~ " || ')', '')" -%}
+    {%- set sep = "' | '" -%}
   {%- elif type == 'teams' -%}
-    {%- set line = "'- **' || coalesce(kind, '?') || '** ' || coalesce(title, '') || ' (node ' || coalesce(node_key, '?') || ')' || " ~ rc ~ "', root cause: ' || coalesce(root_cause_unique_id, '?') || ' (' || coalesce(root_cause_kind, '?') || ')', '')" -%}
-    {%- set sep = "'\\n\\n'" -%}
+    {%- set line = "'**' || " ~ kind ~ " || '** ' || " ~ title ~ " || ' (node ' || " ~ node ~ " || ')' || " ~ rc ~ "', root cause: ' || " ~ rcu ~ " || ' (' || " ~ rck ~ " || ')', '')" -%}
+    {%- set sep = "' | '" -%}
   {%- else -%}
-    {%- set line = "'[' || coalesce(kind, '?') || '] ' || coalesce(title, '') || ' - node ' || coalesce(node_key, '?') || " ~ rc ~ "' - root cause: ' || coalesce(root_cause_unique_id, '?') || ' (' || coalesce(root_cause_kind, '?') || ')', '')" -%}
+    {%- set line = "'[' || " ~ kind ~ " || '] ' || " ~ title ~ " || ' - node ' || " ~ node ~ " || " ~ rc ~ "' - root cause: ' || " ~ rcu ~ " || ' (' || " ~ rck ~ " || ')', '')" -%}
     {%- set sep = "'\\n'" -%}
   {%- endif -%}
   {{ return("select left('icecore: ' || count(*) || ' new incident(s)' || " ~ sep ~ " || listagg(" ~ line ~ ", " ~ sep ~ ") within group (order by first_detected_at, incident_key), 3000) from (select * from " ~ source ~ " order by first_detected_at, incident_key limit 50)") }}
 {% endmacro %}
 
 
-{#- The loop that records each notified incident of `source` (the same 50 as the message) by CALLing ICECORE_NOTIFIED:
-    the incident key is a bound column of the loop row, the channel a validated name rendered as a literal. -#}
-{% macro alert_record_sql(channel_name, source, schema=none) %}
-  {{ return("LET k STRING := '';\n    LET rs RESULTSET := (select incident_key from " ~ source ~ " order by first_detected_at, incident_key limit 50);\n    LET c CURSOR FOR rs;\n    FOR r IN c DO\n      k := r.incident_key;\n      CALL "
-      ~ icecore._icecore_procedure('ICECORE_NOTIFIED', schema) ~ "(:k, " ~ icecore._icecore_sql_literal(channel_name) ~ ");\n    END FOR;") }}
+{#- One column as text for the message: coalesced, and for the webhook types cleaned (quotes, backslashes and control
+    characters replaced; Slack: & < > escaped, & first). -#}
+{% macro _icecore_alert_field(column, type, default) %}
+  {%- set e = "coalesce(" ~ column ~ ", '" ~ default ~ "')" -%}
+  {%- if type == 'email' -%}{{ return(e) }}{%- endif -%}
+  {%- if type == 'slack' -%}
+    {%- set e = "replace(replace(replace(" ~ e ~ ", '&', '&amp;'), '<', '&lt;'), '>', '&gt;')" -%}
+  {%- endif -%}
+  {{ return("regexp_replace(replace(replace(" ~ e ~ ", '\\\\', '/'), '\"', ''''), '[[:cntrl:]]', ' ')") }}
 {% endmacro %}
 
 
-{#- The notification body argument. Webhook text is sanitized by Snowflake's own function. -#}
+{#- The notification body argument. -#}
 {% macro _icecore_alert_payload_sql(channel) %}
   {%- if channel['type'] == 'email' -%}
     {{ return('SNOWFLAKE.NOTIFICATION.TEXT_PLAIN(:msg)') }}
@@ -251,15 +330,11 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
 {% endmacro %}
 
 
-{#- The notification integration argument. -#}
+{#- The notification integration argument, read from the action's config variable cfg. EMAIL_INTEGRATION_CONFIG's
+    3-argument form is (integration, subject, to ARRAY); sandbox-checked that it evaluates with variables. -#}
 {% macro _icecore_alert_config_sql(channel) %}
-  {%- set integration = icecore._icecore_sql_literal(channel['integration']) -%}
   {%- if channel['type'] == 'email' -%}
-    {%- set rec = [] -%}
-    {%- for r in channel['recipients'] -%}{%- do rec.append(icecore._icecore_sql_literal(r)) -%}{%- endfor -%}
-    {%- set recipients = 'ARRAY_CONSTRUCT(' ~ (rec | join(', ')) ~ ')' -%}
-    {#- The signature Snowflake lists: EMAIL_INTEGRATION_CONFIG(integration, subject, to ARRAY) (and a 5-argument form with cc and bcc arrays). -#}
-    {{ return('SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG(' ~ integration ~ ", 'icecore: new incidents', " ~ recipients ~ ')') }}
+    {{ return("SNOWFLAKE.NOTIFICATION.EMAIL_INTEGRATION_CONFIG(:cfg:integration::STRING, 'icecore: new incidents', :cfg:recipients::ARRAY)") }}
   {%- endif -%}
-  {{ return('SNOWFLAKE.NOTIFICATION.INTEGRATION(' ~ integration ~ ')') }}
+  {{ return('SNOWFLAKE.NOTIFICATION.INTEGRATION(:cfg:integration::STRING)') }}
 {% endmacro %}

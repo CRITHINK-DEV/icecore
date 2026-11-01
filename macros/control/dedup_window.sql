@@ -22,10 +22,12 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- SQL text of the SELECT: the ALERTS_FEED columns of the rows to notify, plus last_notified_at (null when never
+{#- channel_sql, when given, is a SQL expression that yields the channel name (the alerts pass one read from their JSON
+    config literal, so no config value is spliced into the alert text); else the name is rendered as a literal.
+    SQL text of the SELECT: the ALERTS_FEED columns of the rows to notify, plus last_notified_at (null when never
     notified on this channel). schema is the obs schema holding ALERTS_FEED, which is also the schema the base filter
     reads. Without event_table it is resolved when the macro executes. -#}
-{% macro dedup_window_sql(channel, schema=none, event_table=none, database=none, window_minutes=none) %}
+{% macro dedup_window_sql(channel, schema=none, event_table=none, database=none, window_minutes=none, channel_sql=none) %}
   {%- set window = (window_minutes if window_minutes is not none else icecore.dedup_window_minutes()) | int -%}
   {%- set sql -%}
 with feed as (
@@ -47,7 +49,7 @@ last_notified as (
     from feed
     join notified
         on notified.incident_key = feed.incident_key
-       and notified.channel = {{ icecore._icecore_sql_literal(channel | string) }}
+       and notified.channel = {{ channel_sql or icecore._icecore_sql_literal(channel | string) }}
        and notified.event_at >= feed.first_detected_at
     group by feed.incident_key
 )

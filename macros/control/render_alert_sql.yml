@@ -4,11 +4,11 @@ macros:
   - name: create_alerts
     description: >
       Create one Snowflake ALERT per channel of var `icecore.alert_channels` in the obs schema (the step `create_alerts`
-      of `setup`), each `CREATE OR REPLACE ALERT`, SUSPENDED unless var `icecore.alert_resume` is true, so nothing sends or
-      costs without consent. Prints the CREATE NOTIFICATION INTEGRATION statements and the grants an admin must run,
-      and never creates an integration. With no channel configured it creates nothing and prints how to configure one.
-      Returns a list of channel, alert, status and resumed. The role needs CREATE ALERT on the schema and USAGE on the
-      warehouse (var `icecore.alert_warehouse`, default the target warehouse); resuming needs EXECUTE ALERT on the account.
+      of `setup`), each `CREATE OR REPLACE ALERT`, SUSPENDED, so nothing sends or
+      costs without consent; icecore never resumes an alert. Prints the CREATE NOTIFICATION INTEGRATION statements, the
+      grants and the `ALTER ALERT ... RESUME` statements an admin must run, and never creates an integration. With no channel configured it creates nothing and prints how to configure one.
+      Returns a list of channel, alert and status. The role needs CREATE ALERT on the schema and USAGE on the
+      warehouse (var `icecore.alert_warehouse`, default the target warehouse).
     arguments:
       - name: schema
         type: string
@@ -62,6 +62,9 @@ macros:
       - name: all_channels
         type: list
         description: Every configured channel, for the routing. Default `alert_channels()`.
+      - name: nodes
+        type: mapping
+        description: The nodes (unique_id to node) used to map a model's relation and tests to it for the routing. Default `graph.nodes`.
 
   - name: alert_integration_sql
     description: >
@@ -80,7 +83,9 @@ macros:
     description: >
       The SELECT of the notification text for a channel type (email, slack or teams) over a FROM item with the feed's
       columns. Constant SQL: record values are only ever read as columns. At most 50 incidents, oldest first, cut at 3000
-      characters. Each line names the kind, the title, the node and, when present, the root cause.
+      characters. Each line names the kind, the title, the node and, when present, the root cause. For Slack and Teams every
+      field is cleaned of quotes, backslashes and control characters, and Slack's `&`, `<` and `>` are escaped; the lines are
+      joined with ` | `.
     arguments:
       - name: type
         type: string
@@ -88,20 +93,3 @@ macros:
       - name: source
         type: string
         description: The FROM item to read. Required.
-
-  - name: alert_record_sql
-    description: >
-      The FOR loop of the alert's action that records each notified incident of the source (the same 50 as the message)
-      by calling ICECORE_NOTIFIED(incident_key, channel). The incident key is a bound column of the loop row, never
-      text; the channel is a validated name rendered as a literal. ICECORE_EMIT refuses `icecore.notified`, so this procedure
-      is the only way a notification is recorded.
-    arguments:
-      - name: channel_name
-        type: string
-        description: The channel name. Required.
-      - name: source
-        type: string
-        description: The FROM item to read. Required.
-      - name: schema
-        type: string
-        description: The obs schema holding ICECORE_NOTIFIED. Default the `obs_schema` var.

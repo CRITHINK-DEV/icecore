@@ -7,12 +7,12 @@
     node_attributes(node, result), `dbt.sample.rows` (the rows as a JSON list), `dbt.sample.row_count` and
     `dbt.sample.truncated`. Rows are dropped from the end until the record fits payload_cap_kb, and
     dbt.sample.truncated is then true. Columns named in var sample_exclude_columns (case-insensitive, default
-    none) keep their name in each row and their value becomes '?'. Samples hold real data from your tables: see the README, Configuration.
+    none) keep their name in each row and their value becomes '?', masked in the query itself so the value never leaves Snowflake. Samples hold real data from your tables: see the README, Configuration.
     Called by end_run as emit_samples(results, batch). -#}
 {% macro emit_samples(results, batch) %}
   {%- set limit = icecore._icecore_sample_limit() -%}
   {%- for candidate in icecore._icecore_sample_candidates(results) -%}
-    {%- set out = icecore._icecore_try_scalar(icecore._icecore_sample_sql(candidate['relation_name'], limit)) -%}
+    {%- set out = icecore._icecore_try_scalar(icecore._icecore_sample_sql(candidate['relation_name'], limit, icecore._icecore_sample_excluded_columns())) -%}
     {%- if 'error' in out -%}
       {% do log('icecore: warning: samples could not read ' ~ candidate['relation_name'] ~ ' for ' ~ candidate['unique_id'] ~ ': ' ~ out['error'], info=True) %}
     {%- else -%}
@@ -63,22 +63,29 @@
 {% endmacro %}
 
 
-{#- The row with the value of each excluded column replaced by '?'; the column names stay. -#}
-{% macro _icecore_sample_mask(row, excluded) %}
-  {%- if not excluded -%}
-    {{ return(row) }}
-  {%- endif -%}
-  {%- set out = {} -%}
-  {%- for key, value in row.items() -%}
-    {%- do out.update({key: '?' if (key | string | upper) in excluded else value}) -%}
-  {%- endfor -%}
-  {{ return(out) }}
-{% endmacro %}
-
-
 {#- One value: the rows as an array of objects (NULLs kept). relation_name is dbt's own quoted name of the stored failures. -#}
-{% macro _icecore_sample_sql(relation_name, limit) %}
-  {{ return('select array_agg(object_construct_keep_null(*)) from (select * from ' ~ relation_name ~ ' limit ' ~ (limit | int) ~ ')') }}
+{% macro _icecore_sample_sql(relation_name, limit, excluded=[]) %}
+  {%- if not excluded -%}
+    {{ return('select array_agg(object_construct_keep_null(*)) from (select * from ' ~ relation_name ~ ' limit ' ~ (limit | int) ~ ')') }}
+  {%- endif -%}
+  {#- Masked in SQL, so an excluded value never leaves Snowflake: each row's keys are the relation's real column
+      names, matched to the excluded names without regard to case; their value becomes '?', the name stays. -#}
+  {%- set names = [] -%}
+  {%- for name in excluded -%}
+    {%- do names.append(icecore._icecore_sql_literal(name | upper)) -%}
+  {%- endfor -%}
+  {%- set sql -%}
+with s as (
+  select row_number() over (order by 1) as rn, object_construct_keep_null(*) as o
+  from (select * from {{ relation_name }} limit {{ limit | int }})
+), m as (
+  select s.rn, object_agg(f.key, iff(upper(f.key) in ({{ names | join(', ') }}), to_variant('?'), f.value)) as o
+  from s, lateral flatten(input => s.o) f
+  group by s.rn
+)
+select array_agg(o) within group (order by rn) from m
+  {%- endset -%}
+  {{ return(sql) }}
 {% endmacro %}
 
 
@@ -93,9 +100,7 @@
       - (tojson(attrs) | length) - (label | length) - 400 -%}
   {%- set kept = [] -%}
   {%- set ns = namespace(size=4) -%}
-  {%- set excluded = icecore._icecore_sample_excluded_columns() -%}
   {%- for row in rows -%}
-    {%- set row = icecore._icecore_sample_mask(row, excluded) -%}
     {#- the row as it sits in the JSON string attribute, which JSON escapes once more, plus the comma -#}
     {%- set size = (tojson(tojson(row)) | length) - 1 -%}
     {%- if ns.size + size <= room and (kept | length) == loop.index0 -%}

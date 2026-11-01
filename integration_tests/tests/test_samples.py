@@ -60,14 +60,19 @@ def test_default_vars_give_no_sample_and_run_no_query():
     assert not sample_logs(records)
 
 
-def test_excluded_columns_become_question_marks_and_keep_their_names():
-    rows = [{"UNIQUE_FIELD": "jane@x.com", "N_RECORDS": 2, "Email": "a@b.c"}]
+def test_excluded_columns_are_masked_in_the_query_not_in_dbt():
     for setting in (["unique_field", "EMAIL"], "unique_field, email"):
-        a = run_macro("it_sample_render", {"result": test_result(), "rows": rows},
-                      with_vars({"sample_exclude_columns": setting}))["attrs"]
-        assert json.loads(a["dbt.sample.rows"]) == [{"UNIQUE_FIELD": "?", "N_RECORDS": 2, "Email": "?"}]
-    a = run_macro("it_sample_render", {"result": test_result(), "rows": rows})["attrs"]
-    assert json.loads(a["dbt.sample.rows"]) == rows
+        sql = run_macro("it_sample_sql", {"relation_name": RELATION, "limit": 5, "with_excluded": True},
+                        with_vars({"sample_exclude_columns": setting}))
+        assert "'UNIQUE_FIELD'" in sql and "'EMAIL'" in sql and "to_variant('?')" in sql and "upper(f.key)" in sql
+    plain = run_macro("it_sample_sql", {"relation_name": RELATION, "limit": 5, "with_excluded": True})
+    assert "to_variant" not in plain  # nothing excluded: the plain query
+
+
+def test_a_quote_in_an_excluded_name_is_escaped():
+    sql = run_macro("it_sample_sql", {"relation_name": RELATION, "limit": 5, "with_excluded": True},
+                    with_vars({"sample_exclude_columns": ["o'x"]}))
+    assert "'O\\'X'" in sql
 
 
 def test_a_failed_test_with_stored_failures_is_a_candidate():
@@ -277,3 +282,23 @@ def test_excluded_column_is_question_marks_in_the_landed_sample(sf, obs, views):
     sample, = sample_rows_of(invocation_records(sf, obs, invocation_id, min_rows=3, since=since))
     kept = json.loads(sample["record_attributes"]["dbt.sample.rows"])
     assert len(kept) == 10 and {r["UNIQUE_FIELD"] for r in kept} == {"?"} and all(int(r["N_RECORDS"]) == 2 for r in kept)
+
+
+@pytest.mark.sandbox
+def test_excluded_values_never_leave_snowflake(sf, run_id):
+    """Run the emitter's own query on a real table: the raw value is not in what comes back."""
+    table = f'"{DATABASE}"."{SCHEMA}"."HOOKS_MASK_{run_id.upper()}"'
+    cur = sf.cursor()
+    cur.execute(f'create table {table} as select * from (values (1, \'jane@x.com\', \'keep\'), '
+                f'(2, null, \'keep2\')) t("ID", "Email", "note")')
+    try:
+        sql = run_macro("it_sample_sql", {"relation_name": table, "limit": 10, "with_excluded": True},
+                        with_vars({"sample_exclude_columns": ["EMAIL"]}))  # the column is mixed case: "Email"
+        rows = json.loads(cur.execute(sql).fetchone()[0])
+        assert "jane@x.com" not in json.dumps(rows)
+        assert sorted((r["ID"], r["Email"], r["note"]) for r in rows) == [(1, "?", "keep"), (2, "?", "keep2")]
+        # no exclusion: the plain query returns the value
+        plain = run_macro("it_sample_sql", {"relation_name": table, "limit": 10})
+        assert "jane@x.com" in cur.execute(plain).fetchone()[0]
+    finally:
+        cur.execute(f"drop table if exists {table}")

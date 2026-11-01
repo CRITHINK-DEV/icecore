@@ -11,8 +11,8 @@
 {% endmacro %}
 
 {#- The query for a failures relation, as it is sent. -#}
-{% macro it_sample_sql(relation_name, limit) %}
-  {% do _it_result(icecore._icecore_sample_sql(relation_name, limit)) %}
+{% macro it_sample_sql(relation_name, limit, with_excluded=false) %}
+  {% do _it_result(icecore._icecore_sample_sql(relation_name, limit, icecore._icecore_sample_excluded_columns() if with_excluded else [])) %}
 {% endmacro %}
 
 {#- The sample LOG for a result and the rows the query returned, as ICECORE_EMIT_RUN receives it. -#}

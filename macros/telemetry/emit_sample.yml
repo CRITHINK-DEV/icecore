@@ -14,7 +14,7 @@ macros:
       list of objects, NULLs kept), `dbt.sample.row_count` and `dbt.sample.truncated`. Rows are dropped from
       the end until the record fits `payload_cap_kb`, and `dbt.sample.truncated` is then true. Columns named in
       `var('icecore').sample_exclude_columns` (a list or comma-separated string, case-insensitive, default none)
-      keep their name in every row and their value becomes `?`. A test without
+      keep their name in every row and their value becomes `?`; the masking is done in the query, so the value never reaches dbt. A test without
       stored failures, one that errored, or one that passed gets no sample. Samples contain real data from
       your tables, so anyone who can read the event table can read them; they stay off until you set `samples` to
       true. Returns nothing.

@@ -290,3 +290,50 @@ def test_rows_committed_after_the_window_end_are_left_for_the_next_window(dbt, s
         assert open_ended["metrics"] == {"window_rows": 15}
     finally:
         cur.execute(f"drop table if exists {quoted(table)}")
+
+
+# --- two tests on one column keep their own windows (window_tag) ------------------------------------
+
+@pytest.mark.sandbox
+def test_two_column_tests_on_one_column_with_distinct_window_tags_keep_separate_windows(dbt, sf):
+    run_id = uuid.uuid4().hex
+    schema = f"ICECORE_OBS_{run_id}".upper()
+    table = f"IT_TAGS_{run_id}".upper()
+    obs = {"icecore": {"obs_schema": schema}}
+    cur = sf.cursor()
+    cur.execute(f'create schema "{DATABASE}"."{schema}"')
+    metric_events = EVENTS + " and record:name::string = 'icecore.metric'"
+    ids = {"db": DATABASE, "schema": schema}
+
+    def run(test, extra=None):
+        out = results_by_name(invoke(["test", "--select", test, "--vars",
+                                      json.dumps({**obs, "it_uc2_column_table": table, **(extra or {})})]))
+        assert out[test] == "pass"
+
+    try:
+        run_macro("it_create_emit_procedures", {}, ["--vars", json.dumps(obs)])
+        cur.execute(f'create table {quoted(table)} (id number, amount number(10, 2)) change_tracking = true')
+        time.sleep(3)
+        since = cur.execute("select sysdate()").fetchone()[0].strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        time.sleep(2)
+        log_since = cur.execute("select dateadd(minute, -3, sysdate())").fetchone()[0]
+        cur.execute(f'insert into {quoted(table)} select seq4(), seq4() from table(generator(rowcount => 30))')
+        run("it_column_tag_a", {"it_since": since})
+        run("it_column_tag_b", {"it_since": since})  # both have an observation of their own now: 30 rows each
+        wait_for_events(sf, metric_events, ids, min_rows=2, since=log_since)
+        cur.execute(f'insert into {quoted(table)} select 100 + seq4(), seq4() from table(generator(rowcount => 5))')
+        run("it_column_tag_a")  # starts at its own window end: the 5 new rows
+        wait_for_events(sf, metric_events, ids, min_rows=3, since=log_since)
+        cur.execute(f'insert into {quoted(table)} select 200 + seq4(), seq4() from table(generator(rowcount => 5))')
+        run("it_column_tag_b")  # tag_b starts at its own end (round 1), not at tag_a's later end: 10 rows
+        wait_for_events(sf, metric_events, ids, min_rows=4, since=log_since, settle_s=10)
+        view = f'"{DATABASE}"."{schema}"."BASE_EVENTS"'
+        cur.execute(f"create view {view} as {call_macro('base_events', obs_schema=schema)}")
+        rows = sf.cursor(DictCursor).execute(
+            f"select attributes, metric_value from {view} where record_name = 'icecore.metric' and event_at >= %(s)s"
+            " order by event_at", {"s": log_since}).fetchall()
+        got = [(json.loads(r["ATTRIBUTES"])["dbt.window.tag"], r["METRIC_VALUE"]) for r in rows]
+        assert sorted(got) == [("tag_a", 5.0), ("tag_a", 30.0), ("tag_b", 10.0), ("tag_b", 30.0)]
+    finally:
+        cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
+        cur.execute(f"drop table if exists {quoted(table)}")

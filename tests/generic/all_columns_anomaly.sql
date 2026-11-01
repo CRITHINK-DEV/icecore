@@ -28,8 +28,10 @@
       {%- set window = icecore.get_change_window(model, since, timestamp_column, until) -%}
       {%- set to_emit = [] -%}
       {%- for c in signature if c['name'] not in excluded -%}
-        {#- the exact stored name, quoted, so a case-sensitive column is read as it is -#}
-        {%- set values = icecore.compute_column_metrics(model, '"' ~ (c['name'] | replace('"', '""')) ~ '"', window, names) -%}
+        {#- TODO(#75): use icecore._sql(c['name'], 'name') once #75 is merged. It quotes the exact stored name; the
+            existing column helper reads a plain-looking name as upper case, so a case-sensitive column is not read
+            until then. -#}
+        {%- set values = icecore.compute_column_metrics(model, icecore._icecore_column_ref(c['name']), window, names) -%}
         {%- if values is none -%}
           {%- do log('icecore: warning: all_columns_anomaly of ' ~ c['name'] ~ ' on ' ~ name ~ ' could not be measured (see above)', info=True) -%}
         {%- else -%}

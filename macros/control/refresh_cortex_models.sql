@@ -10,7 +10,8 @@
     A series is keyed by cortex_series_key(metric, column, dimension) and a table's model is named by
     cortex_model_name(relation): the dispatcher's `model` and `series` arguments. The task body is one Scripting block
     (a cursor over the tables, one guarded CREATE OR REPLACE per table; a failure on one table is reported and does not
-    stop the others) that reads only the metrics view. It returns 'ok <n> models' or 'icecore-error ...'. -#}
+    stop the others) that reads only the metrics view. It returns 'ok <n> models, <k> skipped' or 'icecore-error ...' and also sets that text as the task's return value
+    (SYSTEM$SET_RETURN_VALUE), since a task's RETURN is discarded. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -33,7 +34,9 @@
 {% endmacro %}
 
 
-{#- The task body: a Scripting block. `source` is the relation read as the metrics view (default the obs schema's METRICS).
+{#- The task body: a Scripting block that reads the obs schema's METRICS view. It is constant text: the database and the
+    schema are checked against [A-Za-z0-9_] (_icecore_refresh_names, which stops with a compile error otherwise; TODO(#75):
+    use _sql(..., 'ident') once it merges) before they are written, quoted, into it, and there is no `source` argument.
 
     No SQL text is built from a record value. `relation` comes from event records the dbt role can write, so it is only
     ever (1) checked against the strict quoted-identifier shape "DB"."SCHEMA"."NAME" (anything else is skipped and counted),
@@ -41,7 +44,7 @@
     OBJECT_CONSTRUCT to the mapping event. The statements that are built from text contain only this macro's own constants,
     hex digests and integers; the series key is hashed in SQL (MD5), never pasted. The one string literal in the body that
     carries a value, the digest, is a hex string. -#}
-{% macro render_refresh_cortex_models_sql(schema=none, source=none, lookback_days=30, delay_minutes=none, min_points=14) %}
+{% macro render_refresh_cortex_models_sql(schema=none, lookback_days=30, delay_minutes=none, min_points=14) %}
   {%- if lookback_days is not integer or lookback_days < 1 -%}
     {{ exceptions.raise_compiler_error('icecore: lookback_days must be an integer of at least 1, got ' ~ lookback_days) }}
   {%- endif -%}
@@ -52,9 +55,14 @@
   {%- if delay is not integer or delay < 0 -%}
     {{ exceptions.raise_compiler_error('icecore: history delay must be an integer of at least 0 minutes, got ' ~ delay) }}
   {%- endif -%}
-  {%- set source = source or icecore._icecore_procedure('METRICS', schema) -%}
-  {%- set emit = icecore._icecore_procedure('ICECORE_EMIT', schema) -%}
-  {%- set prefix = icecore.obs_schema(schema) ~ '."' -%}
+  {%- set names = icecore._icecore_refresh_names(schema) -%}
+  {%- set source = names['metrics'] -%}
+  {%- set emit = names['emit'] -%}
+  {%- set prefix = names['prefix'] -%}
+  {%- set version = icecore._icecore_package_version() | string -%}
+  {%- if not modules.re.match('^[A-Za-z0-9._+-]+\\Z', version) -%}
+    {{ exceptions.raise_compiler_error("icecore: the package version must be letters, digits and . _ + - to be written into the task body, got '" ~ version ~ "'") }}
+  {%- endif -%}
   {%- set window = 'value is not null and observed_at > dateadd(day, -' ~ lookback_days ~ ', sysdate()) and observed_at <= dateadd(minute, -' ~ delay ~ ', sysdate())' -%}
   {%- set sql -%}
 DECLARE
@@ -74,6 +82,8 @@ DECLARE
   model_id STRING;
   train STRING;
   emitted STRING;
+  msg STRING;
+  ret STRING;  -- the return-value call takes a variable, not an expression
 BEGIN
   FOR r IN rels DO
     -- a relation is a record value: only the strict shape "DB"."SCHEMA"."NAME" (no quote inside a part) goes on
@@ -98,6 +108,7 @@ BEGIN
             'dbt.node.relation', r.relation,
             'icecore.cortex.model', model_id,
             'icecore.schema_version', 1,
+            'icecore.version', '{{ version }}',
             'icecore.level', 'info',
             'icecore.message', 'icecore: Cortex model ' || model_id || ' refreshed')));
       EXCEPTION
@@ -113,11 +124,28 @@ BEGIN
     END;
   END IF;
   IF (ARRAY_SIZE(failed) > 0) THEN
-    RETURN 'icecore-error ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped, ' || ARRAY_SIZE(failed) || ' failed: ' || ARRAY_TO_STRING(failed, '; ');
+    msg := 'icecore-error ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped, ' || ARRAY_SIZE(failed) || ' failed: ' || ARRAY_TO_STRING(failed, '; ');
+  ELSE
+    msg := 'ok ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped';
   END IF;
-  RETURN 'ok ' || ARRAY_SIZE(created) || ' models, ' || skipped || ' skipped';
+  -- a task keeps no RETURN: the result is its return value, read from TASK_HISTORY (RETURN_VALUE) or by a child task
+  BEGIN
+    ret := LEFT(msg, 9000);
+    CALL SYSTEM$SET_RETURN_VALUE(:ret);
+  EXCEPTION
+    WHEN OTHER THEN NULL;  -- run outside a task (a test, a manual run): the RETURN below still carries it
+  END;
+  RETURN msg;
 EXCEPTION
-  WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
+  WHEN OTHER THEN
+    msg := 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
+    BEGIN
+      ret := LEFT(msg, 9000);
+      CALL SYSTEM$SET_RETURN_VALUE(:ret);
+    EXCEPTION
+      WHEN OTHER THEN NULL;
+    END;
+    RETURN msg;
 END;
   {%- endset -%}
   {{ return(sql) }}
@@ -126,11 +154,14 @@ END;
 
 {#- Creates the task ICECORE_REFRESH_CORTEX in the obs schema (setup's create_tasks step), only when Cortex is available
     (`capabilities`, a detect_capabilities result; default detects, without recording). Returns {task, status, resumed,
-    printed}: status ok, skipped (Cortex off) or the guarded error. Created SUSPENDED: var icecore.cortex_refresh_task_resume:
-    true resumes it. Schedule: var icecore.cortex_refresh_days (default 7) as minutes. Warehouse: var
-    cortex_refresh_task_warehouse, else the target's. `printed` holds what an admin must run: CREATE TASK, EXECUTE TASK
-    to resume, and the USAGE grant on ICECORE_SCORE for the role that runs dbt (models are never granted). -#}
-{% macro create_refresh_cortex_task(schema=none, capabilities=none, source=none, warehouse=none, resume=none, days=none, min_points=14) %}
+    printed}: status ok, skipped (Cortex off) or the guarded error. A new task is created SUSPENDED: var
+    icecore.cortex_refresh_task_resume: true resumes it. A task an admin had resumed stays resumed: CREATE OR REPLACE
+    suspends it, so SHOW TASKS runs first and the task is resumed again when it was started. Schedule: var
+    icecore.cortex_refresh_days (default 7, whole days from 1 to 8: Snowflake refuses a schedule above 11520 minutes) as
+    minutes. Warehouse: var cortex_refresh_task_warehouse, else the target's. The role that runs dbt (argument `dbt_role`,
+    else var icecore.dbt_role) is named in the printed USAGE grant on ICECORE_SCORE; models are never granted. `printed`
+    holds what an admin must run. -#}
+{% macro create_refresh_cortex_task(schema=none, capabilities=none, warehouse=none, resume=none, days=none, min_points=14, dbt_role=none) %}
   {%- set out = {'task': none, 'status': 'skipped', 'resumed': false, 'printed': []} -%}
   {%- if not execute -%}{{ return(out) }}{%- endif -%}
   {%- set cfg = var('icecore', {}) -%}
@@ -140,34 +171,44 @@ END;
     {{ return(out) }}
   {%- endif -%}
   {%- set days = cfg.get('cortex_refresh_days', 7) if days is none else days -%}
-  {%- if days is not integer or days < 1 -%}
-    {{ exceptions.raise_compiler_error("icecore: cortex_refresh_days must be a whole number of days, 1 or more, to schedule the task, got '" ~ days ~ "'") }}
+  {%- if days is not integer or days is sameas true or days is sameas false or days < 1 or days > 8 -%}
+    {{ exceptions.raise_compiler_error("icecore: cortex_refresh_days must be a whole number of days from 1 to 8 to schedule the task (Snowflake refuses a schedule above 11520 minutes, 8 days), got '" ~ days ~ "'. To refresh less often, schedule your own task or run the refresh body by hand.") }}
   {%- endif -%}
   {%- set warehouse = warehouse or cfg.get('cortex_refresh_task_warehouse') or target.warehouse -%}
   {%- set resume = cfg.get('cortex_refresh_task_resume', false) if resume is none else resume -%}
-  {%- set task = icecore._icecore_procedure('ICECORE_REFRESH_CORTEX', schema) -%}
-  {%- set body = icecore.render_refresh_cortex_models_sql(schema, source, min_points=min_points) -%}
+  {%- set dbt_role = dbt_role or cfg.get('dbt_role') -%}
+  {%- set names = icecore._icecore_refresh_names(schema) -%}
+  {%- set task = names['task'] -%}
+  {%- set body = icecore.render_refresh_cortex_models_sql(schema, min_points=min_points) -%}
   {%- set ddl = icecore._icecore_refresh_task_ddl(task, body, warehouse, days * 1440) -%}
+  {%- set before = icecore._icecore_refresh_task_state(names) -%}
   {%- set status = icecore._icecore_guarded_ddl(ddl) -%}
   {%- do out.update({'task': task, 'status': status}) -%}
-  {#- Models cannot be shared across roles: they are trained and scored in setup's role, through ICECORE_SCORE. The dbt role needs
-      only USAGE on that procedure, never on a model. -#}
-  {%- do out['printed'].append('GRANT USAGE ON PROCEDURE ' ~ icecore._icecore_procedure('ICECORE_SCORE', schema)
-      ~ '(STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE ' ~ target.role) -%}
-  {%- do log('icecore: the role that runs dbt scores with Cortex through ICECORE_SCORE and needs only USAGE on it; an admin must run: '
-      ~ out['printed'][0], info=True) -%}
+  {#- Models cannot be shared across roles: they are trained and scored in setup's role, through ICECORE_SCORE. The role that runs
+      dbt needs only USAGE on that procedure, never on a model. Setup's own role (target.role) is not that role. -#}
+  {%- do out['printed'].append('GRANT USAGE ON PROCEDURE ' ~ names['score'] ~ '(STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE '
+      ~ (icecore._icecore_identifier(dbt_role) if dbt_role else '<the role that runs dbt>')) -%}
+  {%- do log('icecore: the role that runs dbt scores with Cortex through ICECORE_SCORE and needs only USAGE on it'
+      ~ ('' if dbt_role else ' (set var icecore.dbt_role to name it in the grant)') ~ '; an admin must run: ' ~ out['printed'][0], info=True) -%}
   {%- if status != 'ok' -%}
-    {%- do out['printed'].append('GRANT CREATE TASK ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
-    {%- do log('icecore: warning: could not set up ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][-1], info=True) -%}
+    {%- if 'insufficient' in status | lower or 'not authorized' in status | lower or 'does not exist or not authorized' in status | lower -%}
+      {%- do out['printed'].append('GRANT CREATE TASK ON SCHEMA ' ~ names['qualified'] ~ ' TO ROLE ' ~ target.role) -%}
+      {%- do log('icecore: warning: could not set up ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][-1], info=True) -%}
+    {%- else -%}
+      {%- do log('icecore: warning: could not set up ' ~ task ~ ': ' ~ status, info=True) -%}
+    {%- endif -%}
     {{ return(out) }}
   {%- endif -%}
-  {%- if resume is sameas true or (resume | string | lower) == 'true' -%}
+  {#- CREATE OR REPLACE suspended a task an admin had resumed: resume it again. A new task stays suspended unless the var says so. -#}
+  {%- set was_started = (before == 'started') -%}
+  {%- if was_started or resume is sameas true or (resume | string | lower) == 'true' -%}
     {%- set resumed = icecore._icecore_guarded_ddl('ALTER TASK ' ~ task ~ ' RESUME') -%}
     {%- if resumed == 'ok' -%}
       {%- do out.update({'resumed': true}) -%}
+      {%- if was_started -%}{%- do log('icecore: ' ~ task ~ ' was resumed before setup and is resumed again', info=True) -%}{%- endif -%}
     {%- else -%}
       {%- do out['printed'].append('GRANT EXECUTE TASK ON ACCOUNT TO ROLE ' ~ target.role) -%}
-      {%- do log('icecore: warning: could not resume ' ~ task ~ ' (' ~ resumed ~ '); it stays suspended. An admin must run: ' ~ out['printed'][-1], info=True) -%}
+      {%- do log('icecore: warning: could not resume ' ~ task ~ ' (' ~ resumed ~ '); it stays suspended' ~ (' although it was resumed before setup' if was_started else '') ~ '. An admin must run: ' ~ out['printed'][-1], info=True) -%}
     {%- endif -%}
   {%- endif -%}
   {{ return(out) }}
@@ -176,7 +217,45 @@ END;
 
 {#- Private --------------------------------------------------------------------------------------- -#}
 
+{#- Every name that goes into the task text, validated: the database and the obs schema against [A-Za-z0-9_] (a compile error
+    otherwise: no quote, no $, no control character), then quoted. `database` is the target's; the argument exists for tests.
+    TODO(#75): use _sql(..., 'ident') once icecore._sql merges. -#}
+{% macro _icecore_refresh_names(schema=none, database=none) %}
+  {%- set db = icecore._icecore_score_constant(target.database if database is none else database) -%}
+  {%- set sch = icecore._icecore_score_constant(schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) -%}
+  {%- set qualified = '"' ~ db ~ '"."' ~ sch ~ '"' -%}
+  {{ return({
+      'qualified': qualified, 'schema_name': sch,
+      'metrics': qualified ~ '."METRICS"', 'emit': qualified ~ '."ICECORE_EMIT"', 'score': qualified ~ '."ICECORE_SCORE"',
+      'task': qualified ~ '."ICECORE_REFRESH_CORTEX"', 'prefix': qualified ~ '."',
+  }) }}
+{% endmacro %}
+
+
+{#- The task's state before setup replaces it: 'started', 'suspended', 'none' (no such task) or 'unknown' (SHOW refused). -#}
+{% macro _icecore_refresh_task_state(names) %}
+  {%- set block -%}
+declare
+  s STRING DEFAULT 'none';
+begin
+  show tasks like 'ICECORE_REFRESH_CORTEX' in schema {{ names['qualified'] }};
+  select coalesce(max(lower("state")), 'none') into :s from table(result_scan(last_query_id()));
+  return s;
+exception
+  when other then return 'unknown';
+end;
+  {%- endset -%}
+  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) }}
+{% endmacro %}
+
+
 {% macro _icecore_refresh_task_ddl(task, body, warehouse, schedule_minutes) %}
+  {%- if schedule_minutes is not integer or schedule_minutes < 1 or schedule_minutes > 11520 -%}
+    {{ exceptions.raise_compiler_error('icecore: a task schedule must be 1 to 11520 minutes (Snowflake refuses more), got ' ~ schedule_minutes) }}
+  {%- endif -%}
+  {%- if '$$' in body -%}
+    {{ exceptions.raise_compiler_error('icecore: the task body must not contain $$ (it would end the EXECUTE IMMEDIATE body early)') }}
+  {%- endif -%}
   {{ return('CREATE OR REPLACE TASK ' ~ task
       ~ ('\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '')
       ~ '\n  SCHEDULE = ' ~ icecore._icecore_sql_literal(schedule_minutes ~ ' MINUTE')

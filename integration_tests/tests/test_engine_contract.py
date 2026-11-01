@@ -173,12 +173,35 @@ def test_the_no_write_check_ignores_reads_and_comments():
 
 
 ML_CREATORS = {"refresh_cortex_models.sql"}  # training is the only place icecore creates SNOWFLAKE.ML objects
-CREATE_ML = r"create\s+(or\s+replace\s+)?snowflake\.ml"
+CREATE_ML = r"create\s+(or\s+replace\s+)?snowflake\s*\.\s*ml"
+
+
+def ml_creator_text(text: str) -> str:
+    """Macro text as the ML-creator check reads it: Jinja comments and SQL comments (one left-to-right pass, string literals
+    kept: the training DDL lives in one) become a space, double quotes are dropped (`"SNOWFLAKE".ML` is SNOWFLAKE.ML), lower case."""
+    text = re.sub(r"\{#.*?#\}", " ", text, flags=re.S)
+    text = re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/", lambda m: m.group(0) if m.group(0)[0] == "'" else " ", text, flags=re.S)
+    return text.replace('"', "").lower()
+
+
+@pytest.mark.parametrize("sql", [
+    "create or replace snowflake.ml.anomaly_detection m(x)", "create /**/ snowflake.ml.anomaly_detection m(x)",
+    'create or replace "SNOWFLAKE".ML.ANOMALY_DETECTION m(x)', 'CREATE OR REPLACE "SNOWFLAKE"."ML"."ANOMALY_DETECTION" m(x)',
+    "create\n-- c\nsnowflake.ml.anomaly_detection m(x)", "create /* a */ or /* b */ replace snowflake . ml.anomaly_detection m(x)",
+    "execute immediate 'create or replace snowflake.ml.anomaly_detection m(x)'",
+])
+def test_the_ml_creator_check_sees_through_comments_and_quotes(sql):
+    assert re.search(CREATE_ML, ml_creator_text(sql)), sql
+
+
+@pytest.mark.parametrize("sql", ["-- create snowflake.ml here", "/* create or replace snowflake.ml */ select 1", "select 'a--b' as x /* create snowflake.ml */",
+                                 "{# create snowflake.ml #} select 1", "select snowflake.ml.anomaly_detection_x"])
+def test_the_ml_creator_check_ignores_comments_and_reads(sql):
+    assert not re.search(CREATE_ML, ml_creator_text(sql)), sql
 
 
 def test_only_the_named_training_file_creates_snowflake_ml_objects():
-    found = {p.name for p in (REPO / "macros").rglob("*.sql")
-             if re.search(CREATE_ML, re.sub(r"\{#.*?#\}", "", p.read_text(), flags=re.S).lower())}
+    found = {p.name for p in (REPO / "macros").rglob("*.sql") if re.search(CREATE_ML, ml_creator_text(p.read_text()))}
     assert found == ML_CREATORS
 
 

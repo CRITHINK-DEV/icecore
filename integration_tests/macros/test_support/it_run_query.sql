@@ -7,7 +7,16 @@
     {{ return(dbt.run_query(sql)) }}
   {%- endif -%}
   {%- set text = sql | lower -%}
-  {%- if 'drop procedure' in text -%}
+  {%- if 'show tasks' in text -%}
+    {%- do log('icecore: query: show tasks', info=True) -%}
+    {{ return({'rows': [[var('it_task_state', 'none')]]}) }}
+  {%- elif 'create or replace task' in text -%}
+    {%- do log('icecore: query: create task', info=True) -%}
+    {{ return({'rows': [[var('it_create_task_status', 'ok')]]}) }}
+  {%- elif 'alter task' in text -%}
+    {%- do log('icecore: query: resume task', info=True) -%}
+    {{ return({'rows': [['ok']]}) }}
+  {%- elif 'drop procedure' in text -%}
     {%- if var('it_query_stub_forbid_drop', false) -%}
       {{ exceptions.raise_compiler_error('it stub: a DROP was issued: ' ~ sql) }}
     {%- endif -%}

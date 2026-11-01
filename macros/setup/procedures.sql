@@ -226,14 +226,14 @@ $$
 {% endmacro %}
 
 
-{#- A database or schema name that goes into the ICECORE_SCORE body as a constant: only [A-Za-z0-9_], whole string (\Z), upper-cased;
-    anything else stops setup. -#}
+{#- A database or schema name that goes into an owner's-rights body or task text as a constant (ICECORE_SCORE, the refresh task):
+    only [A-Za-z0-9_] on the name as given (so no quote, no $, no control character, and no upper-casing that changes it), whole
+    string (\Z), upper-cased; anything else stops the macro. TODO(#75): replace by _sql(..., 'ident') once icecore._sql merges. -#}
 {% macro _icecore_score_constant(name) %}
-  {%- set up = name | string | upper -%}
-  {%- if not modules.re.match('^[A-Z0-9_]+\\Z', up) -%}
-    {{ exceptions.raise_compiler_error("icecore: the database and the obs schema must be plain identifiers ([A-Za-z0-9_]) to create ICECORE_SCORE, got '" ~ name ~ "'") }}
+  {%- if not modules.re.match('^[A-Za-z0-9_]+\\Z', name | string) -%}
+    {{ exceptions.raise_compiler_error("icecore: the database and the obs schema must be plain identifiers ([A-Za-z0-9_]) to be written into an owner's-rights procedure or task, got '" ~ name ~ "'") }}
   {%- endif -%}
-  {{ return(up) }}
+  {{ return(name | string | upper) }}
 {% endmacro %}
 
 

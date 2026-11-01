@@ -5,8 +5,7 @@ Security (lead ruling): the task reads `relation` from records the dbt role can 
 is built from a record value. Offline tests check the rendering, the hash-derived names, the strict relation shape, and the
 skip when Cortex is off. The sandbox test uses a schema ICECORE_OBS_<run_id> of its own and a fixture metrics table in it with
 one monitored table (hostile name: quote, backslash, $$, semicolon, newline) and one invalid relation, creates the task
-suspended, runs its body (EXECUTE TASK when the role may, else the same body directly, which is what QUERY_HISTORY then
-shows), checks the one model and that no extra statement ran, scores with it through ICECORE_SCORE, and drops the schema.
+suspended, runs it with EXECUTE TASK (the owner granted it) and reads its return value from TASK_HISTORY, runs the same body directly, checks the one model and that no extra statement ran, scores with it through ICECORE_SCORE, and drops the schema.
 """
 import hashlib
 import json
@@ -95,6 +94,68 @@ def test_body_follows_the_history_delay_var_and_validates_its_arguments():
         body(lookback_days=0)
 
 
+# Hostile database and schema names: each must stop the render with a compile error, so none reaches the task text.
+HOSTILE_NAMES = [
+    "OBS_X' || (SELECT CURRENT_ROLE()) || '", 'OBS_X" || (SELECT CURRENT_ROLE()) || "', "OBS_X$$", "OBS$X", "OBS X", "OBS_X;DROP",
+    "OBS_X\n", "OBS_X\x00", "OBS_X\x1f", "OBS_X--", "OBS.X", 'OBS_"X', "OBS_X\\", "OBS_\u00dfX",
+]
+
+
+@pytest.mark.parametrize("name", HOSTILE_NAMES)
+def test_a_hostile_schema_cannot_reach_the_task_body(name):
+    with pytest.raises(MacroFailed, match="plain identifiers"):
+        call("render_refresh_cortex_models_sql", {"schema": name})
+    with pytest.raises(MacroFailed, match="plain identifiers"):  # the same through the obs_schema var
+        call("render_refresh_cortex_models_sql", {}, ["--vars", json.dumps({"icecore": {"obs_schema": name}})])
+    with pytest.raises(MacroFailed, match="plain identifiers"):
+        call("create_refresh_cortex_task", {"schema": name, "capabilities": CORTEX_ON}, ["--vars", '{"it_query_stub": true}'])
+
+
+@pytest.mark.parametrize("name", HOSTILE_NAMES + [""])
+def test_a_hostile_database_cannot_reach_the_task_text(name):
+    with pytest.raises(MacroFailed, match="plain identifiers"):
+        call("_icecore_refresh_names", {"schema": "icecore_obs_x", "database": name})
+
+
+def test_the_body_and_the_task_are_one_statement_with_no_injected_text():
+    names, _ = call("_icecore_refresh_names", {"schema": "icecore_obs_x"})
+    assert names["metrics"] == '"%s"."ICECORE_OBS_X"."METRICS"' % DATABASE
+    assert names["task"] == '"%s"."ICECORE_OBS_X"."ICECORE_REFRESH_CORTEX"' % DATABASE
+    sql = body()
+    ddl, _ = call("_icecore_refresh_task_ddl", {"task": names["task"], "body": sql, "warehouse": "WH", "schedule_minutes": 1440})
+    assert ddl.count("$$") == 2 and ddl.endswith("\n$$"), "one EXECUTE IMMEDIATE $$ body, nothing after it"
+    outside = ddl[:ddl.index("$$")] + ddl[ddl.rindex("$$") + 2:]
+    assert ";" not in outside, "the CREATE TASK header is one statement"
+    assert ddl.lower().count("create or replace task") == 1
+    # every double-quoted identifier outside a string literal is the validated database or schema or a constant of the macro
+    assert "CURRENT_ROLE" not in sql.upper()
+    quoted = set(re.findall(r'"([^"]*)"', re.sub(r"--[^\n]*", "", literals_removed(sql))))
+    assert quoted <= {DATABASE, "ICECORE_OBS_X", "METRICS", "ICECORE_EMIT", "COLUMN"}, quoted
+
+
+def test_a_task_body_with_dollar_dollar_is_refused():
+    with pytest.raises(MacroFailed, match=r"\$\$"):
+        call("_icecore_refresh_task_ddl", {"task": "T", "body": "BEGIN RETURN '$$'; END;", "warehouse": "WH", "schedule_minutes": 1440})
+
+
+def test_the_source_argument_is_gone():
+    with pytest.raises(MacroFailed):
+        call("render_refresh_cortex_models_sql", {"schema": "x", "source": '"A"."B"."C"'})
+    with pytest.raises(MacroFailed):
+        call("create_refresh_cortex_task", {"schema": "x", "capabilities": CORTEX_ON, "source": '"A"."B"."C"'}, ["--vars", '{"it_query_stub": true}'])
+
+
+def test_the_body_sets_the_task_return_value_on_every_path():
+    sql = body()
+    assert sql.count("SYSTEM$SET_RETURN_VALUE") == 2  # the normal end and the outer EXCEPTION handler
+    assert "RETURN msg;" in sql and "'ok ' || ARRAY_SIZE(created)" in sql and "'icecore-error '" in sql
+
+
+def test_the_mapping_event_carries_the_package_version():
+    sql = body()
+    assert re.search(r"'icecore\.version', '[A-Za-z0-9._+-]+',", sql), sql[sql.index("icecore.cortex_model") - 200:][:600]
+
+
 # --- the task (offline) -----------------------------------------------------------------------------
 
 
@@ -116,10 +177,60 @@ def test_the_task_is_created_suspended_on_a_schedule_from_cortex_refresh_days():
     assert "RESUME" not in ddl  # suspended: a new task is, and nothing resumes it here
 
 
-@pytest.mark.parametrize("days", ["7", 0, 1.5])
-def test_cortex_refresh_days_must_be_whole_days(days):
+@pytest.mark.parametrize("days", ["7", 0, 1.5, 9, 30, True])
+def test_cortex_refresh_days_must_be_whole_days_from_1_to_8(days):
     with pytest.raises(MacroFailed, match="cortex_refresh_days"):
         call_macro("create_refresh_cortex_task", schema="x", capabilities=CORTEX_ON, days=days)
+
+
+def test_a_refresh_period_over_8_days_says_why_and_8_days_is_the_largest_schedule():
+    with pytest.raises(MacroFailed, match="11520 minutes"):
+        call_macro("create_refresh_cortex_task", schema="x", capabilities=CORTEX_ON, days=9)
+    ddl, _ = call("_icecore_refresh_task_ddl", {"task": "T", "body": "BEGIN RETURN 1; END;", "warehouse": "WH", "schedule_minutes": 8 * 1440})
+    assert "SCHEDULE = '11520 MINUTE'" in ddl
+    with pytest.raises(MacroFailed, match="11520"):
+        call("_icecore_refresh_task_ddl", {"task": "T", "body": "BEGIN RETURN 1; END;", "warehouse": "WH", "schedule_minutes": 11521})
+
+
+def stubbed(kwargs=None, **state):
+    out, logs = call("create_refresh_cortex_task", {"schema": "icecore_obs_x", "capabilities": CORTEX_ON, "warehouse": "WH", **(kwargs or {})},
+                     ["--vars", json.dumps({"it_query_stub": True, **state})])
+    return out, [line.split("icecore: query: ")[1] for line in logs if line.startswith("icecore: query: ")], logs
+
+
+def test_a_rerun_resumes_a_task_an_admin_had_resumed():
+    out, queries, _ = stubbed(it_task_state="started")
+    assert queries == ["show tasks", "create task", "resume task"], queries  # CREATE OR REPLACE suspended it: resumed again
+    assert out["status"] == "ok" and out["resumed"] is True
+
+
+@pytest.mark.parametrize("state", ["suspended", "none", "unknown"])
+def test_a_rerun_leaves_a_suspended_or_new_task_suspended(state):
+    out, queries, _ = stubbed(it_task_state=state)
+    assert queries == ["show tasks", "create task"], queries
+    assert out["status"] == "ok" and out["resumed"] is False
+
+
+def test_the_resume_var_still_resumes_a_new_task():
+    _, queries, _ = stubbed(it_task_state="none", icecore={"cortex_refresh_task_resume": True})
+    assert queries == ["show tasks", "create task", "resume task"], queries
+
+
+def test_the_usage_grant_names_the_dbt_role_not_the_setup_role():
+    out, _, _ = stubbed({"dbt_role": "ANALYTICS_DBT"})
+    (grant,) = out["printed"]
+    assert grant.startswith("GRANT USAGE ON PROCEDURE ") and grant.endswith("(STRING, STRING, ARRAY, FLOAT, FLOAT) TO ROLE ANALYTICS_DBT"), grant
+    from_var, _, _ = stubbed(icecore={"dbt_role": "VAR_ROLE"})
+    assert from_var["printed"][0].endswith("TO ROLE VAR_ROLE")
+    unnamed, _, logs = stubbed()
+    assert unnamed["printed"][0].endswith("TO ROLE <the role that runs dbt>") and any("icecore.dbt_role" in line for line in logs)
+
+
+def test_a_failed_create_prints_the_create_task_grant_only_for_a_privilege_error():
+    out, _, _ = stubbed(it_create_task_status="icecore-error 3001: Insufficient privileges to operate on schema")
+    assert any(p.startswith("GRANT CREATE TASK ON SCHEMA") for p in out["printed"]), out["printed"]
+    out, _, logs = stubbed(it_create_task_status="icecore-error 1003: SQL compilation error: invalid schedule")
+    assert not any("CREATE TASK" in p for p in out["printed"]) and any("invalid schedule" in line for line in logs)
 
 
 # --- sandbox ----------------------------------------------------------------------------------------
@@ -132,7 +243,7 @@ def refreshed(sf):
         pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
     run_id = uuid.uuid4().hex.upper()
     schema = f"ICECORE_OBS_{run_id}"
-    fixture = f'"{DATABASE}"."{schema}"."IT_METRICS"'
+    fixture = f'"{DATABASE}"."{schema}"."METRICS"'  # the view setup creates is a table here: the task reads exactly this name
     cur = sf.cursor()
     cur.execute(f'create schema "{DATABASE}"."{schema}"')
     try:
@@ -143,7 +254,7 @@ def refreshed(sf):
             for rel, col, metric, value in ((HOSTILE, None, "row_count", 1000 + (i % 5) * 3), (HOSTILE, "amount", "null_rate", 0.02 + (i % 4) * 0.001),
                                             (INVALID, None, "row_count", 5 + (i % 3))):
                 cur.execute(f"insert into {fixture} select %s, %s, null, %s, dateadd(day, {i - 21}, %s::timestamp_ntz), %s", (rel, col, metric, base, value))
-        created, _ = call("create_refresh_cortex_task", {"schema": schema, "capabilities": CORTEX_ON, "source": fixture})
+        created, _ = call("create_refresh_cortex_task", {"schema": schema, "capabilities": CORTEX_ON})
         info = {"created": created, "schema": schema, "next": str(base + timedelta(days=-1))}
         if created["status"] == "ok":
             info["state"] = cur.execute(f"show tasks like 'ICECORE_REFRESH_CORTEX' in schema \"{DATABASE}\".\"{schema}\"").fetchall()
@@ -154,12 +265,17 @@ def refreshed(sf):
                 info["ran"] = f"execute task refused: {exc}"
             if info["ran"] == "execute task":
                 import time
-                for _ in range(60):
-                    if cur.execute(f'show snowflake.ml.anomaly_detection in schema "{DATABASE}"."{schema}"').fetchall():
+                history = (f'select state, return_value, error_message from table("{DATABASE}".information_schema.task_history('
+                           f"task_name => 'ICECORE_REFRESH_CORTEX', result_limit => 20)) where schema_name = '{schema}' and state <> 'SCHEDULED' and state <> 'EXECUTING'"
+                           " order by scheduled_time desc limit 1")
+                for _ in range(90):
+                    rows = cur.execute(history).fetchall()
+                    if rows:
+                        info["task_run"] = rows[0]
                         break
                     time.sleep(5)
             # the same body, run by this session so QUERY_HISTORY_BY_SESSION shows every statement it issued
-            sql, _ = call("render_refresh_cortex_models_sql", {"schema": schema, "source": fixture})
+            sql, _ = call("render_refresh_cortex_models_sql", {"schema": schema})
             started = cur.execute("select current_timestamp()").fetchone()[0]
             info["body_result"] = cur.execute("execute immediate $$\n" + sql + "\n$$").fetchone()[0]
             info["statements"] = [r[0] for r in cur.execute(
@@ -172,6 +288,15 @@ def refreshed(sf):
         yield info
     finally:
         cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
+
+
+@pytest.mark.sandbox
+def test_execute_task_leaves_the_result_as_the_return_value(refreshed):
+    """A task keeps no RETURN: the body sets its result with SYSTEM$SET_RETURN_VALUE, and TASK_HISTORY shows it."""
+    assert refreshed["ran"] == "execute task", refreshed["ran"]
+    state, return_value, error = refreshed["task_run"]
+    assert state == "SUCCEEDED", refreshed["task_run"]
+    assert return_value == "ok 1 models, 1 skipped", refreshed["task_run"]
 
 
 @pytest.mark.sandbox
@@ -216,3 +341,19 @@ def test_the_mapping_is_recorded_and_the_dbt_role_needs_only_the_procedure_grant
     printed = refreshed["created"]["printed"]
     assert len(printed) == 1 and printed[0].startswith("GRANT USAGE ON PROCEDURE ") and '"ICECORE_SCORE"(STRING, STRING, ARRAY, FLOAT, FLOAT)' in printed[0], printed
     assert not [p for p in printed if "ANOMALY_DETECTION" in p]  # no grant on a model: models cannot be shared across roles
+
+
+@pytest.mark.sandbox
+def test_a_rerun_keeps_a_task_an_admin_resumed(refreshed, sf):
+    cur = sf.cursor()
+    task = f'"{DATABASE}"."{refreshed["schema"]}"."ICECORE_REFRESH_CORTEX"'
+    state = lambda: cur.execute(f"show tasks like 'ICECORE_REFRESH_CORTEX' in schema \"{DATABASE}\".\"{refreshed['schema']}\"").fetchone()[
+        [c[0] for c in cur.description].index("state")]
+    try:
+        cur.execute(f"alter task {task} resume")  # the admin resumes it
+        assert state() == "started"
+        out, _ = call("create_refresh_cortex_task", {"schema": refreshed["schema"], "capabilities": CORTEX_ON})
+        assert out["status"] == "ok" and out["resumed"] is True, out
+        assert state() == "started", "CREATE OR REPLACE suspended the task and setup did not resume it"
+    finally:
+        cur.execute(f"alter task if exists {task} suspend")

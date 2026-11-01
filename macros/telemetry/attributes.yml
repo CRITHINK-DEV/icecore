@@ -35,7 +35,10 @@ macros:
       `dbt.test.type` (`generic` or `singular`), `dbt.test.column` (`column_name`, when set),
       `dbt.test.severity` (`config.severity`).
       With a result: `dbt.result.status` (string), `dbt.result.rows_affected` (number, from the adapter
-      response), `dbt.result.execution_time_s` (number, seconds), `dbt.result.message` (string),
+      response), `dbt.result.execution_time_s` (number, seconds), `dbt.result.message` (string, as
+      `var('icecore').result_message` says: `redacted` by default, where every single-quoted literal becomes
+      '?' and every double-quoted one "?", cut at 1,000 characters, because dbt's message can quote data values
+      from a Snowflake error; `full` keeps dbt's text; `none` leaves the key out),
       `dbt.test.failures` (number) and `snow.query.id` (the node's query id from the adapter response; the
       `RESOURCE_ATTRIBUTES` key of the same name holds the emitting `CALL`'s id instead). Combine with
       `base_attributes()` for a full record.

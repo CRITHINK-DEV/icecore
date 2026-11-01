@@ -1,0 +1,18 @@
+version: 2
+
+macros:
+  - name: emit_query_events
+    description: >
+      End-of-run emitter `query_events` of `end_run`, on when `var('icecore').query_events` is true (the
+      default). For each query id of a node (`collect_query_ids`), adds one span event `icecore.query` to that
+      node's `icecore.node` span, with `snow.query.id` and `dbt.node.unique_id`, timed at the span's end. The
+      id is the node's own query, which cost attribution joins to QUERY_ATTRIBUTION_HISTORY; the record's
+      RESOURCE_ATTRIBUTES `snow.query.id` is the emitting CALL's. A node without a span (no timing) gets no
+      event. Returns nothing.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results`, hook operations already left out by `end_run`.
+      - name: batch
+        type: dict
+        description: "`end_run`'s batch: `node_spans`, whose `events` lists are appended to."

@@ -167,7 +167,9 @@ def test_s3_hooks_are_gated_by_the_s3_probe_var():
     cfg = yaml.safe_load(open(IT_DIR / "dbt_project.yml"))
     for key, phase in (("on-run-start", "start"), ("on-run-end", "end")):
         hooks = cfg[key] if isinstance(cfg[key], list) else [cfg[key]]
-        assert hooks == [f"{{{{ s3_hook_probe('{phase}') if var('s3_probe', false) else '' }}}}"]
+        # The UC1 hooks (icecore.start_run / end_run) sit next to the probe; only the probe is gated by s3_probe.
+        assert [h for h in hooks if "s3_hook_probe" in h] == [
+            f"{{{{ s3_hook_probe('{phase}') if var('s3_probe', false) else '' }}}}"]
 
 
 def test_s3_resources_are_left_out_of_default_selection():

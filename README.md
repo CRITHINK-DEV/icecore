@@ -54,6 +54,17 @@ models:
 
 Then `dbt deps`, `dbt run-operation icecore.setup` (creates the views in `<target_db>.ICECORE_OBS` and the two emitter procedures, no tables) and `dbt build`.
 
+The two hook lines are all run telemetry needs. `start_run` writes one `icecore.run_start` record when the run starts. `end_run` sends the run's records at the end, ending with one record that holds the run's status and node counts, all tagged with `dbt.invocation_id`. Both hooks write nothing when telemetry is off:
+
+```yaml
+# dbt_project.yml
+vars:
+  icecore:
+    telemetry: false
+```
+
+A telemetry failure never fails your run: if the procedures or a grant are missing, icecore logs a warning and dbt carries on. On dbt 1.8, `dbt source freshness` runs no project hooks unless `flags: {source_freshness_run_project_hooks: true}` is set in `dbt_project.yml`; dbt 1.12 runs them by default ([spike S3](spikes/S3.md)).
+
 ### Set up and check the install
 
 `setup` and `doctor` run today; the views, alerts, tasks and app that `setup` will also create are not built yet, and `setup` lists them as planned.
@@ -67,6 +78,21 @@ dbt run-operation icecore.doctor
 - `setup` ends with an estimate of the rows icecore will write per month and the ingestion credits, from your node count and `runs_per_day`. Run it alone with `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`. For 100 nodes and 24 runs a day it estimates 149,760 rows and 0.0048 to 0.21 credits a month at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It prints its assumptions and sources.
 - `doctor` never fails. It checks the event table, the database's levels, makes one test `CALL` of each procedure, and counts icecore records of the last 24 hours. It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, most often the hooks above.
 - The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema) and CREATE PROCEDURE on the schema ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
+
+### Configuration
+
+Run telemetry reads these keys of the `icecore` var in your `dbt_project.yml`. The values shown are the defaults:
+
+```yaml
+vars:
+  icecore:
+    telemetry: true          # false: start_run and end_run write nothing
+    node_results: true       # end_run: one record per node result (status, rows, time, message, test failures)
+    query_events: true       # end_run: the node's Snowflake query id, as an event on the node's span
+    result_message: redacted # redacted, full or none
+```
+
+`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
 
 The pre-releases are tagged 0.1.0-alpha, 0.2.0-beta and 0.3.0-beta, before 1.0.0. Naming a prerelease in the range lets `dbt deps` install them; with the range above it picks the newest one below 1.0.0 (checked against dbt-core 1.8.10's resolver).
 
@@ -108,7 +134,7 @@ flowchart LR
 | **SLA and alert settings in YAML** | `collect_sla_config` reads `meta.sla` and `meta.alerts` from your models. | `building` |
 | **Column monitors over `CHANGES`** | Column metrics read over `CHANGES` since the last run. Cheap for insert-only windows on large tables; after a DELETE or MERGE, `CHANGES` reads every rewritten micro-partition (1.8–1.9x a full scan, S5). | `building` |
 | **Elementary compatibility target** | Pin the Elementary release the compatibility views follow; spike S4 on `edr report`. | `building` |
-| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `planned` |
+| **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `building` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
 | **Setup and doctor** | `icecore.setup` creates the schema and the two emitter procedures and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
 | **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`. | `planned` |
@@ -175,6 +201,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-floor.txt
 .venv/bin/pytest -m "not sandbox"      # offline checks
 .venv/bin/pytest -m sandbox            # needs SNOWFLAKE_* variables and a bootstrapped sandbox
 ```
+
+The full guide is [docs/development.md](docs/development.md): the two dbt environments (1.8 floor and latest), clean offline runs, sandbox setup and the `run_id` rule, the Elementary environment, CI, and pull-request rules (a person merges every pull request).
 
 ## Contributing
 

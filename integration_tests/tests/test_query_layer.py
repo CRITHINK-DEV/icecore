@@ -4,9 +4,15 @@ Offline tests (no Snowflake, no Streamlit needed) run the builders and the cache
 fixture rows. The sandbox test creates the views with icecore.create_views in ICECORE_OBS_<run_id>, seeds metric and
 schema_change records, and reads them back through the query functions over a qmark-bound connection.
 
-Which views are checked against merged code: METRICS and SCHEMA_CHANGES (macros/views). TEST_RESULTS, LINEAGE,
-LINEAGE_LATEST and CAPABILITIES are written against PR #53, INVOCATIONS and NODE_EXECUTIONS against #49, ALERTS_FEED
-against #57 and SILENCE_EVENTS against the spec: see VIEWS in the module.
+Merged views (status `merged` in VIEWS): METRICS, SCHEMA_CHANGES, TEST_RESULTS, LINEAGE, LINEAGE_LATEST,
+CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS. Their columns are checked against the SQL that icecore.create_views renders
+(offline), and the sandbox test reads every one of them. ALERTS_FEED (#57) and SILENCE_EVENTS (spec) are coming: their
+functions return no rows and run no query.
+
+The sandbox test binds with the connector's qmark paramstyle (QmarkSession below), not with a Snowpark
+`session.sql(sql, params=[...])`: Snowpark is only installed inside Streamlit in Snowflake, not in the test venvs, and
+both bind the same `?` placeholders on the server, so queries.py uses `session.sql(sql, params=...)` and the test
+supplies a session with that one method.
 """
 import ast
 import json
@@ -67,11 +73,62 @@ def test_each_query_reads_one_view_in_the_views_schema(view):
     assert "select *" not in sql and "base_events" not in sql.lower()
 
 
-@pytest.mark.parametrize("view", ["METRICS", "SCHEMA_CHANGES"])
-def test_columns_of_merged_views_exist_in_the_view_sql(view):
-    text = (REPO / "macros" / "views" / f"{view.lower()}.sql").read_text()
-    for column in queries.VIEWS[view][2]:
-        assert re.search(rf'(as\s+"?{column}"?\s*,?\s*$|^\s*{column},?\s*$)', text, re.I | re.M), column
+MERGED = ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS",
+          "NODE_EXECUTIONS"]
+
+
+def _output_columns(sql: str) -> list[str]:
+    """Output column names (lower case, quotes removed) of the last top-level select of a rendered view."""
+    start = [m.end() for m in re.finditer(r"^select\s*$", sql, re.M)][-1]
+    items, depth, current, i = [], 0, "", start
+    while i < len(sql):
+        ch = sql[i]
+        if ch in "'\"":  # a quoted string or identifier is copied whole
+            j = sql.index(ch, i + 1)
+            current += sql[i:j + 1]
+            i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(current)
+            current = ""
+            i += 1
+            continue
+        elif depth == 0 and re.match(r"\s+from\s", sql[i:i + 7]):
+            break
+        current += ch
+        i += 1
+    items.append(current)
+    names = []
+    for item in items:
+        item = item.strip()
+        m = re.search(r'\bas\s+("[^"]+"|\w+)\s*$', item, re.I | re.S) or re.search(r'("[^"]+"|\w+)\s*$', item)
+        names.append(m.group(1).strip('"').lower())
+    return names
+
+
+@pytest.fixture(scope="module")
+def rendered_views():
+    """The views as icecore.create_views would create them (rendered offline, nothing runs)."""
+    return {v["name"]: v["sql"] for v in run_macro("it_views_render", {"schema": "ICECORE_OBS"})}
+
+
+def test_every_merged_view_is_marked_merged_and_the_others_are_not():
+    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted(MERGED)
+    assert {v: queries.VIEWS[v][0] for v in ("ALERTS_FEED", "SILENCE_EVENTS")} == {
+        "ALERTS_FEED": "pr", "SILENCE_EVENTS": "spec"}
+
+
+def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
+    assert sorted(rendered_views) == sorted(MERGED)
+
+
+@pytest.mark.parametrize("view", MERGED)
+def test_columns_of_merged_views_are_the_columns_setup_creates(view, rendered_views):
+    assert _output_columns(rendered_views[view]) == list(queries.VIEWS[view][2])
 
 
 def test_the_column_keyword_is_selected_quoted_and_read_as_column():
@@ -194,12 +251,30 @@ def test_the_session_receives_bound_params():
     assert sql.count("?") == 3 and params == ["fail", "error", queries.DEFAULT_LIMIT]
 
 
-def test_every_view_function_runs_against_the_fake_session():
+def test_every_merged_view_function_runs_against_the_fake_session():
     lay = layer()
     for fn in (queries.metrics, queries.schema_changes, queries.test_results, queries.lineage, queries.lineage_latest,
-               queries.capabilities, queries.invocations, queries.node_executions, queries.alerts_feed,
-               queries.silence_events):
+               queries.capabilities, queries.invocations, queries.node_executions):
         assert fn(layer=lay) == [{"relation": "r", "metric": "row_count", "value": 1.0}], fn.__name__
+
+
+def test_a_view_that_is_not_merged_yet_returns_no_rows_and_runs_no_query():
+    session = FakeSession()
+    lay = layer(session)
+    assert queries.alerts_feed(layer=lay) == [] and queries.silence_events(layer=lay) == []
+    assert session.calls == []
+    assert not queries.is_available("ALERTS_FEED") and queries.is_available("METRICS")
+
+
+def test_expired_entries_are_evicted_not_kept():
+    session, clock = FakeSession(), Clock()
+    lay = layer(session, ttl=30, clock=clock)
+    queries.metrics(relation="a", layer=lay)
+    queries.metrics(relation="b", layer=lay)
+    assert len(lay.cache) == 2
+    clock.now = 31
+    queries.metrics(relation="c", layer=lay)  # a and b expired: only the new entry is left
+    assert len(lay.cache) == 1
 
 
 def _strings(path: Path) -> list[str]:
@@ -308,6 +383,18 @@ def test_schema_changes_read_through_the_real_view(seeded):
     assert (row["change_kind"], row["column"], row["from_type"], row["to_type"]) == (
         "added", "NEW_COL", None, "NUMBER(38,0)")
     assert set(row) == set(queries.VIEWS["SCHEMA_CHANGES"][2])
+
+
+@pytest.mark.sandbox
+@pytest.mark.parametrize("view", MERGED)
+def test_every_merged_view_is_readable_with_the_columns_the_app_selects(view, seeded):
+    """The select list names every column of VIEWS[view]: an unknown column fails the query. No other rows exist in
+    the run schema for most views, so the shape is checked on the rows that do come back."""
+    fn = getattr(queries, view.lower())
+    rows = fn(layer=seeded["layer"])
+    assert isinstance(rows, list)
+    for row in rows:
+        assert set(row) == set(queries.VIEWS[view][2])
 
 
 @pytest.mark.sandbox

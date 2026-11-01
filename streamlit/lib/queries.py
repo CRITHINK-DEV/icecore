@@ -11,8 +11,10 @@ Rules this module enforces (the story's acceptance criteria and the Streamlit in
 - It imports nothing from Streamlit at import time, so the builders and the cache are unit-tested with a fake session.
 
 Each function returns a list of rows, one dict per row with lower-case keys (the column list of VIEWS[name]). The
-`status` of each view in VIEWS says where its column list comes from: `develop` is merged (macros/views/*.sql),
-`pr` is written against an open pull request and `spec` against the spec only, to be checked when it merges.
+`status` of each view in VIEWS says where its column list comes from: `merged` is on develop (macros/views/*.sql, checked against the rendered create_views by a test),
+`pr` is written against an open pull request and `spec` against the spec only, to be checked when it merges. A view
+that is not merged yet is coming: its function returns no rows and runs no query, so a page that calls it early shows
+its empty state instead of failing on a view that does not exist.
 """
 from __future__ import annotations
 
@@ -34,29 +36,29 @@ _SCHEMA_RE = re.compile(rf"^{_IDENT}(\.{_IDENT})?$")
 
 # name -> (status, source, columns). Columns are the view's output names in lower case; "COLUMN" is read as `column`.
 VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
-    "METRICS": ("develop", "macros/views/metrics.sql", (
+    "METRICS": ("merged", "macros/views/metrics.sql", (
         "relation", "column", "dimension", "metric", "observed_at", "value", "anomaly_engine", "anomaly_expected",
         "anomaly_lower", "anomaly_upper", "anomaly_score", "anomaly_is_anomaly", "invocation_id", "node_unique_id",
         "emit_query_id")),
-    "SCHEMA_CHANGES": ("develop", "macros/views/schema_changes.sql", (
+    "SCHEMA_CHANGES": ("merged", "macros/views/schema_changes.sql", (
         "relation", "change_kind", "column", "from_type", "to_type", "detected_at", "invocation_id",
         "node_unique_id", "emit_query_id")),
-    "TEST_RESULTS": ("pr", "#53 macros/views/test_results.sql", (
+    "TEST_RESULTS": ("merged", "macros/views/test_results.sql", (
         "invocation_id", "project", "test_unique_id", "test_name", "test_type", "column", "severity", "status",
         "failures", "message", "execution_time_s", "engine", "expected", "lower", "upper", "score", "executed_at",
         "query_id")),
-    "LINEAGE": ("pr", "#53 macros/views/lineage.sql", (
+    "LINEAGE": ("merged", "macros/views/lineage.sql", (
         "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
-    "LINEAGE_LATEST": ("pr", "#53 macros/views/lineage.sql", (
+    "LINEAGE_LATEST": ("merged", "macros/views/lineage.sql", (
         "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
-    "CAPABILITIES": ("pr", "#53 macros/views/capabilities.sql", (
+    "CAPABILITIES": ("merged", "macros/views/capabilities.sql", (
         "database_name", "detected_at", "edition", "edition_source", "event_table", "event_table_level",
         "cortex_available", "cortex_reason", "log_level", "trace_level", "icecore_version", "invocation_id")),
-    "INVOCATIONS": ("pr", "#49 macros/views/invocations.sql", (
+    "INVOCATIONS": ("merged", "macros/views/invocations.sql", (
         "invocation_id", "runtime", "command", "target", "project", "dbt_version", "started_at", "ended_at",
         "duration_s", "status", "nodes_total", "nodes_success", "nodes_failed", "nodes_warned", "nodes_skipped",
         "credits")),
-    "NODE_EXECUTIONS": ("pr", "#49 macros/views/node_executions.sql", (
+    "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "root_cause_unique_id")),
     "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
@@ -266,8 +268,10 @@ class QueryLayer:
     def run(self, built: tuple[str, list[Any]]) -> list[dict]:
         sql, params = built
         key = (sql, tuple(params))
-        hit = self.cache.get(key)
         now = self.clock()
+        for stale in [k for k, (at, _) in self.cache.items() if now - at >= self.ttl_s]:
+            del self.cache[stale]  # evict expired entries, so a long page session does not keep every old result
+        hit = self.cache.get(key)
         if hit is not None and now - hit[0] < self.ttl_s:
             return [dict(r) for r in hit[1]]
         rows = [_as_row(r) for r in self.session.sql(sql, params=params).collect()]
@@ -298,7 +302,14 @@ def clear_cache(layer: QueryLayer | None = None) -> None:
     (layer or default_layer()).clear()
 
 
-def _read(builder: Callable, layer: QueryLayer | None, *args, **kwargs) -> list[dict]:
+def is_available(view: str) -> bool:
+    """True when the view is merged, so the setup creates it; a `pr` or `spec` view is coming."""
+    return VIEWS[view][0] == "merged"
+
+
+def _read(builder: Callable, layer: QueryLayer | None, *args, view: str, **kwargs) -> list[dict]:
+    if not is_available(view):
+        return []
     layer = layer or default_layer()
     return layer.run(builder(layer.views_schema, *args, **kwargs))
 
@@ -309,57 +320,57 @@ def metrics(relation: str | None = None, metric: str | None = None, column: str 
             dimension: str | None = None, since=None, until=None, limit: int = DEFAULT_LIMIT,
             layer: QueryLayer | None = None) -> list[MetricRow]:
     """METRICS rows, newest first, filtered on whatever is given."""
-    return _read(build_metrics, layer, relation, metric, column, dimension, since, until, limit)
+    return _read(build_metrics, layer, relation, metric, column, dimension, since, until, limit, view="METRICS")
 
 
 def schema_changes(relation: str | None = None, change_kind: str | None = None, since=None,
                    limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[SchemaChangeRow]:
     """SCHEMA_CHANGES rows, newest first."""
-    return _read(build_schema_changes, layer, relation, change_kind, since, limit)
+    return _read(build_schema_changes, layer, relation, change_kind, since, limit, view="SCHEMA_CHANGES")
 
 
 def test_results(test_unique_id: str | None = None, statuses: list[str] | None = None,
                  invocation_id: str | None = None, since=None, limit: int = DEFAULT_LIMIT,
                  layer: QueryLayer | None = None) -> list[Row]:
     """TEST_RESULTS rows, newest first."""
-    return _read(build_test_results, layer, test_unique_id, statuses, invocation_id, since, limit)
+    return _read(build_test_results, layer, test_unique_id, statuses, invocation_id, since, limit, view="TEST_RESULTS")
 
 
 def lineage(invocation_id: str | None = None, project: str | None = None, limit: int = MAX_LIMIT,
             layer: QueryLayer | None = None) -> list[Row]:
     """LINEAGE edges, one row per invocation, parent and child."""
-    return _read(build_lineage, layer, invocation_id, project, limit)
+    return _read(build_lineage, layer, invocation_id, project, limit, view="LINEAGE")
 
 
 def lineage_latest(project: str | None = None, limit: int = MAX_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
     """The edges of the latest invocation of each project."""
-    return _read(build_lineage_latest, layer, project, limit)
+    return _read(build_lineage_latest, layer, project, limit, view="LINEAGE_LATEST")
 
 
 def capabilities(limit: int = 1, layer: QueryLayer | None = None) -> list[Row]:
     """CAPABILITIES detections, latest first (default: the latest one)."""
-    return _read(build_capabilities, layer, limit)
+    return _read(build_capabilities, layer, limit, view="CAPABILITIES")
 
 
 def invocations(statuses: list[str] | None = None, since=None, limit: int = 200,
                 layer: QueryLayer | None = None) -> list[Row]:
     """INVOCATIONS, newest first."""
-    return _read(build_invocations, layer, statuses, since, limit)
+    return _read(build_invocations, layer, statuses, since, limit, view="INVOCATIONS")
 
 
 def node_executions(invocation_id: str | None = None, statuses: list[str] | None = None,
                     limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
     """NODE_EXECUTIONS of an invocation (or all), in start order."""
-    return _read(build_node_executions, layer, invocation_id, statuses, limit)
+    return _read(build_node_executions, layer, invocation_id, statuses, limit, view="NODE_EXECUTIONS")
 
 
 def alerts_feed(acknowledged: bool | None = None, severity: str | None = None, kind: str | None = None,
                 since=None, limit: int = 500, layer: QueryLayer | None = None) -> list[Row]:
-    """ALERTS_FEED incidents, latest first; acknowledged True, False or None (both)."""
-    return _read(build_alerts_feed, layer, acknowledged, severity, kind, since, limit)
+    """ALERTS_FEED incidents, latest first; acknowledged True, False or None (both). No rows until #57 is merged."""
+    return _read(build_alerts_feed, layer, acknowledged, severity, kind, since, limit, view="ALERTS_FEED")
 
 
 def silence_events(unique_id: str | None = None, since=None, limit: int = DEFAULT_LIMIT,
                    layer: QueryLayer | None = None) -> list[Row]:
-    """SILENCE_EVENTS (spec columns; the view does not exist yet)."""
-    return _read(build_silence_events, layer, unique_id, since, limit)
+    """SILENCE_EVENTS (spec columns; the view does not exist yet, so no rows and no query until it is merged)."""
+    return _read(build_silence_events, layer, unique_id, since, limit, view="SILENCE_EVENTS")

@@ -27,6 +27,7 @@
   {{ return([
       {'name': 'node_results', 'var': 'node_results', 'default': true, 'macro': icecore.emit_node_results},
       {'name': 'query_events', 'var': 'query_events', 'default': true, 'macro': icecore.emit_query_events},
+      {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
   ]) }}
 {% endmacro %}
 
@@ -107,6 +108,7 @@
       fixed     rows every run writes: invocation_span (1), node_spans (one per node), end (the invocation-end LOG);
       emitters  rows of each emitter of the list above, 0 when its var is off (read as end_run reads it);
       uncounted names of emitters in the list that have no count here.
+    root_cause is 0: it annotates the failed tests' node_result LOGs and adds no row while node_results is on.
     An emitter added to the list needs its count in `per_emitter` below: a test fails until it has one.
     Emitters sized from the graph rather than per node (lineage, samples) are listed in `graph_sized`: their
     count is none here and the estimate sizes them from the graph and its own arguments. -#}
@@ -115,6 +117,7 @@
   {%- set per_emitter = {
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
+      'root_cause': 0,
   } -%}
   {%- set graph_sized = ['lineage', 'samples'] -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}

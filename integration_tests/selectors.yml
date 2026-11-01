@@ -2,7 +2,7 @@ selectors:
   # Used by any dbt command run without --select / --selector. Leaves out the parse-only
   # root-cause fixtures (models/root_cause, seeds/root_cause, snapshots/root_cause), the
   # spike S3 resources (models/spikes, seeds/s3_seed.csv, snapshots/s3_snapshot.sql) and the
-  # UC1 hook fixtures (models/hooks).
+  # UC1 hook fixtures (models/hooks) and the root-cause end-to-end fixtures (models/root_cause_e2e).
   - name: default
     default: true
     definition:
@@ -16,3 +16,5 @@ selectors:
               value: s3_spike
             - method: tag
               value: icecore_hooks
+            - method: tag
+              value: root_cause_e2e

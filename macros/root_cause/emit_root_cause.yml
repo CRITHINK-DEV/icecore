@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: emit_root_cause
+    description: >
+      End-of-run emitter `root_cause` (var `icecore.root_cause`, default false), called by `end_run` as
+      `emit_root_cause(results, batch)`. For each failed test of this run it calls `walk_upstream` with signals read
+      from the obs-schema views and writes `dbt.root_cause.unique_id`, `dbt.root_cause.kind` and
+      `dbt.root_cause.distance` on that test's node_result LOG (or on a LOG of its own, `icecore.kind = root_cause`,
+      when node_results is off). Signals: `SCHEMA_CHANGES` rows detected in the lookback (var
+      `icecore.root_cause_lookback_hours`, default 24) and nodes whose latest `freshness_lag_s` in `METRICS` is an
+      anomaly; upstream failures come from this run's results. The graph is the invocation's own dbt graph, not
+      `LINEAGE_LATEST`, which at on-run-end still holds the previous invocation's edges. Records written by this run
+      are not yet in the views (ingestion lag), so a signal must have been recorded before it. A view that cannot be
+      read logs one warning and that signal stays empty; the run never fails. Nothing is queried when no test failed.
+    arguments:
+      - name: results
+        type: list
+        description: "The on-run-end results (dbt result objects or the run_results.json shape)."
+      - name: batch
+        type: dict
+        description: "The end_run batch: its items are annotated or appended to."
+      - name: signals
+        type: dict
+        description: "Optional, default none: signals to use instead of reading the views, as for `walk_upstream`. For tests."

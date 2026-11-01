@@ -112,6 +112,7 @@ def test_end_run_lists_its_emitters_with_their_vars():
     assert run_macro("it_end_run_emitters", {}) == [
         {"name": "node_results", "var": "node_results", "default": True},
         {"name": "query_events", "var": "query_events", "default": True},
+        {"name": "root_cause", "var": "root_cause", "default": False},
     ]
 
 

@@ -1,0 +1,9 @@
+version: 2
+
+models:
+  - name: rce_c
+    columns:
+      - name: id
+        data_tests:
+          - not_null:
+              config: {tags: ["root_cause_e2e"]}

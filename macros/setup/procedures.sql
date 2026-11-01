@@ -10,14 +10,17 @@
                                   events: [{name, ts_ns, attrs}]} written with their explicit times, or logs
                                   {type: 'log', level, message, attrs}. SCOPE `icecore`.
 
-  ICECORE_SCORE(db, schema, model, series, points, prediction_interval, refresh_days)
+  ICECORE_SCORE(model, series, points, prediction_interval, refresh_days)
                                   SQL, RETURNS VARIANT, EXECUTE AS OWNER. Scores points with one Cortex anomaly model
                                   in the owner's role, the role that trained it: Snowflake documents that models cannot be
                                   shared across roles, so the dbt role needs only USAGE on this procedure, never on a model.
                                   Reads the model's age with SHOW, refuses a missing or stale one, and returns
                                   {state, age_days, rows} (rows: DETECT_ANOMALIES output, latest first) or {error}.
                                   `points` is an ARRAY of {ts, y} (ts null: now, UTC) for the one `series`; the input is
-                                  built from the array, never from caller SQL, so the owner's rights read nothing else.
+                                  built from the array, never from caller SQL. It takes no database or schema argument: its
+                                  own database and obs schema are constants fixed in the body when setup creates it (checked
+                                  against [A-Za-z0-9_]), and `model` must be ICECORE_M_<16 hex>, so the owner's rights
+                                  can reach only the models of its own schema (no confused deputy).
 
   create_emit_procedures(schema) is called by setup; the obs schema must exist. CREATE OR REPLACE ... COPY GRANTS,
   so a second setup keeps the grants an admin made on the procedures. The DDL is rendered by
@@ -142,7 +145,7 @@ def run(session, spans):
 $$
   {%- endset -%}
   {%- set score -%}
-CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}(db STRING, sch STRING, model STRING, series STRING, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)
+CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}(model STRING, series STRING, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)
 COPY GRANTS
 RETURNS VARIANT
 LANGUAGE SQL
@@ -150,6 +153,8 @@ COMMENT = 'icecore: scores points with a Cortex anomaly model in the owner role 
 EXECUTE AS OWNER
 AS $$
 DECLARE
+  db STRING DEFAULT '{{ icecore._icecore_score_constant(target.database) }}';
+  sch STRING DEFAULT '{{ icecore._icecore_score_constant(icecore.obs_schema_name(schema)) }}';
   q STRING DEFAULT CHR(39);
   qq STRING DEFAULT CHR(39) || CHR(39);
   found INTEGER DEFAULT 0;
@@ -162,11 +167,11 @@ DECLARE
   input_sql STRING;
   rows_out VARIANT;
 BEGIN
-  -- No SQL text is built from a caller's string. The three names must be plain identifiers; the series key is hashed
-  -- (the models are trained on the same hash); points are typed (a timestamp and a finite float) before they are written
-  -- into the input; the interval is a float.
-  IF (NOT REGEXP_LIKE(db, '[A-Za-z0-9_$]+') OR NOT REGEXP_LIKE(sch, '[A-Za-z0-9_$]+') OR NOT REGEXP_LIKE(model, '[A-Za-z0-9_$]+')) THEN
-    RETURN OBJECT_CONSTRUCT('error', 'database, schema and model must be plain identifiers');
+  -- No SQL text is built from a caller's string. The database and schema are this procedure's own constants; the model must be
+  -- ICECORE_M_<16 hex> (checked before any use); the series key is hashed (the models are trained on the same hash); points are
+  -- typed (a timestamp and a finite float) before they are written into the input; the interval is a float.
+  IF (model IS NULL OR NOT REGEXP_LIKE(model, 'ICECORE_M_[0-9A-F]{16}')) THEN
+    RETURN OBJECT_CONSTRUCT('error', 'model must be ICECORE_M_ and 16 upper-case hex digits');
   END IF;
   IF (prediction_interval IS NULL OR prediction_interval <= 0 OR prediction_interval >= 1) THEN
     RETURN OBJECT_CONSTRUCT('error', 'prediction_interval must be between 0 and 1');
@@ -206,4 +211,15 @@ END;
 $$
   {%- endset -%}
   {{ return([emit | trim, emit_run | trim, score | trim]) }}
+{% endmacro %}
+
+
+{#- A database or schema name that goes into the ICECORE_SCORE body as a constant: only [A-Za-z0-9_], whole string (\Z), upper-cased;
+    anything else stops setup. -#}
+{% macro _icecore_score_constant(name) %}
+  {%- set up = name | string | upper -%}
+  {%- if not modules.re.match('^[A-Z0-9_]+\\Z', up) -%}
+    {{ exceptions.raise_compiler_error("icecore: the database and the obs schema must be plain identifiers ([A-Za-z0-9_]) to create ICECORE_SCORE, got '" ~ name ~ "'") }}
+  {%- endif -%}
+  {{ return(up) }}
 {% endmacro %}

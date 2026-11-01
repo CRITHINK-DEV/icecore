@@ -5,7 +5,7 @@
   Snowflake Scripting block that catches every error, so a missing model, privilege or region never fails a test (as
   _icecore_try_scalar does). Models cannot be shared across roles (Snowflake's documented limitation), so they are
   trained and scored in setup's role: the dbt role needs only USAGE on ICECORE_SCORE. The procedure's arguments are
-  bound values (a series key, an array of points, numbers, three plain identifiers), never SQL text.
+  bound values (the model name ICECORE_M_<16 hex>, a series key, an array of points, numbers), never SQL text. The procedure has no database or schema argument: it reads the models of its own obs schema only.
 
   prediction_interval: 0.99 (low), 0.95 (medium), 0.90 (high). The sensitivities are not the same width across engines:
   Cortex high (0.90) is wider than native high (k = 2 MADs, about an 82% band on normal data), so the same sensitivity
@@ -19,6 +19,9 @@
 
 {% macro cortex__score(model, series, series_sql, current_value, sensitivity, min_consecutive, observed_at=none, schema=none, refresh_days=none) %}
   {% if not execute %}{{ return(none) }}{% endif %}
+  {% if not icecore._cortex_model_ok(model) %}
+    {{ return({'error': 'the Cortex model must be named ICECORE_M_ and 16 upper-case hex digits (cortex_model_name), got ' ~ model, 'state': 'error', 'age_days': none}) }}
+  {% endif %}
   {% set call = icecore._cortex_call_sql(model, series, current_value, sensitivity, observed_at, schema, refresh_days,
                                         icecore._cortex_previous_points(series_sql, min_consecutive)) %}
   {% set out = icecore._icecore_try_cortex(call) %}
@@ -33,19 +36,10 @@
 {% endmacro %}
 
 
-{#- The model's parts [database, schema, name], each a plain identifier (letters, digits, _ and $): other shapes are refused, so
-    nothing but identifiers reaches the procedure. An unqualified model is read in the obs schema. -#}
-{% macro _cortex_model_parts(model, schema=none) %}
-  {% if model is not string or not modules.re.match('^[A-Za-z0-9_$]+(\\.[A-Za-z0-9_$]+){0,2}$', model) %}
-    {{ exceptions.raise_compiler_error("icecore: Cortex model must be a (qualified) plain identifier, got '" ~ model ~ "'") }}
-  {% endif %}
-  {% set parts = model.split('.') | map('upper') | list %}
-  {% if parts | length == 1 %}
-    {{ return([target.database | upper, icecore.obs_schema_name(schema), parts[0]]) }}
-  {% elif parts | length == 2 %}
-    {{ return([target.database | upper, parts[0], parts[1]]) }}
-  {% endif %}
-  {{ return(parts) }}
+{#- A model name ICECORE_SCORE accepts: ICECORE_M_ and 16 upper-case hex digits (see cortex_model_name). The procedure checks it
+    again before any use; here a bad name is an error value (a fallback), never a failed test. -#}
+{% macro _cortex_model_ok(model) %}
+  {{ return(model is string and modules.re.match('^ICECORE_M_[0-9A-F]{16}\\Z', model) is not none) }}
 {% endmacro %}
 
 
@@ -77,7 +71,6 @@
 {#- The Scripting block text (no run): CALL ICECORE_SCORE with the current point and the previous ones. Every value is a
     typed argument or goes through the shared _icecore_sql_literal. The series key is hashed inside the procedure. -#}
 {% macro _cortex_call_sql(model, series, current_value, sensitivity, observed_at, schema, refresh_days, previous) %}
-  {% set parts = icecore._cortex_model_parts(model, schema) %}
   {% set interval = icecore._cortex_prediction_interval(sensitivity) %}
   {% set points = [{'ts': none if observed_at is none else observed_at | string, 'y': icecore._sql_number(current_value) | float}] + previous %}
   {% set lit = icecore._icecore_sql_literal %}
@@ -85,7 +78,7 @@
 declare
   res variant;
 begin
-  call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}({{ lit(parts[0]) }}, {{ lit(parts[1]) }}, {{ lit(parts[2]) }}, {{ lit(series) }},
+  call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}({{ lit(model) }}, {{ lit(series) }},
     to_array(parse_json({{ lit(tojson(points)) }})), {{ interval }}, {{ icecore._cortex_refresh_days(refresh_days) }}) into :res;
   return res;
 exception

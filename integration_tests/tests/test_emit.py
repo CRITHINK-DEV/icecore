@@ -60,7 +60,7 @@ def test_procedure_ddl_is_the_gate1_contract():
     assert "PACKAGES = ('snowflake-snowpark-python', 'opentelemetry-api==1.38.0')" in emit_run
     assert "snowflake-telemetry-python" not in emit_run
     assert 'trace.get_tracer("icecore")' in emit_run and 'logging.getLogger("icecore")' in emit_run
-    assert score.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_SCORE"(db STRING, sch STRING, model STRING, series STRING, points ARRAY')
+    assert score.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_SCORE"(model STRING, series STRING, points ARRAY')
     assert "RETURNS VARIANT" in score and "LANGUAGE SQL" in score and "EXECUTE AS OWNER" in score and "COPY GRANTS" in score
 
 

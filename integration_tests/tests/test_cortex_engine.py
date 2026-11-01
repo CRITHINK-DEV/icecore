@@ -16,9 +16,11 @@ from test_engine_contract import daily_series_sql
 
 DATABASE, SCHEMA = "ICECORE_SANDBOX", "SPIKES"
 SERIES_SQL = "select observed_at, value from t"
+GOOD = "ICECORE_M_0123456789ABCDEF"  # the only shape of model name ICECORE_SCORE accepts
+NO_SUCH_MODEL = "ICECORE_M_FFFFFFFFFFFFFFFF"
 
 
-def call_sql(sensitivity="medium", min_consecutive=1, model="DB.S.M", series="k", current=5, observed_at="2026-10-29 06:00:00",
+def call_sql(sensitivity="medium", min_consecutive=1, model=GOOD, series="k", current=5, observed_at="2026-10-29 06:00:00",
              previous=None, schema="obs_x"):
     return call_macro("_cortex_call_sql", model=model, series=series, current_value=current, sensitivity=sensitivity,
                       observed_at=observed_at, schema=schema, refresh_days=7, previous=previous or [])
@@ -34,8 +36,8 @@ def test_prediction_interval_follows_sensitivity(sensitivity, interval):
 
 
 def test_the_call_goes_through_the_score_procedure_inside_a_catching_block():
-    sql = call_sql(model="OBS.ICECORE_OBS.CX_ORDERS").lower()
-    assert "call " in sql and ".\"icecore_score\"('obs', 'icecore_obs', 'cx_orders'" in sql
+    sql = call_sql(model=GOOD).lower()
+    assert "call " in sql and ".\"icecore_score\"('icecore_m_0123456789abcdef', 'k'," in sql  # no database or schema argument
     assert "exception" in sql and "when other" in sql
     assert "detect_anomalies" not in sql and "create " not in sql  # the model is never called directly, never trained here
 
@@ -45,12 +47,14 @@ def test_points_carry_the_current_value_then_the_previous_ones():
     assert '[{"ts": "2026-10-29 06:00:00", "y": 5.0}, {"ts": "2026-10-28 06:00:00.000", "y": 99.0}]' in sql.replace("\\", "")
 
 
-def test_the_procedure_matches_the_model_name_exactly_and_reads_no_caller_sql():
+def test_the_procedure_has_its_own_database_and_schema_as_constants_and_reads_no_caller_sql():
     ddl = "\n".join(call_macro("_icecore_emit_procedures_ddl", schema="obs_x"))
     score = ddl[ddl.index("ICECORE_SCORE"):]
     # SHOW ... LIKE ignores case and treats _ as a wildcard: the result is filtered on the exact name
     assert "LIKE ' || q || model || q" in score and 'WHERE "name" = :model' in score
-    assert "REGEXP_LIKE(db, '[A-Za-z0-9_$]+')" in score and "MD5(series)" in score
+    assert "REGEXP_LIKE(model, 'ICECORE_M_[0-9A-F]{16}')" in score and "MD5(series)" in score
+    assert "(model STRING, series STRING, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)" in score  # no database or schema argument
+    assert re.search(r"db STRING DEFAULT '[A-Z0-9_]+';\s+sch STRING DEFAULT 'OBS_X';", score), score[:600]  # constants fixed at creation
     assert "REPLACE(" not in score.replace("TO_VARCHAR(ts_ntz", "")  # no escaping of caller text: nothing caller-made is concatenated
 
 
@@ -69,15 +73,11 @@ def test_a_hostile_series_stays_inside_one_literal():
     assert outside == literals_removed(call_sql(series="k"))
 
 
-@pytest.mark.parametrize("model", ["m; drop table x", "a.b.c.d", 'DB."My Schema".M', "a b", "m'--"])
-def test_model_name_must_be_a_plain_identifier(model):
-    with pytest.raises(MacroFailed, match="plain identifier"):
-        call_sql(model=model)
-
-
-def test_model_parts_default_to_the_obs_schema():
-    assert call_macro("_cortex_model_parts", model="m1", schema="obs_x")[1:] == ["OBS_X", "M1"]
-    assert call_macro("_cortex_model_parts", model="s1.m1", schema="obs_x")[1:] == ["S1", "M1"]
+@pytest.mark.parametrize("model", ["m; drop table x", "DB.S.ICECORE_M_0123456789ABCDEF", 'ICECORE_M_0123456789abcdef', "ICECORE_M_0123456789ABCDEF\n", "ICECORE_M_0123", "m'--", None])
+def test_a_bad_model_name_is_refused_before_any_query(model):
+    out, queries = counted("cortex__score", {"model": model, "series": "k", "series_sql": SERIES_SQL, "current_value": 1,
+                                             "sensitivity": "medium", "min_consecutive": 1})
+    assert queries == [] and out["state"] == "error" and "ICECORE_M_" in out["error"]
 
 
 def row(y, forecast, lower, upper, is_anomaly):
@@ -131,7 +131,7 @@ def cortex_model(sf):
         pytest.skip(f"Cortex anomaly detection is not available to this role: {caps['cortex_reason']}")
     run_id = uuid.uuid4().hex.upper()
     schema = f"ICECORE_OBS_{run_id}"
-    table, model = f"ICECORE_CX_T_{run_id}", f"ICECORE_CX_M_{run_id}"
+    table, model = f"ICECORE_CX_T_{run_id}", f"ICECORE_M_{run_id[:16]}"
     cur = sf.cursor()
     cur.execute(f'create schema "{DATABASE}"."{schema}"')
     try:
@@ -147,7 +147,7 @@ def cortex_model(sf):
                 series_colname => 'SERIES', timestamp_colname => 'TS', target_colname => 'Y', label_colname => '')""")
         except Exception as exc:
             pytest.skip(f"the role cannot create a Cortex anomaly model: {exc}")
-        name = Model(f"{DATABASE}.{schema}.{model}")
+        name = Model(model)
         name.schema = schema
         yield name
     finally:
@@ -193,28 +193,47 @@ def test_a_missing_model_is_an_error_value_not_a_failure(cortex_model):
     assert out["state"] == "missing" and "error" in out
 
 
+PAYLOADS = ["x\\' ); create table ICECORE_SANDBOX.SPIKES.{inj} (a int); select '{sent}' ; $$ -- \n y", "'", "\\", ";", "$$", "\n"]
+
+
+@pytest.mark.sandbox
+def test_the_procedure_has_no_database_or_schema_argument(cortex_model, sf):
+    """The signature is the guard: a caller cannot name another database or schema, the old seven-argument call does not compile."""
+    proc = f'"{DATABASE}"."{cortex_model.schema}"."ICECORE_SCORE"'
+    with pytest.raises(Exception, match="(?i)argument|unknown function|not match"):
+        sf.cursor().execute(f"call {proc}('{DATABASE}', 'SPIKES', '{cortex_model}', 'k', to_array(parse_json('[]')), 0.95, 7)")
+
+
 @pytest.mark.sandbox
 def test_the_procedure_binds_its_arguments_and_runs_no_injected_statement(cortex_model, sf):
-    """A series, and a model name, full of quotes, backslashes, $$, a semicolon and a newline: no extra statement ran."""
-    sentinel = "SENTINEL_INJECTED"
-    series = "x\\' ); select '" + sentinel + "' ; $$ -- \n y"
-    cur = sf.cursor()
+    """The payload set (quote, backslash, ;, $$, newline, a CREATE TABLE of its own) in every argument: refused or ignored, no
+    extra statement ran and no object appeared outside the obs schema."""
+    inj, sent = f"INJECTED_{uuid.uuid4().hex.upper()}", "SENTINEL_INJECTED"
+    payloads = [p.format(inj=inj, sent=sent) for p in PAYLOADS]
     proc = f'"{DATABASE}"."{cortex_model.schema}"."ICECORE_SCORE"'
-    cur.execute(f"call {proc}(%s, %s, %s, %s, to_array(parse_json(%s)), 0.95, 7)",
-                (DATABASE, cortex_model.schema, str(cortex_model).split(".")[-1], series, json.dumps([{"ts": "2026-10-12 00:00:00", "y": 500}])))
-    out = json.loads(cur.fetchone()[0])
-    assert out.get("state") == "ok" and out["rows"] == [], out  # the hashed key is not a series of the model: no row, no error
-    bad = sf.cursor().execute(f"call {proc}(%s, %s, %s, 'k', to_array(parse_json('[{{\"y\": 1}}]')), 0.95, 7)",
-                              (DATABASE, cortex_model.schema, "m'; select '" + sentinel + "' --")).fetchone()[0]
-    assert "plain identifiers" in json.loads(bad)["error"]
-    texts = [r[0] for r in sf.cursor().execute(
-        "select query_text from table(information_schema.query_history_by_session(end_time_range_start => dateadd(minute, -10, current_timestamp()), result_limit => 300))").fetchall()]
-    ran_inside = [t for t in texts if sentinel in t and not t.lstrip().lower().startswith("call ")]
-    assert ran_inside == [], ran_inside
+    ok_point = [{"ts": "2026-10-12 00:00:00", "y": 500}]
+    cur = sf.cursor()
+
+    def call(model=str(cortex_model), series="k", points=ok_point, interval="0.95", days="7"):
+        cur.execute(f"call {proc}(%s, %s, to_array(parse_json(%s)), {interval}, {days})", (model, series, json.dumps(points)))
+        return json.loads(cur.fetchone()[0])
+
+    for payload in payloads:
+        assert "ICECORE_M_" in call(model=payload)["error"]                      # model: refused before any use
+        assert call(series=payload).get("state") == "ok"                         # series key: hashed, compared, never SQL
+        bad_ts = call(points=[{"ts": payload, "y": 500}])                        # timestamp: not a timestamp, so now (typed), no statement
+        assert bad_ts.get("state") == "ok", bad_ts
+        assert "numeric y" in call(points=[{"ts": "2026-10-12 00:00:00", "y": payload}])["error"]  # value: refused
+    assert "ICECORE_M_" in call(model=str(cortex_model) + "'; select '" + sent + "' --")["error"]
+    assert [r for r in cur.execute(f"show tables like '{inj}' in schema {DATABASE}.SPIKES").fetchall()] == []
+    assert [r for r in cur.execute(f"show tables like '{inj}' in schema {DATABASE}.{cortex_model.schema}").fetchall()] == []
+    texts = [r[0] for r in cur.execute(
+        "select query_text from table(information_schema.query_history_by_session(end_time_range_start => dateadd(minute, -10, current_timestamp()), result_limit => 500))").fetchall()]
+    assert [t for t in texts if sent in t and not t.lstrip().lower().startswith("call ")] == []
 
 
 def _named(model, name):
-    out = Model(f"{DATABASE}.{model.schema}.{name}")
+    out = Model(NO_SUCH_MODEL if name == "CX_NO_SUCH_MODEL" else name)
     out.schema = model.schema
     return out
 
@@ -241,7 +260,7 @@ def counted(macro, kwargs):
 
 def test_a_default_auto_score_with_a_working_model_costs_two_queries_and_no_detection():
     result, queries = counted("score", {"series_sql": SERIES_SQL, "current_value": 500, "observed_at": "2026-10-29 06:00:00",
-                                        "model": "DB.S.M", "series": "a"})  # engine: the project default, auto
+                                        "model": GOOD, "series": "a"})  # engine: the project default, auto
     # the history count, then ONE call of ICECORE_SCORE (the model's age and the detection happen inside it); no
     # detect_capabilities, no SHOW PARAMETERS, no separate SHOW of the model
     assert queries == ["history", "score call"], queries
@@ -256,7 +275,7 @@ def test_no_model_given_is_model_missing_before_any_query():
 
 def test_capabilities_passed_by_the_caller_say_cortex_off_without_any_query():
     attempt, queries = counted("_cortex_attempt", {
-        "model": "DB.S.M", "series": "a", "series_sql": SERIES_SQL, "current_value": 1,
+        "model": GOOD, "series": "a", "series_sql": SERIES_SQL, "current_value": 1,
         "settings": {"sensitivity": "medium", "min_consecutive": 1}, "observed_at": None,
         "capabilities": {"cortex": False, "cortex_reason": "no class"}})
     assert queries == [] and attempt["fallback_reason"] == "cortex_unavailable"
@@ -308,8 +327,12 @@ def test_10_days_of_history_falls_back_with_history_too_short(cortex_model):
 
 
 @pytest.mark.sandbox
-def test_an_unreadable_schema_is_a_fallback_not_a_failure(cortex_model):
-    bad = Model(f"{DATABASE}.NO_SUCH_SCHEMA_{cortex_model.schema[-8:]}.M")
-    bad.schema = cortex_model.schema
-    out = dispatch(bad, HISTORY_22)
-    assert out["engine"] == "native" and out["fallback_reason"] in ("model_missing", "cortex_error")
+def test_a_bad_model_name_is_a_fallback_not_a_failure(cortex_model):
+    out = dispatch("DB.S.ICECORE_M_0123456789ABCDEF", HISTORY_22)
+    assert out["engine"] == "native" and out["fallback_reason"] == "cortex_error" and "ICECORE_M_" in out["fallback_detail"]
+
+
+@pytest.mark.parametrize("name", ["a-b", "a'b", "a b", "a$$b", "a;b", "a.b", ""])
+def test_a_database_or_schema_that_is_not_plain_stops_the_procedure_ddl(name):
+    with pytest.raises(MacroFailed, match="plain identifiers"):
+        run_macro_with_logs("it_call", {"name": "_icecore_score_constant", "kwargs": {"name": name}})

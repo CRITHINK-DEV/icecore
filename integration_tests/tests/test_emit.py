@@ -49,12 +49,17 @@ def test_package_declares_the_obs_schema_var():
 
 
 def test_procedure_ddl_is_the_gate1_contract():
-    emit, emit_run = run_macro("it_procedure_ddl", {})
+    emit, emit_run, ack = run_macro("it_procedure_ddl", {})
     schema = f'"{DATABASE}"."ICECORE_OBS"'
     assert emit.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_EMIT"(events ARRAY)')
     assert "LANGUAGE SQL" in emit and "EXECUTE AS OWNER" in emit
     assert "SYSTEM$ADD_EVENT(:nm, :a)" in emit
     assert "> 100" in emit  # refuses more than 100 events per CALL
+    assert "LOWER(nm) = 'icecore.ack'" in emit and "forbidden_event" in emit  # icecore.ack is ICECORE_ACK's only
+    assert ack.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_ACK"(incident_key STRING)')
+    assert "LANGUAGE SQL" in ack and "EXECUTE AS OWNER" in ack and "CURRENT_USER()" in ack
+    assert f'{schema}."ALERTS_FEED"' in ack and "acknowledged_at IS NULL" in ack
+    assert "SYSTEM$ADD_EVENT('icecore.ack'" in ack
     assert emit_run.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_EMIT_RUN"(spans ARRAY)')
     assert "LANGUAGE PYTHON" in emit_run and "EXECUTE AS OWNER" in emit_run
     assert "PACKAGES = ('snowflake-snowpark-python', 'opentelemetry-api==1.38.0')" in emit_run
@@ -168,10 +173,10 @@ def params(obs, tag: str) -> dict:
 
 
 @pytest.mark.sandbox
-def test_create_emit_procedures_creates_both(sf, obs):
+def test_create_emit_procedures_creates_all_three(sf, obs):
     rows = sf.cursor().execute(f'show user procedures in schema "{DATABASE}"."{obs["schema"]}"').fetchall()
     names = sorted(r[1] for r in rows)
-    assert names == ["ICECORE_EMIT", "ICECORE_EMIT_RUN"]
+    assert names == ["ICECORE_ACK", "ICECORE_EMIT", "ICECORE_EMIT_RUN"]
 
 
 @pytest.mark.sandbox

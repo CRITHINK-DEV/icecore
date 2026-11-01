@@ -15,9 +15,11 @@
     window is one incident (occurrences counts the signals), the next window is a new key and alerts again.
     node_key: test unique id; relation|metric|column|dimension; relation|column; the slots' own.
 
-    Acknowledgements are `icecore.ack` span events written by icecore.acknowledge through ICECORE_EMIT, attributes
-    icecore.ack.incident_key and icecore.ack.by. acknowledged_at / acknowledged_by are the earliest ack of the key
-    (null when none). detected times are event TIMESTAMPs: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3). -#}
+    Acknowledgements are `icecore.ack` span events written by the ICECORE_ACK procedure (icecore.acknowledge calls
+    it), attributes icecore.ack.incident_key and icecore.ack.by (the caller's CURRENT_USER, recorded by the procedure).
+    Only acks whose executable is ICECORE_ACK (Snowflake reports it with its signature, `ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR`) count (ICECORE_EMIT refuses the name; a forged one from another
+    writer is ignored), and only those at or after the incident's first detection, so a key acknowledged in
+    advance suppresses nothing. acknowledged_at / acknowledged_by are the earliest such ack (null when none). detected times are event TIMESTAMPs: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3). -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -52,14 +54,14 @@ cost_regressions as (
 acks as (
     select
         attributes:"icecore.ack.incident_key"::string as incident_key,
-        min(event_at) as acknowledged_at,
-        min_by(attributes:"icecore.ack.by"::string, event_at) as acknowledged_by
+        event_at,
+        attributes:"icecore.ack.by"::string as ack_by
     from (
 {{ icecore.base_events(event_table=event_table, database=database, obs_schema=obs_schema) }}
     )
     where record_type = 'SPAN_EVENT' and record_name = 'icecore.ack'
+      and executable_name like 'ICECORE_ACK(%'
       and attributes:"icecore.ack.incident_key"::string is not null
-    group by 1
 ),
 signals as (
     select 'test_failure' as kind, test_unique_id as node_key,
@@ -105,13 +107,22 @@ incidents as (
         max_by(invocation_id, detected_at) as last_invocation_id
     from keyed
     group by node_key, kind, window_epoch
+),
+acknowledged as (
+    select
+        incidents.incident_key,
+        min(acks.event_at) as acknowledged_at,
+        min_by(acks.ack_by, acks.event_at) as acknowledged_by
+    from incidents
+    join acks on acks.incident_key = incidents.incident_key and acks.event_at >= incidents.first_detected_at
+    group by incidents.incident_key
 )
 select
     incidents.*,
-    acks.acknowledged_at,
-    acks.acknowledged_by
+    acknowledged.acknowledged_at,
+    acknowledged.acknowledged_by
 from incidents
-left join acks on acks.incident_key = incidents.incident_key
+left join acknowledged on acknowledged.incident_key = incidents.incident_key
   {%- endset -%}
   {{ return(sql) }}
 {% endmacro %}

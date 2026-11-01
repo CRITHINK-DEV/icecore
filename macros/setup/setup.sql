@@ -59,7 +59,7 @@
   {%- set steps = [
       {'name': 'detect_capabilities', 'ready': true, 'detail': 'edition, event table, levels, Cortex'},
       {'name': 'create_schema', 'ready': true, 'detail': 'the obs schema'},
-      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT and ICECORE_EMIT_RUN'},
+      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT, ICECORE_EMIT_RUN and ICECORE_ACK'},
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},

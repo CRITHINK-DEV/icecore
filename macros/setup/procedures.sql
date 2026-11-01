@@ -1,14 +1,20 @@
 {#-
-  The write-path contract of Gate 1 option B (spikes/GATE1.md): the two persisted procedures every icecore record
-  is written through, both EXECUTE AS OWNER, in <target.database>.<obs schema>.
+  The write-path contract of Gate 1 option B (spikes/GATE1.md): the persisted procedures every icecore record
+  is written through, all EXECUTE AS OWNER, in <target.database>.<obs schema>. A third, ICECORE_ACK, is the only
+  writer of `icecore.ack` (UC6 acknowledgements); ICECORE_EMIT refuses that name.
 
   ICECORE_EMIT(events ARRAY)      SQL. One SPAN_EVENT per element {name, attrs} through SYSTEM$ADD_EVENT, named
                                   `icecore.<kind>` (SQL cannot set SCOPE, so it stays `global`). Refuses more than
-                                  100 events per CALL: above 128 only the last 128 land (S2.md).
+                                  100 events per CALL: above 128 only the last 128 land (S2.md). Refuses the whole
+                                  CALL when any event is named `icecore.ack`.
   ICECORE_EMIT_RUN(spans ARRAY)   Python 3.11, packages pinned (an unpinned opentelemetry-api resolved to 1.45.1 and
                                   failed to import, S1.md). Elements are spans {name, start_ns, end_ns, attrs,
                                   events: [{name, ts_ns, attrs}]} written with their explicit times, or logs
                                   {type: 'log', level, message, attrs}. SCOPE `icecore`.
+  ICECORE_ACK(incident_key STRING) SQL. Acknowledges one incident: refuses a key that is not a current
+                                  unacknowledged incident of the ALERTS_FEED view, then writes the span event
+                                  `icecore.ack` with icecore.ack.incident_key and icecore.ack.by = CURRENT_USER()
+                                  (the caller; never an argument). Its USAGE is granted separately from the emitters.
 
   create_emit_procedures(schema) is called by setup; the obs schema must exist. CREATE OR REPLACE ... COPY GRANTS,
   so a second setup keeps the grants an admin made on the procedures. The DDL is rendered by
@@ -46,10 +52,10 @@
     {%- for ddl in icecore._icecore_emit_procedures_ddl(schema) -%}
       {%- do run_query(ddl) -%}
     {%- endfor -%}
-    {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
+    {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN', 'ICECORE_ACK'] -%}
       {%- do created.append(icecore._icecore_procedure(name, schema)) -%}
     {%- endfor -%}
-    {%- do log('icecore: created ' ~ (created | join(' and ')), info=True) -%}
+    {%- do log('icecore: created ' ~ (created | join(', ')), info=True) -%}
   {%- endif -%}
   {{ return(created) }}
 {% endmacro %}
@@ -76,6 +82,15 @@ BEGIN
   IF (n = 0) THEN
     RETURN 'ok 0';
   END IF;
+  FOR i IN 0 TO n - 1 DO
+    nm := COALESCE(events[i]:name::STRING, 'icecore.event');
+    IF (NOT STARTSWITH(nm, 'icecore.')) THEN
+      nm := 'icecore.' || nm;
+    END IF;
+    IF (LOWER(nm) = 'icecore.ack') THEN
+      RETURN 'icecore-error forbidden_event: icecore.ack is written by ICECORE_ACK only';
+    END IF;
+  END FOR;
   FOR i IN 0 TO n - 1 DO
     nm := COALESCE(events[i]:name::STRING, 'icecore.event');
     IF (NOT STARTSWITH(nm, 'icecore.')) THEN
@@ -132,5 +147,27 @@ def run(session, spans):
     return "ok spans=%d logs=%d" % (n_spans, n_logs)
 $$
   {%- endset -%}
-  {{ return([emit | trim, emit_run | trim]) }}
+  {%- set ack -%}
+CREATE OR REPLACE PROCEDURE {{ icecore._icecore_procedure('ICECORE_ACK', schema) }}(incident_key STRING)
+COPY GRANTS
+RETURNS STRING
+LANGUAGE SQL
+COMMENT = 'icecore: acknowledges an open incident of ALERTS_FEED, recording the caller (UC6)'
+EXECUTE AS OWNER
+AS $$
+DECLARE
+  who STRING DEFAULT CURRENT_USER();
+  n INTEGER DEFAULT 0;
+BEGIN
+  SELECT COUNT(*) INTO :n FROM {{ icecore._icecore_procedure('ALERTS_FEED', schema) }}
+    WHERE incident_key = :incident_key AND acknowledged_at IS NULL;
+  IF (n = 0) THEN
+    RETURN 'icecore-error not_an_open_incident: ' || COALESCE(:incident_key, 'null') || ' is not a current unacknowledged incident of ALERTS_FEED';
+  END IF;
+  SYSTEM$ADD_EVENT('icecore.ack', OBJECT_CONSTRUCT('icecore.ack.incident_key', :incident_key, 'icecore.ack.by', :who));
+  RETURN 'ok 1';
+END;
+$$
+  {%- endset -%}
+  {{ return([emit | trim, emit_run | trim, ack | trim]) }}
 {% endmacro %}

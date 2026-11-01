@@ -78,7 +78,7 @@ def test_schema_argument_overrides_the_obs_schema_var():
 
 def test_procedures_keep_their_grants_when_replaced():
     for ddl in run_macro("it_procedure_ddl", {}):
-        assert re.search(r"\(\w+ ARRAY\)\s+COPY GRANTS\s+RETURNS STRING", ddl), ddl
+        assert re.search(r"\(\w+ (?:ARRAY|STRING)\)\s+COPY GRANTS\s+RETURNS STRING", ddl), ddl
 
 
 def test_one_plain_identifier_helper():

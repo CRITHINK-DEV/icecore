@@ -3,13 +3,11 @@ version: 2
 macros:
   - name: acknowledge
     description: >
-      Acknowledge an incident of the alerts_feed view. Writes one `icecore.ack` span event through ICECORE_EMIT (never
-      an INSERT) with icecore.ack.incident_key and icecore.ack.by; the feed row of that key then has acknowledged_at
-      and acknowledged_by. Run it with dbt run-operation icecore.acknowledge. The app calls the same macro.
+      Acknowledge an incident of the alerts_feed view. Calls the ICECORE_ACK procedure, which refuses a key that is
+      not a current unacknowledged incident and records the caller (CURRENT_USER) as acknowledged_by itself, so there is
+      no `by` argument. Run it with dbt run-operation icecore.acknowledge. Returns the status, `ok 1` or an
+      `icecore-error` message that is also logged as a warning. The app calls the same macro.
     arguments:
       - name: incident_key
         type: string
-        description: The incident_key of an alerts_feed row. Required.
-      - name: by
-        type: string
-        description: Who acknowledges. Default the target user.
+        description: The incident_key of an alerts_feed row, 32 hex characters. Required.

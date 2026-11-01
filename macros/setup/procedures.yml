@@ -3,11 +3,11 @@ version: 2
 macros:
   - name: create_emit_procedures
     description: >
-      Create (CREATE OR REPLACE ... COPY GRANTS, EXECUTE AS OWNER) the two procedures every icecore record is
-      written through, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
+      Create (CREATE OR REPLACE ... COPY GRANTS, EXECUTE AS OWNER) the three procedures icecore writes
+      through, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
       made on them when setup runs again. Called by `setup`; the schema must exist,
       and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
-      dbt needs USAGE on the database, the schema and both procedures.
+      dbt needs USAGE on the database, the schema and both emitters; USAGE on `ICECORE_ACK` is granted separately.
       `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
       `SYSTEM$ADD_EVENT`; a name without the `icecore.` prefix gets it. Refuses a CALL of more than 100 events
       (returns `icecore-error too_many_events: ...` and writes nothing). Returns `ok <n>`. `SCOPE` is `global`.
@@ -17,7 +17,12 @@ macros:
       attrs, events: [{name, ts_ns, attrs}]}`, written with its explicit times, or a log `{type: 'log', level,
       message, attrs}` (levels `debug`, `info`, `warn`, `error`), written as a LOG record with attributes.
       `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
-      Records land in the event table of the procedures' database, at that database's levels. Returns the two
+      `ICECORE_ACK(incident_key STRING)`: LANGUAGE SQL, the only writer of `icecore.ack`. Refuses a key that is not a
+      current unacknowledged incident of the `ALERTS_FEED` view (returns `icecore-error not_an_open_incident: ...`),
+      else writes one span event `icecore.ack` with `icecore.ack.incident_key` and `icecore.ack.by`, the caller's
+      `CURRENT_USER()`. Returns `ok 1`. `ICECORE_EMIT` refuses any event named `icecore.ack`
+      (`icecore-error forbidden_event: ...`, nothing written).
+      Records land in the event table of the procedures' database, at that database's levels. Returns the three
       qualified procedure names (empty at parse time).
     arguments:
       - name: schema

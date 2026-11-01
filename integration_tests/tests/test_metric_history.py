@@ -152,7 +152,7 @@ def test_fewer_than_7_points_says_insufficient_history(env):
 @pytest.mark.sandbox
 def test_a_record_newer_than_the_history_delay_is_excluded(env):
     live = _qualified(env["run_id"], "live")
-    assert history(env, live, "row_count")["points"] == 0  # default delay: 1 minute, the records were just written
+    # the delay is explicit: no assertion depends on how long the fixture took (the default is checked offline)
     assert history(env, live, "row_count", delay_minutes=60)["points"] == 0
     assert history(env, live, "row_count", delay_minutes=0)["points"] == 3
 
@@ -165,3 +165,9 @@ def test_the_series_feeds_score(env):
     scored = out["scored"]
     assert scored["engine"] == "native" and scored["history_points"] == 30 and scored["is_anomaly"] is False
     assert scored["lower"] <= 1015 <= scored["upper"]
+
+
+@pytest.mark.sandbox
+def test_a_failing_read_warns_and_reads_as_insufficient_history(env):
+    out = history(env, env["long_rel"], "row_count", source=f'"{DATABASE}"."{env["schema"]}"."NO_SUCH_VIEW"')
+    assert out["points"] is None and out["insufficient_history"] is True and out["sql"]

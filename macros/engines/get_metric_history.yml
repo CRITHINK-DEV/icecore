@@ -11,7 +11,7 @@ macros:
       `icecore.history_delay_minutes`, default 1, from spike S3 where lag p95 was about 8 s and the worst 20 s), on
       Snowflake's UTC clock. OBSERVED_TIMESTAMP is NULL on icecore records (S3), so the delay applies to the
       `observed_at` of the view, the event TIMESTAMP. With fewer than `min_points` (default 7) points
-      `insufficient_history` is true and a line is logged; `score` never flags such a series. A null column or
+      `insufficient_history` is true and a line is logged. `min_points` sets only this flag: `score` (native engine) has its own fixed 7 points and never flags a series below them. If reading the history fails (missing view, no grant) a warning is logged, `points` is null and `insufficient_history` is true; the macro never raises. A null column or
       dimension matches only metrics written without one. At parse time nothing runs and `points` and
       `insufficient_history` are null.
     arguments:
@@ -35,7 +35,7 @@ macros:
         description: Minutes to leave out at the recent end, at least 0. Default the `history_delay_minutes` var (1).
       - name: min_points
         type: integer
-        description: Points below which the history is insufficient. Default 7.
+        description: Points below which the history is reported as insufficient. Default 7. The native engine's own minimum of 7 is not changed by it.
       - name: source
         type: string
         description: The relation to read. Default the `METRICS` view of the obs schema.

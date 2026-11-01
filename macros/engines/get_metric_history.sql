@@ -10,7 +10,9 @@
   the delay may be missing or partial, and a history that includes some of those would skew a band. OBSERVED_TIMESTAMP
   is NULL on icecore records (S3), so the rule is applied on `observed_at`, which the metrics view takes from the
   event's TIMESTAMP. Fewer than min_points (default 7) points in the window is "insufficient history": the result
-  says so and score never flags such a series (native baseline insufficient_history).
+  says so. min_points only sets this flag; the native engine applies its own fixed 7 points when it scores, and
+  never flags a series below it (baseline insufficient_history). An error reading the history (missing view, no
+  grant) logs a warning and reads as insufficient history, never failing the caller.
 
   Use:
     {%- set history = icecore.get_metric_history(model, 'row_count') -%}
@@ -26,15 +28,24 @@
 {% macro get_metric_history(relation, metric, column=none, dimension=none, lookback_days=30, delay_minutes=none,
                             min_points=7, source=none, schema=none) %}
   {%- set delay = icecore._icecore_history_delay(delay_minutes) -%}
+  {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set sql = icecore.get_metric_history_sql(relation, metric, column, dimension, lookback_days, delay, source, schema) -%}
   {%- set out = {'sql': sql, 'points': none, 'min_points': min_points, 'insufficient_history': none,
                  'lookback_days': lookback_days, 'delay_minutes': delay} -%}
   {%- if execute -%}
-    {%- set points = run_query('select count(*) from (' ~ sql ~ ') as history').columns[0].values()[0] | int -%}
-    {%- do out.update({'points': points, 'insufficient_history': points < min_points}) -%}
-    {%- if points < min_points -%}
-      {%- do log('icecore: insufficient history for ' ~ metric ~ ': ' ~ points ~ ' point(s) in ' ~ lookback_days
-          ~ ' days, at least ' ~ min_points ~ ' needed', info=True) -%}
+    {#- Never fails a user's test: a query that errors (missing view, no grant) warns and reads as insufficient history. -#}
+    {%- set counted = icecore._icecore_try_scalar('select count(*) from (' ~ sql ~ ') as history') -%}
+    {%- if 'error' in counted -%}
+      {%- do out.update({'insufficient_history': true}) -%}
+      {%- do log('icecore: warning: get_metric_history could not read the history of ' ~ metric ~ ' on ' ~ name
+          ~ ': ' ~ counted['error'] ~ '; treated as insufficient history', info=True) -%}
+    {%- else -%}
+      {%- set points = counted['value'] | int -%}
+      {%- do out.update({'points': points, 'insufficient_history': points < min_points}) -%}
+      {%- if points < min_points -%}
+        {%- do log('icecore: insufficient history for ' ~ metric ~ ': ' ~ points ~ ' point(s) in ' ~ lookback_days
+            ~ ' days, at least ' ~ min_points ~ ' needed', info=True) -%}
+      {%- endif -%}
     {%- endif -%}
   {%- endif -%}
   {{ return(out) }}

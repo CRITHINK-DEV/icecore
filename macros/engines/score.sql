@@ -4,7 +4,7 @@
   engine was not the one that scored. Computes and returns values only; emission is emit_metric's job.
 -#}
 
-{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, capabilities=none) %}
+{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, capabilities=none, min_points=7) %}
   {% set settings = icecore._anomaly_settings(engine, sensitivity, min_consecutive) %}
   {#- At parse time nothing runs: return the contract shape with nulls so callers can render. -#}
   {% if not execute %}
@@ -31,7 +31,7 @@
   {% endif %}
 
   {% if result is none %}
-    {% set result = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at) %}
+    {% set result = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at, min_points) %}
     {% do result.update({'fallback_reason': choice.fallback_reason}) %}
     {% if choice.get('fallback_detail') is not none %}
       {% do result.update({'fallback_detail': choice.fallback_detail}) %}

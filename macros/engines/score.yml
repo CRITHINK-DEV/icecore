@@ -28,6 +28,9 @@ macros:
       - name: series
         type: string
         description: The series key the model was trained with. Required with `model`.
+      - name: min_points
+        type: integer
+        description: "Fewer history points than this never flag (native, baseline insufficient_history). Default 7, the previous fixed value; a monitor passes the history reader's min_points."
       - name: capabilities
         type: dict
         description: A `detect_capabilities` result the caller already holds. When it says Cortex is off, native scores at once without a query. Default none.
@@ -116,3 +119,6 @@ macros:
       - name: observed_at
         type: string
         description: As for `score`.
+      - name: min_points
+        type: integer
+        description: As for `score`. Default 7.

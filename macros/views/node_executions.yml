@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: node_executions_view_sql
+    description: >
+      The SELECT of the `node_executions` view, one row per node per invocation. It reads `icecore.base_events()` and
+      joins on `dbt.invocation_id` and `dbt.node.unique_id` the `icecore.node` span, the node-result LOG
+      (`icecore.kind = node_result`) and the `icecore.query` span events. Columns: `invocation_id`, `unique_id`,
+      `type`, `name`, `materialization`, `relation`, `status`, `rows_affected`, `execution_time_s`, `started_at`,
+      `completed_at`, `query_id` (the result's `snow.query.id`, else the first query event's), `query_ids` (array of
+      every query id of the node), `credits`, `root_cause_unique_id`. `credits` and `root_cause_unique_id` are read from
+      the node-result LOG and are null until UC4 writes them. A skipped node has a result and no span, so its times
+      are null. Clocks: `started_at` and `completed_at` are dbt's clock, the dbt host's, read from the `dbt.node.*`
+      attributes; the TIMESTAMP of the records is Snowflake's clock, the time of the CALL. The two are never
+      subtracted from each other.
+    arguments:
+      - name: event_table
+        type: string
+        description: The relation to read. Default none, resolved with `resolve_event_table` when the macro executes.
+      - name: database
+        type: string
+        description: The database whose procedures wrote the records. Default `target.database`.
+      - name: obs_schema
+        type: string
+        description: The schema holding the emitter procedures. Default the `obs_schema` var.

@@ -128,7 +128,7 @@ def _query(sf, seeded, view: str, relation_like: str) -> list:
 
 
 @pytest.mark.sandbox
-def test_create_views_returns_both_qualified_names(seeded):
+def test_create_views_returns_the_qualified_names_first(seeded):
     assert seeded["created"][:2] == [f'"{DATABASE}"."{seeded["schema"]}"."METRICS"',
                                      f'"{DATABASE}"."{seeded["schema"]}"."SCHEMA_CHANGES"']
 

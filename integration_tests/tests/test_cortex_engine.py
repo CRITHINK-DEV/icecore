@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from helpers.macros import MacroFailed, call_macro, run_macro
+from helpers.macros import MacroFailed, call_macro, run_macro, run_macro_with_logs
 from test_engine_contract import daily_series_sql
 
 DATABASE, SCHEMA = "ICECORE_SANDBOX", "SPIKES"
@@ -167,6 +167,49 @@ def test_no_model_given_falls_back_with_model_missing():
     attempt = call_macro("_cortex_attempt", model=None, series=None, series_sql=SERIES_SQL, current_value=1,
                          settings={"sensitivity": "medium", "min_consecutive": 1}, observed_at=None)
     assert attempt["result"] is None and attempt["fallback_reason"] == "model_missing"
+
+
+# --- query counts (offline, run_query scripted by macros/test_support/it_run_query.sql) --------------------
+
+STUB = ["--vars", '{"it_query_stub": true}']
+
+
+def counted(macro, kwargs):
+    """Run a macro under the scripted run_query: (its result, the queries it issued, in order)."""
+    result, logs = run_macro_with_logs("it_call", {"name": macro, "kwargs": kwargs}, STUB)
+    return result, [line.split("icecore: query: ")[1] for line in logs if line.startswith("icecore: query: ")]
+
+
+def test_a_default_auto_score_with_a_working_model_costs_three_queries_and_no_detection():
+    result, queries = counted("score", {"series_sql": SERIES_SQL, "current_value": 500, "observed_at": "2026-10-29 06:00:00",
+                                        "model": "DB.S.M", "series": "a"})  # engine: the project default, auto
+    assert queries == ["history", "model state", "detect"], queries  # no detect_capabilities, no SHOW PARAMETERS
+    assert result["engine"] == "cortex" and result["fallback_reason"] is None and result["is_anomaly"] is True
+
+
+def test_no_model_given_is_model_missing_before_any_query():
+    attempt, queries = counted("_cortex_attempt", {"model": None, "series": None, "series_sql": SERIES_SQL, "current_value": 1,
+                                                   "settings": {"sensitivity": "medium", "min_consecutive": 1}, "observed_at": None})
+    assert queries == [] and attempt["fallback_reason"] == "model_missing"
+
+
+def test_capabilities_passed_by_the_caller_say_cortex_off_without_any_query():
+    attempt, queries = counted("_cortex_attempt", {
+        "model": "DB.S.M", "series": "a", "series_sql": SERIES_SQL, "current_value": 1,
+        "settings": {"sensitivity": "medium", "min_consecutive": 1}, "observed_at": None,
+        "capabilities": {"cortex": False, "cortex_reason": "no class"}})
+    assert queries == [] and attempt["fallback_reason"] == "cortex_unavailable"
+
+
+def test_a_quoted_model_name_keeps_its_dots():
+    sql, _ = counted("_cortex_model_state", {"model": 'DB."My.Schema".M', "refresh_days": 7})
+    assert sql["state"] == "fresh"  # the scripted SHOW answered; parsing did not raise
+
+
+@pytest.mark.parametrize("bad", ["7", -1, True])
+def test_cortex_refresh_days_must_be_a_number(bad):
+    with pytest.raises(MacroFailed, match="cortex_refresh_days"):
+        call_macro("_cortex_model_state", model="DB.S.M", refresh_days=bad)
 
 
 # --- fallbacks through the dispatcher (sandbox) -----------------------------------------------------

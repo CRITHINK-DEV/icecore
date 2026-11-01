@@ -8,13 +8,15 @@ macros:
       `expected`, `lower`, `upper` (acceptance band), `score` (signed distance outside the band,
       0 inside), `is_anomaly` (boolean, after the min_consecutive rule) and `fallback_reason`
       (null, or why the requested engine did not score: `cortex_unavailable`, `history_too_short`, `model_missing`, `model_stale`, `cortex_error`), plus `fallback_detail` (the message behind it) when native scored for a model reason.
-      Selection: `native` never calls Cortex; `cortex` falls back to native when Cortex is unavailable
-      (`icecore.detect_capabilities`, read without recording), the series covers fewer than 14 days, no
-      `model` is given or it does not exist (`model_missing`), it is older than `var('icecore').cortex_refresh_days`
-      (default 7, the refresh task's period: `model_stale`), or any Cortex call fails (`cortex_error`: a
-      privilege or region problem never fails a test); `auto` uses Cortex under the same conditions, else
-      native. A fallback is logged and recorded in `fallback_reason`. Computes and returns values only;
-      emitting them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
+      Selection: `native` never calls Cortex. `cortex` and `auto` trust the `anomaly_engine` var (setup prints
+      `auto` only where Cortex is available) and detect nothing up front. In order, cheapest first, native
+      scores with a recorded `fallback_reason` when: the caller's `capabilities` say Cortex is off
+      (`cortex_unavailable`, no query); no `model` is given or it does not exist (`model_missing`, no query for
+      the first); the series covers fewer than 14 days (`history_too_short`, 1 query); the model is older than
+      `var('icecore').cortex_refresh_days`, a number, default 7, the refresh task's period (`model_stale`); or a
+      guarded Cortex call fails, in which case `detect_capabilities` runs once to tell `cortex_unavailable` from
+      `cortex_error`. A working Cortex call costs 3 queries (history, model state, detect). A fallback is logged
+      and recorded in `fallback_reason`. Computes and returns values only;       emitting them is `emit_metric`'s job. At parse time (execute false) settings are validated and the same
       keys are returned with null values, so a model or test calling score always parses.
     arguments:
       - name: series_sql
@@ -26,6 +28,9 @@ macros:
       - name: series
         type: string
         description: The series key the model was trained with. Required with `model`.
+      - name: capabilities
+        type: dict
+        description: A `detect_capabilities` result the caller already holds. When it says Cortex is off, native scores at once without a query. Default none.
       - name: current_value
         type: number
         description: The value observed in this run. Null scores 0 and is never an anomaly.

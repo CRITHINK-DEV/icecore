@@ -117,8 +117,12 @@ end;
 {% macro _cortex_model_state(model, refresh_days=none) %}
   {% do icecore._cortex_check_model_name(model) %}
   {% set refresh_days = var('icecore', {}).get('cortex_refresh_days', 7) if refresh_days is none else refresh_days %}
+  {% if refresh_days is not number or refresh_days is sameas true or refresh_days is sameas false or refresh_days < 0 %}
+    {{ exceptions.raise_compiler_error("icecore: cortex_refresh_days must be a number of days, 0 or more, got '" ~ refresh_days ~ "'") }}
+  {% endif %}
   {% set parts = [] %}
-  {% for part in model.split('.') %}
+  {#- split on dots outside double quotes: a quoted name may contain dots -#}
+  {% for part in modules.re.findall('"[^"]+"|[^.]+', model) %}
     {% do parts.append(part[1:-1] if part.startswith('"') else part | upper) %}
   {% endfor %}
   {% set name = parts[-1] %}

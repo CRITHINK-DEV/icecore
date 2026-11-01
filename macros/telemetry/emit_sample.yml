@@ -1,0 +1,25 @@
+version: 2
+
+macros:
+  - name: emit_samples
+    description: >
+      End-of-run emitter `samples` of `end_run`, on when `var('icecore').samples` is true (the default). For
+      each test that failed (status fail; also warn when `var('icecore').samples_on_warn` is true, default
+      false) and whose failures dbt stored (`store_failures`), reads up to `var('icecore').sample_rows` rows
+      (default 10, clamped to 1..1000) of the failures relation and adds one LOG record at INFO with
+      `icecore.kind = sample` to the run's batch, written through ICECORE_EMIT_RUN. The rows are read by a
+      guarded query: a Snowflake Scripting block that catches every error, so a missing table or a privilege
+      problem logs a warning and skips that sample and never fails the run. The record carries the test's
+      `node_attributes` (`dbt.node.*`, `dbt.test.*`, `dbt.result.*`), `dbt.sample.rows` (the rows as a JSON
+      list of objects, NULLs kept), `dbt.sample.row_count` and `dbt.sample.truncated`. Rows are dropped from
+      the end until the record fits `payload_cap_kb`, and `dbt.sample.truncated` is then true. A test without
+      stored failures, one that errored, or one that passed gets no sample. Samples contain real data from
+      your tables, so anyone who can read the event table can read them; set `samples` to false to turn them
+      off. Returns nothing.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results`, hook operations already left out by `end_run`.
+      - name: batch
+        type: dict
+        description: "`end_run`'s batch: `items` is appended to."

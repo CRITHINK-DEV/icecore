@@ -12,6 +12,9 @@ vars:
     node_results: true                  # end_run: one LOG per node result (UC1)
     query_events: true                  # end_run: one icecore.query span event per node query id (UC1)
     lineage: true                       # end_run: the DAG's edges (parent, child unique ids) as LOG records (UC1)
+    samples: true                       # end_run: failed rows of failed tests with store_failures, as LOG records at INFO (UC1)
+    sample_rows: 10                     # rows per sample (1..1000)
+    samples_on_warn: false              # also sample tests that only warned
     result_message: redacted            # dbt.result.message: redacted (quoted literals as '?', max 1,000 chars), full or none
     monitors: true
     cost: false

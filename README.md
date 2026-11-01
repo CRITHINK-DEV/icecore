@@ -90,10 +90,15 @@ vars:
     node_results: true       # end_run: one record per node result (status, rows, time, message, test failures)
     query_events: true       # end_run: the node's Snowflake query id, as an event on the node's span
     lineage: true            # end_run: the DAG's edges (parent, child unique ids) as LOG records
+    samples: true            # end_run: up to sample_rows failed rows of each failed test that stores its failures
+    sample_rows: 10          # rows per sample
+    samples_on_warn: false   # true: also sample tests that only warned
     result_message: redacted # redacted, full or none
 ```
 
 `result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
+
+Samples hold real rows from your tables: `samples` writes up to `sample_rows` rows of each failed test's stored failures (`store_failures`) to the event table, and anyone who can read the event table can read them, so set `samples: false` if that is not acceptable.
 
 The pre-releases are tagged 0.1.0-alpha, 0.2.0-beta and 0.3.0-beta, before 1.0.0. Naming a prerelease in the range lets `dbt deps` install them; with the range above it picks the newest one below 1.0.0 (checked against dbt-core 1.8.10's resolver).
 

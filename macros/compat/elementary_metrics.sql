@@ -13,7 +13,12 @@
       dimension, dimension_value   icecore's `name=value` dimension split at the first `=` (NULL without one)
       Typed NULLs: source_value, bucket_duration_hours, metric_properties.
     schema_columns_snapshot, one row per SCHEMA_CHANGES row that leaves the column in the table (added and
-    type_changed; a `removed` change leaves no column state, so it has no row):
+    type_changed; a `removed` change leaves no column state, so it has no row).
+    IT IS A CHANGE LOG, NOT A SNAPSHOT: Elementary appends one row per current column of a table on every run, so
+    "the latest snapshot per table" (the rows of its newest detected_at) lists every column. Here a column has a row
+    only when it was added or its type changed, so that query returns only the columns changed in the latest change.
+    A column that never changed has the row of its own first appearance, or none if it predates icecore's monitoring.
+    A full per-run column-state emission would be needed to match Elementary (not built; follow-up):
       column_state_id        md5 of full_table_name, column_name and data_type
       full_column_name       upper(full_table_name.column_name);  full_table_name as above
       column_name, data_type to_type

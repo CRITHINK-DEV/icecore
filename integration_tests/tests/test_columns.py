@@ -503,3 +503,35 @@ def test_min_max_stay_exact_above_2_pow_53(dbt, sf, run_id):
         assert got["metrics"] == {"min": 9007199254740993, "max": 9007199254740995}, got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_only_window_coverage_errors_trigger_the_timestamp_fallback(dbt, sf, run_id):
+    # A CHANGES query that fails for any other reason (here an unparsable `since`) must not be retried over the
+    # timestamp column: that scan cannot fix it. Without the SQLCODE gate this test fails on the "using timestamp
+    # column" log, because every error would fall back.
+    name = f"UC2_COLS_GATE_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    create_table(sf, table, change_tracking=True)
+    try:
+        insert_rows(sf, table, 5)
+        window = {"mode": "changes", "since": "garbage", "timestamp_column": "updated_at"}
+        got, logs = run_macro_with_logs("it_compute_column_metrics",
+                                        {"rel": rel(name.lower()), "column_name": "amount", "window": window})
+        assert got is None, got
+        assert any("compute_column_metrics could not read" in m for m in logs), logs
+        assert not any("using timestamp column" in m or "CHANGES query failed" in m for m in logs), logs
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_a_failed_columns_read_is_not_reported_as_column_not_found(dbt):
+    # the relation's database does not exist: the INFORMATION_SCHEMA read fails, which is a read failure
+    r = rel("uc2_cols_nowhere")
+    r["database"] = "UC2_NO_SUCH_DATABASE_X"
+    got, logs = run_macro_with_logs("it_compute_column_metrics", {"rel": r, "column_name": "amount",
+                                                                  "window": {"mode": "changes", "since": SINCE}})
+    assert got is None
+    assert any("could not read the columns of" in m for m in logs), logs
+    assert not any("not found" in m for m in logs), logs

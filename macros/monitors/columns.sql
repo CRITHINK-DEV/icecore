@@ -171,13 +171,17 @@
 
 
 {#- Run the one-value query of `what` (compute_column_metrics or compute_dimension_metrics) over the window.
-    A column that is not found returns none at once (no query, no fallback). When a CHANGES query fails with a
+    A column that is not found, or whose INFORMATION_SCHEMA read fails (logged as a read failure), returns none at once (no query, no fallback). When a CHANGES query fails with a
     window-coverage code (see _icecore_changes_window_error_codes) and the window carries a timestamp_column, the
     query runs again over the timestamp-column window, and the window dict is switched to it in place: later
     calls with the same window skip CHANGES, so the fallback happens once per window. Returns the value, or none
     with a logged warning; never raises. -#}
 {% macro _icecore_window_scalar(relation, window, what, column, extra) %}
-  {%- if icecore._icecore_column_type(relation, column) is none -%}
+  {%- set col = icecore._icecore_column_type_read(relation, column) -%}
+  {%- if 'error' in col -%}
+    {% do log('icecore: warning: ' ~ what ~ ' could not read the columns of ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ col['error'], info=True) %}
+    {{ return(none) }}
+  {%- elif col.get('value') is none -%}
     {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': column ' ~ column ~ ' not found', info=True) %}
     {{ return(none) }}
   {%- endif -%}
@@ -254,6 +258,17 @@
 
 {#- DATA_TYPE of the column from INFORMATION_SCHEMA.COLUMNS (TIMESTAMP_NTZ, NUMBER, TEXT, ...), or none. -#}
 {% macro _icecore_column_type(relation, column_name) %}
+  {%- set out = icecore._icecore_column_type_read(relation, column_name) -%}
+  {%- if 'error' in out -%}
+    {% do log('icecore: warning: column type could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ out['error'], info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return(out.get('value')) }}
+{% endmacro %}
+
+
+{#- The same read as {'value': <type or none>} or {'error': <message>}: a read that failed is not "column not found". -#}
+{% macro _icecore_column_type_read(relation, column_name) %}
   {%- set parts = icecore._icecore_name_parts(relation) -%}
   {%- set sql -%}
     select data_type
@@ -262,7 +277,7 @@
       and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
       and column_name = {{ icecore._icecore_sql_literal(icecore._icecore_column_name(column_name)) }}
   {%- endset -%}
-  {{ return(icecore._icecore_safe_scalar(sql, 'column type', relation)) }}
+  {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}
 
 

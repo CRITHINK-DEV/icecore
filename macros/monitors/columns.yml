@@ -11,7 +11,8 @@ macros:
       the CHANGES query runs. `compute_column_metrics` and `compute_dimension_metrics` catch that failure when Snowflake reports it with
       error code 000707 or 091930, log it, and run again over `timestamp_column` when the window carries one. Any
       other error is not retried. The window is switched to the timestamp column in place, so later calls with
-      the same window skip CHANGES and the fallback happens once per window. A column that does not exist is
+      the same window skip CHANGES and the fallback happens once per window. A window belongs to the relation it
+      was made for: never reuse one across relations (a switched window would carry the first relation's fallback). A column that does not exist is
       reported as not found before any query runs, so it never triggers a second scan over the timestamp column.
       A `none` column name is a compile error that names the relation. Both paths include rows at `since`
       (CHANGES AT(TIMESTAMP => since) does, and the timestamp filter is `>=`). A probe that runs would have to read the
@@ -88,8 +89,9 @@ macros:
       for example `{window_rows: 50, null_rate: 0.2}`. Metrics: `window_rows`, the number of rows in the window
       (named so that it never collides with the volume monitor's `row_count` total or the net `rows_added` of
       `get_row_count_changes`); `null_rate`, the share of those rows where the column is null, between 0 and 1,
-      none when the window is empty; `avg` as a float, `min` and `max` in the column's own type (a NUMBER stays exact above 2^53),
-      over the non-null values, none when there are none. `avg`, `min` and `max` need a numeric column (NUMBER, which covers DECIMAL and INT, or
+      none when the window is empty; `avg` as a float, `min` and `max` in the column's own type (a NUMBER stays exact above 2^53 in the returned
+      value only: the metrics view and the native engine cast to float downstream), over the non-null values, none
+      when there are none. `avg`, `min` and `max` need a numeric column (NUMBER, which covers DECIMAL and INT, or
       FLOAT), read from INFORMATION_SCHEMA.COLUMNS: on any other type they are skipped with one warning and the
       other metrics are still returned. Unknown metric names are skipped with a warning; when every requested
       metric is skipped the result is an empty dict and no query runs. Returns none when the window is none.

@@ -194,6 +194,8 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Roadmap](docs/superpowers/plans/2026-10-30-icecore-roadmap.md): six phases, three gates.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
+- [Public roadmap](docs/roadmap.md): what is built, what comes next and what is only considered.
+- [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 
 ## Develop icecore
@@ -209,7 +211,7 @@ The full guide is [docs/development.md](docs/development.md): the two dbt enviro
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
+Issues and pull requests are welcome. Read [CONTRIBUTING](CONTRIBUTING.md) first. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
 
 <!-- enable at public release (Gate 3) -->
 <!--

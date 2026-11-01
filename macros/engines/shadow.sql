@@ -9,10 +9,13 @@
     {%- set shadow = icecore.shadow_score(history_sql, value, result, model=model, series=series) -%}
     {%- do icecore.emit_shadow(relation, 'row_count', value, shadow, result) -%}
 
-  Costs nothing when shadow is off. When Cortex is off, queries still run unless the caller passes `capabilities` (a
-  detect_capabilities result): without it the history count and the guarded call of ICECORE_SCORE run, fail, and
-  detect_capabilities is run once to confirm; then one warning is logged and nothing is emitted. The dispatcher's rules apply
-  to the shadow too (no model: no query; history count; one ICECORE_SCORE call), so a working Cortex shadow costs 2 queries.
+  Costs nothing (no query) when shadow is off or is the engine that scored. With a Cortex shadow and Cortex off:
+  when the caller passes `capabilities` (a detect_capabilities result) saying so, no query runs and one warning is logged;
+  without it nothing is known in advance, so with a model and series the history count and the guarded call of
+  ICECORE_SCORE run and fail, detect_capabilities then runs once to confirm, and one warning is logged; a call with no
+  model or series, or under 14 days of history, stops before the call and returns the null-band cortex row with its reason.
+  Either way nothing is emitted when the result is none. The dispatcher's rules apply to the shadow too (no model: no
+  query; history count; one ICECORE_SCORE call), so a working Cortex shadow costs 2 queries.
   min_points applies to a native shadow only; the Cortex path ignores it.
 -#}
 

@@ -99,12 +99,24 @@ def test_the_rendered_create_task_is_one_statement_whose_text_does_not_depend_on
     assert plain.startswith("CREATE OR REPLACE TASK ") and plain.count("CREATE ") == 1
 
 
-def test_the_procedure_is_static_and_reads_names_through_identifier():
-    ddl = run_macro("it_silence_procedure_ddl", {})
-    assert ddl == run_macro("it_silence_procedure_ddl", {})
-    assert "IDENTIFIER(:source)" in ddl and "IDENTIFIER(:silence)" in ddl and "CALL IDENTIFIER(:emit)(:events)" in ddl
+def test_the_procedure_takes_only_the_sla_json_and_has_its_names_fixed_in_its_ddl():
+    """Confused deputy: an owner's-rights procedure must not take a relation or emitter name from its caller."""
+    ddl = run_macro("it_silence_procedure_ddl", {"schema": "my_obs"})
+    assert "(sla VARIANT)\nCOPY GRANTS" in ddl and "IDENTIFIER" not in ddl
+    assert ddl == run_macro("it_silence_procedure_ddl", {"schema": "my_obs"})  # nothing of the project in it
+    db = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
+    assert f'FROM "{db}"."MY_OBS"."NODE_EXECUTIONS"' in ddl and f'FROM "{db}"."MY_OBS"."SILENCE_EVENTS" v' in ddl
+    assert f'CALL "{db}"."MY_OBS"."ICECORE_EMIT"(:events)' in ddl
     assert "FLATTEN(INPUT => :sla)" in ddl
     assert "model." not in ddl and "meta" not in ddl.lower().replace("comment", "")
+
+
+@pytest.mark.parametrize("schema", ['x"; drop schema y; --', "a b", "a.b", "a$$b", "a-b", "a\nb"])
+def test_a_schema_or_view_name_that_is_not_a_plain_identifier_is_refused(schema):
+    with pytest.raises(MacroFailed):
+        run_macro("it_silence_procedure_ddl", {"schema": schema})
+    with pytest.raises(MacroFailed):
+        run_macro("it_silence_procedure_ddl", {"source": schema})
 
 
 def test_the_rule_compares_snowflakes_clock_with_the_last_success_plus_period_plus_grace():
@@ -135,13 +147,9 @@ def test_a_failure_raises_so_the_task_history_shows_it():
     assert "EXCEPTION\n  WHEN OTHER" not in ddl and "RETURN 'icecore-error" not in ddl
 
 
-def test_source_and_schema_arguments():
-    _, found = literals(task_sql([entry()], source="X.Y.Z"))
-    assert found[1] == "X.Y.Z"
-    _, found = literals(task_sql([entry()], schema="my_obs"))
-    assert found[1:] == ['"' + os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper() + '"."MY_OBS"."NODE_EXECUTIONS"',
-                         '"' + os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper() + '"."MY_OBS"."SILENCE_EVENTS"',
-                         '"' + os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper() + '"."MY_OBS"."ICECORE_EMIT"']
+def test_the_task_body_has_one_literal_only_the_sla_and_names_the_procedure_of_the_schema():
+    outside, found = literals(task_sql([entry()], schema="my_obs"))
+    assert len(found) == 1 and outside.startswith('CALL "') and '."MY_OBS"."ICECORE_SILENCE_CHECK"(PARSE_JSON(<lit>))' in outside
 
 
 def test_a_node_without_meta_sla_is_not_a_schedule():
@@ -214,9 +222,9 @@ def silence(dbt, sf):
                    entry(ids["failed"], 60, 1), entry(ids["evil"], 60, 1, channel=EVIL, severity="warn")]
         since = cur.execute(f"select dateadd(minute, -2, {NOW})").fetchone()[0]
         created = run_macro("it_create_silence_task",
-                            {"schema": schema, "entries": entries, "source": f'{qs}."STANDIN_NODES"'}, obs_vars)
+                            {"schema": schema, "entries": entries, "source": "STANDIN_NODES"}, obs_vars)
         yield {"schema": schema, "qs": qs, "ids": ids, "created": created, "since": since, "cur": cur, "sf": sf,
-               "entries": entries, "source": f'{qs}."STANDIN_NODES"', "obs_vars": obs_vars}
+               "entries": entries, "obs_vars": obs_vars}
     finally:
         try:
             cur.execute(f'alter task if exists {qs}."ICECORE_SILENCE" suspend')
@@ -234,8 +242,7 @@ def run_task_once(env) -> str:
     except ProgrammingError as e:
         if e.errno != 91089:
             raise
-        body = run_macro("it_silence_task_sql", {"entries": env["entries"], "schema": env["schema"],
-                                                 "source": env["source"]}, env["obs_vars"])
+        body = run_macro("it_silence_task_sql", {"entries": env["entries"], "schema": env["schema"]}, env["obs_vars"])
         env["cur"].execute(body)  # the task body is one CALL of ICECORE_SILENCE_CHECK
         return "body"
 
@@ -334,10 +341,29 @@ def test_hostile_sla_text_is_data_end_to_end(silence):
 
 
 @pytest.mark.sandbox
+def test_the_procedure_takes_only_the_sla_json(silence):
+    (proc,) = silence["sf"].cursor(DictCursor).execute(
+        f'show procedures like \'ICECORE_SILENCE_CHECK\' in schema {silence["qs"]}').fetchall()
+    assert proc["arguments"].startswith("ICECORE_SILENCE_CHECK(VARIANT)"), proc["arguments"]
+    # nobody but the owner has USAGE on it: setup grants nothing
+    grants = silence["sf"].cursor(DictCursor).execute(
+        f'show grants on procedure {silence["qs"]}."ICECORE_SILENCE_CHECK"(VARIANT)').fetchall()
+    assert {g["grantee_name"] for g in grants if g["privilege"] == "USAGE"} <= {os.environ.get("SNOWFLAKE_ROLE", "ICECORE_CI")}, grants
+
+
+@pytest.mark.sandbox
 def test_a_failing_check_raises_so_the_task_history_shows_it(silence):
-    with pytest.raises(ProgrammingError):
-        silence["cur"].execute(
-            f'call {silence["qs"]}."ICECORE_SILENCE_CHECK"(parse_json(\'[]\'), \'NO_SUCH_DB.X.Y\', \'NO_SUCH_DB.X.Z\', \'NO_SUCH_DB.X.E\')')
+    """A procedure whose view does not exist, in a schema of its own: the CALL fails instead of returning a message."""
+    cur, db = silence["cur"], DATABASE
+    scratch = f'"{db}"."{silence["schema"]}_FAIL"'
+    cur.execute(f"create schema {scratch}")
+    try:
+        ddl = run_macro("it_silence_procedure_ddl", {"schema": silence["schema"] + "_FAIL", "source": "NO_SUCH_VIEW"})
+        cur.execute(ddl)
+        with pytest.raises(ProgrammingError):
+            cur.execute(f"call {scratch}.\"ICECORE_SILENCE_CHECK\"(parse_json('[{{\"unique_id\": \"x\", \"every_min\": 1, \"grace_min\": 1}}]'))")
+    finally:
+        cur.execute(f"drop schema if exists {scratch} cascade")
 
 
 @pytest.mark.sandbox

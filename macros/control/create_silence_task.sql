@@ -1,7 +1,10 @@
 {#- UC6 create_silence_task: creates the Snowflake task ICECORE_SILENCE in the obs schema (setup step `create_tasks`).
 
-    Creates the static procedure ICECORE_SILENCE_CHECK and the task, whose body is render_silence_task_sql(sla entries): a
-    CALL carrying the SLA as one JSON literal (no SLA value is ever part of executed code). Entries come from
+    Creates the procedure ICECORE_SILENCE_CHECK(sla VARIANT) and the task, whose body is render_silence_task_sql(sla entries): a
+    CALL carrying the SLA as one JSON literal (no SLA value is ever part of executed code). The procedure takes no name
+    from its caller (the relations it reads and the emitter it calls are fixed, validated, in its DDL), and runs with
+    its owner's rights: grant USAGE on it to nobody but the task's owner; the dbt role never needs it. `source` is the
+    name of another view of the obs schema to read as node_executions (tests only). Entries come from
     collect_sla_config() (the dbt graph) or the `entries` argument. Without any meta.sla nothing is created and a line
     says so.
 
@@ -41,10 +44,10 @@
   {%- set before = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
   {%- set was_started = (before | length) > 0 and (before[0]['state'] | string | lower) == 'started' -%}
   {#- the procedure first: static code, no SLA value. The task body is a CALL carrying the SLA as one JSON literal. -#}
-  {%- set made = icecore._icecore_guarded_ddl(icecore._icecore_silence_procedure_ddl(schema)) -%}
+  {%- set made = icecore._icecore_guarded_ddl(icecore._icecore_silence_procedure_ddl(schema, source or 'NODE_EXECUTIONS')) -%}
   {%- set status = made -%}
   {%- if made == 'ok' -%}
-    {%- set body = icecore.render_silence_task_sql(scheduled, schema, source) -%}
+    {%- set body = icecore.render_silence_task_sql(scheduled, schema) -%}
     {%- set status = icecore._icecore_guarded_ddl(icecore._icecore_silence_task_ddl(task, body, warehouse, schedule)) -%}
   {%- endif -%}
   {%- do out.update({'task': task, 'status': status}) -%}

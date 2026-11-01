@@ -3,10 +3,10 @@ version: 2
 macros:
   - name: render_silence_task_sql
     description: >
-      Renders the body of the silence task: one CALL of the procedure `ICECORE_SILENCE_CHECK`, with the SLA entries of
-      `collect_sla_config` as ONE JSON literal, `PARSE_JSON('...')`, and the names of the relations it reads and of the emitter
-      it calls as further literals. No SLA value is part of executed code: the procedure is static, reads the names with
-      IDENTIFIER, and a `$$`, a quote, a backslash, a semicolon or a newline in a unique_id or a channel stays data
+      Renders the body of the silence task: one CALL of the procedure `ICECORE_SILENCE_CHECK(sla VARIANT)`, with the SLA entries of
+      `collect_sla_config` as ONE JSON literal, `PARSE_JSON('...')`. No SLA value is part of executed code: the procedure takes only
+      that JSON (the relations it reads and the emitter it calls are fixed and validated in its DDL, so a caller cannot point
+      its owner's rights at another object; grant USAGE on it to nobody but the task's owner), and a `$$`, a quote, a backslash, a semicolon or a newline in a unique_id or a channel stays data
       inside the escaped literal. The SLA is embedded when setup runs, so change `meta.sla` and run setup again to refresh the
       task. For each entry with `meta.sla` the procedure takes the latest `recorded_at` of the node's successful rows (status
       success or pass) in `node_executions`, adds `expected_every`, and flags the node when Snowflake's now is later than
@@ -23,6 +23,3 @@ macros:
       - name: schema
         type: string
         description: The obs schema holding `ICECORE_EMIT`, `SILENCE_EVENTS` and `NODE_EXECUTIONS`. Default the `obs_schema` var.
-      - name: source
-        type: string
-        description: The relation read as `node_executions`. Default the obs schema's `NODE_EXECUTIONS` view.

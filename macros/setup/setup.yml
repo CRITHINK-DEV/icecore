@@ -14,7 +14,7 @@ macros:
       a second run leaves the schema, the procedures' and views' DDL and their grants as they were, and changes no level that is
       already sufficient. Creates no tables. When `schema` differs from the `obs_schema` var, a warning says to set
       the var, because dbt runs write through the procedures of the var's schema. The role needs USAGE on the target
-      database, CREATE SCHEMA on it (or an existing schema it can use) CREATE PROCEDURE and CREATE VIEW on the schema,
+      database, CREATE SCHEMA on it (or an existing schema it can use) CREATE PROCEDURE and CREATE VIEW on the schema (and CREATE TASK for the silence task; its procedure `ICECORE_SILENCE_CHECK` runs with its owner's rights, so grant USAGE on it to nobody but the task's owner: the dbt role never needs it),
       and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table)
       (spikes/GATE1.md, "What setup creates and the grants it needs"). Returns `{database, schema, compat, app,
       capabilities, procedures, levels, recorded, estimate, steps}`, each step `{name, status, detail}` with status `done` or

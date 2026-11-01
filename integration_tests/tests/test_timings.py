@@ -102,7 +102,8 @@ def test_nodes_without_timing_and_hook_operations_get_no_span():
 
 
 def test_invocation_span_runs_from_run_started_at_to_end_run():
-    out = run_macro("it_end_run_render", {"results": [A, B]})
+    # lineage off: this test is about the spans, the node-result LOGs and the end LOG
+    out = run_macro("it_end_run_render", {"results": [A, B]}, ["--vars", '{"icecore": {"lineage": false}}'])
     records = out["records"]
     invocation = records[0]
     assert invocation["name"] == "icecore.invocation"

@@ -31,8 +31,10 @@ def views(schema=None) -> dict:
 
 # --- offline: rendering only, no connection ------------------------------------------------------
 
-def test_the_four_views_are_appended_after_metrics_and_schema_changes():
-    assert list(views())[:6] == ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"]
+def test_create_views_list_is_the_full_current_list():
+    """The one place that asserts the whole list, in order; every other test checks a prefix or membership."""
+    assert list(views()) == ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES",
+                             "INVOCATIONS", "NODE_EXECUTIONS", "ALERTS_FEED"]
 
 
 @pytest.mark.parametrize("name", ["TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"])
@@ -127,9 +129,9 @@ def _rows(sf, seeded, view: str, where: str = "true", params=None) -> list:
 
 
 @pytest.mark.sandbox
-def test_create_views_creates_all_six(seeded):
-    assert [n.rsplit(".", 1)[1].strip('"') for n in seeded["created"]][:6] == [
-        "METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"]
+def test_create_views_creates_the_views_of_this_file(seeded):
+    created = [n.rsplit(".", 1)[1].strip('"') for n in seeded["created"]]
+    assert created[:6] == ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"]
 
 
 @pytest.mark.sandbox

@@ -13,7 +13,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
-from helpers.events import wait_for_events
+from helpers.events import assert_no_events, wait_for_events
 from helpers.macros import MacroFailed, run_macro, run_macro_with_logs
 from helpers.run_hooks import (
     drop_fixture_views, icecore_vars, invocation_records, obs_schema, run_with_hooks, snowflake_since,
@@ -83,12 +83,12 @@ def test_acknowledge_takes_no_by_argument():
 
 def test_feed_counts_only_acks_of_icecore_ack_at_or_after_first_detection():
     sql = feed_sql()
-    assert "executable_name like 'ICECORE_ACK(%'" in sql
+    assert "startswith(executable_name, 'ICECORE_ACK(')" in sql
     assert "acks.event_at >= incidents.first_detected_at" in sql
 
 
 def test_base_events_admits_the_ack_procedure():
-    assert """like 'ICECORE_ACK(%'""" in feed_sql()
+    assert """startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')""" in feed_sql()
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -172,12 +172,10 @@ def test_forged_ack_through_icecore_emit_is_refused_and_writes_nothing(seeded, s
     out = run_macro("it_emit_events", {"events": [{"kind": "metric_probe"}, {"kind": "icecore.ack", "attributes": {
         "icecore.ack.incident_key": key}}]}, seeded["obs_vars"])
     assert "forbidden_event" in str(out)
-    time.sleep(40)
-    n = sf.cursor().execute(
-        "select count(*) from " + f"{DATABASE}.TELEMETRY.EVENTS" + " where TIMESTAMP >= %s"
-        " and RESOURCE_ATTRIBUTES:\"snow.schema.name\"::string = %s and RECORD:name::string in ('icecore.ack', 'icecore.metric_probe')",
-        (since, seeded["schema"])).fetchone()[0]
-    assert n == 0
+    assert_no_events(
+        sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
+            " and record:name::string in ('icecore.ack', 'icecore.metric_probe')",
+        {"schema": seeded["schema"]}, wait_s=40, since=since)
     assert _feed(sf, seeded["schema"], "incident_key = %(k)s", {"k": key})[0]["acknowledged_at"] is None
 
 
@@ -185,7 +183,7 @@ def test_forged_ack_through_icecore_emit_is_refused_and_writes_nothing(seeded, s
 def test_forged_ack_written_by_another_writer_is_ignored(seeded, sf):
     key = _feed(sf, seeded["schema"], "kind = 'test_failure'")[0]["incident_key"]
     since = snowflake_since(sf, 1)
-    now_ns = int(time.time() * 1e9)
+    now_ns = int(sf.cursor().execute("select date_part(epoch_second, current_timestamp())").fetchone()[0]) * 1_000_000_000  # Snowflake's clock
     item = {"name": "icecore.forged", "start_ns": now_ns, "end_ns": now_ns, "attrs": {}, "events": [
         {"name": "icecore.ack", "ts_ns": now_ns, "attrs": {"icecore.ack.incident_key": key, "icecore.ack.by": "forger"}}]}
     run_macro("it_emit_run_items", {"items": [item]}, seeded["obs_vars"])

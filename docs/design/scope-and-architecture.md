@@ -8,7 +8,7 @@ Oct 27, 2026 · updated Oct 31, 2026 (Gate 1) · @anouar · Draft for review
 
 **Three design principles**
 
-1. **Write nothing yourself.** All telemetry (run results, test results, metrics, samples) goes through the Snowflake event table, written by two emitter procedures as spans, span events and logs (Gate 1). No DML, no locks, no tables to create or migrate, and records written through `ICECORE_EMIT` survive a failed or rolled-back run (S1); for the Python `ICECORE_EMIT_RUN` that is not measured yet.
+1. **Write nothing yourself.** All telemetry (run results, test results, metrics, samples) goes through the Snowflake event table, written by two emitter procedures as spans, span events and logs (Gate 1), plus `ICECORE_ACK` for acknowledgements. No DML, no locks, no tables to create or migrate, and records written through `ICECORE_EMIT` survive a failed or rolled-back run (S1); for the Python `ICECORE_EMIT_RUN` that is not measured yet.
 2. **Scan nothing you don't have to.** Freshness, volume and schema signals come from Snowflake metadata (`INFORMATION_SCHEMA`, `SYSTEM$LAST_CHANGE_COMMIT_TIME`, `SHOW COLUMNS`) at zero warehouse cost. Column-level metrics scan only changed micro-partitions (`CHANGES` / change tracking).
 3. **Run nothing outside Snowflake.** Alerting (Snowflake Alerts + notification integrations), scheduling (tasks), ML (Cortex, optional) and UI (Streamlit in Snowflake) are all native. No CLI, no external scheduler, no Python runtime to operate.
 
@@ -98,7 +98,7 @@ Both are persisted and `EXECUTE AS OWNER`, because dbt threads use separate sess
 | --- | --- |
 | The role that runs `setup` (owns the procedures, views, alerts and tasks; the procedures write with its rights) | USAGE on `<target_db>`; CREATE SCHEMA on it, or ownership of `ICECORE_OBS`; CREATE PROCEDURE, CREATE VIEW, CREATE ALERT and CREATE TASK on `ICECORE_OBS`; EXECUTE ALERT and EXECUTE TASK on the account; USAGE on the notification integration and on the warehouse the alerts and tasks run on; read access to the resolved event table (`EVENTS_VIEWER` when it is the account table); CREATE STREAMLIT for `setup(app=true)` and the Cortex privileges of section 6 for the optional refresh task |
 | The role that runs dbt | USAGE on `<target_db>`, on `ICECORE_OBS` and on both procedures; SELECT on the icecore views (anomaly history and root cause read them). No session-level setting; writing needs no `EVENTS_VIEWER`, reading the views does when they read the account table |
-| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app also needs USAGE on `ICECORE_EMIT` for acknowledgements |
+| Readers: people, the app, BI tools | USAGE on `<target_db>` and `ICECORE_OBS`; SELECT on the views; the `EVENTS_VIEWER` application role when the views read the account table. The app, or any role that acknowledges incidents, needs USAGE on the database, on `ICECORE_OBS` and on `ICECORE_ACK` (and not on the emitters for that); the acknowledger is recorded from its own `CURRENT_USER()`. The separation between writing telemetry and acknowledging holds only when the role that runs `setup` (the owner) is not the role that runs dbt |
 
 A missing procedure or grant never fails a run (the guard), but the telemetry is lost, so `doctor` makes a test `CALL` of both procedures.
 
@@ -114,7 +114,7 @@ All package emissions are identified by the procedure that wrote them, the packa
 | `SPAN_EVENT` | `ICECORE_EMIT_RUN` | Query executed by a node, with its `query_id`, as an event on the node's span | Query |
 | `LOG` (INFO / WARN / ERROR) | `ICECORE_EMIT_RUN` | Node result, test result, root-cause attribution, lineage edges | Event |
 | `LOG` (INFO) | `ICECORE_EMIT_RUN` | Failed-row samples (payload capped, see S2), at INFO because the levels are the database's | Test failure |
-| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`), alert acknowledgement (from the app) | Metric per table/column per run, or event |
+| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`) | Metric per table/column per run, or event |
 
 There are no `METRIC` records: SQL cannot write them (S1).
 
@@ -139,11 +139,11 @@ There are no `METRIC` records: SQL cannot write them (S1).
 | `icecore.version`, `icecore.schema_version` | `0.1.0`, `1` | Lets views handle payload changes |
 | `dbt.version`, `icecore.anomaly_engine`, `icecore.shadow_engine` | `1.10.4`, `auto`, `cortex` | On the invocation span, so every run records what it ran with (as Elementary's `dbt_invocations` does) |
 | `icecore.capability.edition`, `icecore.capability.event_table`, `icecore.capability.cortex` | `ENTERPRISE`, `OBS_DB.TELEMETRY.EVENTS`, `true` | On the capabilities span event written through `ICECORE_EMIT` by `setup` / `doctor` |
-| `icecore.ack.incident_key`, `icecore.ack.by` | `fct_orders:volume:2026-10-30`, `JDOE` | On an acknowledgement span event written through `ICECORE_EMIT` by the app |
+| `icecore.ack.incident_key`, `icecore.ack.by` | `0f3a...` (32 hex characters, the `incident_key` of `alerts_feed`), `JDOE` | On an acknowledgement span event written only by the `ICECORE_ACK` procedure, `by` being the caller's `CURRENT_USER()`; `ICECORE_EMIT` refuses the name |
 
 **Rules**
 
-- Package identity on every emission: `SCOPE` `icecore` on `ICECORE_EMIT_RUN` records; SQL cannot set `SCOPE`, so `ICECORE_EMIT` records have `SCOPE` `global` and a record name starting with `icecore.` (S1). The base view filter, on `RESOURCE_ATTRIBUTES`, is `snow.database.name = '<TARGET_DB>'`, `snow.schema.name = 'ICECORE_OBS'` and `snow.executable.name` starting with `ICECORE_EMIT`, then that identity, so other telemetry in a shared event table is never read and environments that share one table do not mix. Native dbt Projects records fail this filter by design: views read them through a predicate of their own, unioned with icecore's; how they are identified is to be defined.
+- Package identity on every emission: `SCOPE` `icecore` on `ICECORE_EMIT_RUN` records; SQL cannot set `SCOPE`, so `ICECORE_EMIT` records have `SCOPE` `global` and a record name starting with `icecore.` (S1). The base view filter, on `RESOURCE_ATTRIBUTES`, is `snow.database.name = '<TARGET_DB>'`, `snow.schema.name = 'ICECORE_OBS'` and `snow.executable.name` starting with `ICECORE_EMIT` or `ICECORE_ACK(` (the acknowledgement procedure), then that identity, so other telemetry in a shared event table is never read and environments that share one table do not mix. Native dbt Projects records fail this filter by design: views read them through a predicate of their own, unioned with icecore's; how they are identified is to be defined.
 - Each `CALL` is its own trace (S1), so `dbt.invocation_id` is an attribute on every record, and views and the app group a run on it. Whether node spans written in a later `ICECORE_EMIT_RUN` `CALL` can be nested under the invocation span is unmeasured.
 - `VALUE` carries the human-readable message for logs; everything structured goes in attributes, metric values included, never parsed out of the message. Large values go in attributes, not in log messages: Python truncates a message to 524,252 characters plus `...`, with no flag (S2).
 - Payloads are capped per record at `payload_cap_kb` (default 64 KB); an override is clamped at 256 KB, well under the roughly 1 MB at which Snowflake silently drops a record (S2). A value icecore cuts is flagged; samples are truncated row-wise with a `dbt.sample.truncated = true` flag rather than failing the hook.
@@ -273,7 +273,7 @@ Views are the public interface; the raw event table is an implementation detail.
 | SLAs | Declared schedules vs actual, silence events | Which contracts are breached |
 | Settings | Detected capabilities (from the `capabilities` view), package and dbt versions per run, engine selection, alert channels, retention | Is the package configured right |
 
-The app has no write path except acknowledging alerts, which is a comment-style emission through the same pipeline, a `CALL` to `ICECORE_EMIT` (an `ack` record keyed by `incident_key`), so the package still owns no tables. `alerts_feed` reads those records and `dedup_window` stops notifying for an acknowledged `incident_key`; a recurrence with a new key alerts again. A Native App wrapper of the same app is a packaging task, not a redesign.
+The app has no write path except acknowledging alerts, which is a comment-style emission through the same pipeline, a `CALL` to `ICECORE_ACK(incident_key)`, a third persisted procedure that refuses a key that is not a current unacknowledged incident and records the caller itself (an `icecore.ack` span event keyed by `incident_key`; `ICECORE_EMIT` refuses that name), so the package still owns no tables. `alerts_feed` reads those records and `dedup_window` stops notifying for an acknowledged `incident_key`; a recurrence with a new key alerts again. A Native App wrapper of the same app is a packaging task, not a redesign.
 
 ## 8. Technical spikes before building
 

@@ -191,6 +191,37 @@ def test_pending_sql_skips_costed_nodes_and_the_current_invocation_and_is_bounde
     assert "limit 50" in sql and "array_agg(distinct w.node_query_id)" in sql
 
 
+ANOMALY = {"engine": "native", "expected": 0.1, "lower": 0.09, "upper": 0.11, "score": 40.0, "is_anomaly": True}
+
+
+def test_a_regression_adds_an_anomaly_event_after_the_metric():
+    metric, anomaly = run_macro("it_cost_metric_scored", {"node_attrs": NODE, "cost": {"credits": 0.5, "warehouse": "WH"},
+                                                          "anomaly": ANOMALY})
+    assert metric["kind"] == "metric" and anomaly["kind"] == "anomaly" and anomaly["level"] == "warn"
+    for e in (metric, anomaly):
+        assert e["attributes"]["dbt.anomaly.is_anomaly"] is True and e["attributes"]["dbt.anomaly.score"] == 40.0
+        assert e["attributes"]["dbt.node.unique_id"] == "model.p.a" and e["attributes"]["dbt.metric.name"] == "credits"
+    assert "credits" in anomaly["message"]
+
+
+def test_stable_credits_have_no_anomaly_event():
+    events = run_macro("it_cost_metric_scored", {"node_attrs": NODE, "cost": {"credits": 0.1, "warehouse": "WH"},
+                                                 "anomaly": {**ANOMALY, "is_anomaly": False, "score": 0.1}})
+    assert [e["kind"] for e in events] == ["metric"]
+    assert events[0]["attributes"]["dbt.anomaly.is_anomaly"] is False
+
+
+def test_backfilled_regression_is_an_anomaly_span_event_on_the_original_invocation():
+    items = run_macro("it_backfill_items_scored", {"node": BACKFILL_NODE, "cost": {"credits": 0.5, "warehouse": "WH"},
+                                                   "backfilled_by": "inv-new", "now_ns": 1762000000000000000,
+                                                   "anomaly": ANOMALY})
+    span = items[1]
+    assert [e["name"] for e in span["events"]] == ["icecore.metric", "icecore.anomaly"]
+    anomaly = span["events"][1]["attrs"]
+    assert anomaly["dbt.invocation_id"] == "inv-old" and anomaly["dbt.anomaly.is_anomaly"] is True
+    assert anomaly["icecore.level"] == "warn" and "credits" in anomaly["icecore.message"]
+
+
 # --- sandbox --------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -384,3 +415,68 @@ def test_next_run_backfills_earlier_nodes_once_without_duplicates(sf, obs, earli
     time.sleep(60)
     logs, _ = landed_costs(sf, obs, earlier_run, min_rows=7 + 2 + 2 + 2 + 1)
     assert len([a for a in logs if a["dbt.node.unique_id"] == "model.p.n4"]) == 1
+
+
+def attach_with(obs, results, **settings):
+    extra = ["--vars", json.dumps({"icecore": {"obs_schema": obs, "cost": True, **settings}})]
+    return run_macro_with_logs("it_attach_cost_run", {"results": results}, extra)
+
+
+def regression_run(sf, obs, old_queries, min_rows, **settings):
+    """Two nodes with 14 days of nearly stable credits each (a stand-in METRICS view); the second node's credits are
+    5x its history. Returns (relations, landed metric events, landed anomaly events, logs)."""
+    run_id = uuid.uuid4().hex[:8]
+    since = snowflake_since(sf)
+    q_stable, q_jump = list(old_queries)[:2]
+    names = {"stable": f"cost_stable_{run_id}", "jump": f"cost_jump_{run_id}"}
+    rel = {k: f'"ICECORE_SANDBOX"."SPIKES"."{v.upper()}"' for k, v in names.items()}
+    base = {"stable": old_queries[q_stable][1], "jump": old_queries[q_jump][1] / 5}
+    qs = f'"ICECORE_SANDBOX"."{obs}"'
+    rows = []
+    for key in ("stable", "jump"):
+        for day in range(1, 15):
+            value = base[key] * (1 + 0.004 * ((day % 3) - 1))
+            rows.append(f"select '{rel[key]}', 'credits', null::string, null::string, {value!r}::float,"
+                        f" dateadd(day, -{day}, convert_timezone('UTC', current_timestamp())::timestamp_ntz)")
+    sf.cursor().execute(f'create or replace view {qs}."METRICS" as select * from (' + " union all ".join(rows)
+                        + ') as t(relation, metric, "COLUMN", dimension, value, observed_at)')
+    results = [result_for(f"model.p.{names['stable']}", q_stable), result_for(f"model.p.{names['jump']}", q_jump)]
+    out, logs = attach_with(obs, results, **settings)
+    landed = invocation_records(sf, obs, out["invocation_id"], min_rows=min_rows, since=since)
+    keyed = lambda name: {r["record_attributes"]["dbt.node.relation"]: r["record_attributes"] for r in landed  # noqa: E731
+                          if r["record_type"] == "SPAN_EVENT" and r["record"].get("name") == name}
+    return rel, keyed("icecore.metric"), keyed("icecore.anomaly"), logs
+
+
+@pytest.mark.sandbox
+def test_five_fold_jump_in_credits_is_a_regression_and_stable_credits_are_not(sf, obs, old_queries):
+    rel, metrics, anomalies, _ = regression_run(sf, obs, old_queries, min_rows=5)
+    assert metrics[rel["jump"]]["dbt.anomaly.is_anomaly"] is True
+    assert metrics[rel["stable"]]["dbt.anomaly.is_anomaly"] is False
+    assert list(anomalies) == [rel["jump"]]
+    assert anomalies[rel["jump"]]["dbt.metric.name"] == "credits" and anomalies[rel["jump"]]["dbt.anomaly.score"] > 0
+
+
+@pytest.mark.sandbox
+def test_at_most_cost_score_max_nodes_are_scored_newest_first(sf, obs, old_queries):
+    # cap 1: the newest node (the jump, last in the results) is scored, the older one is written unscored
+    rel, metrics, anomalies, logs = regression_run(sf, obs, old_queries, min_rows=4, cost_score_max_nodes=1)
+    assert metrics[rel["jump"]]["dbt.anomaly.is_anomaly"] is True
+    assert "dbt.anomaly.is_anomaly" not in metrics[rel["stable"]]
+    assert any("cost scoring: 1 of 2 nodes scored" in line for line in logs), logs
+
+
+def test_history_points_query_is_one_query_over_the_metrics_view_for_all_keys():
+    sql = run_macro("it_credit_history_points_sql", {"keys": ['"DB"."S"."A"', '"DB"."S"."B"'], "delay": 1})
+    assert sql.count("select") == 2 and "group by relation" in sql
+    assert '."METRICS"' in sql and "metric = 'credits'" in sql
+    assert "relation in ('\"DB\".\"S\".\"A\"', '\"DB\".\"S\".\"B\"')" in sql
+    assert "dateadd(day, -30," in sql and "dateadd(minute, -1," in sql
+
+
+def test_cost_score_off_or_capped_at_zero_scores_nothing_and_queries_nothing():
+    points = [{"key": "a", "credits": 1.0}, {"key": "b", "credits": 2.0}]
+    off = run_macro("it_score_costs", {"points": points}, ["--vars", json.dumps({"icecore": {"cost_score": False}})])
+    assert off == {"scored": {}, "left": None}
+    zero = run_macro("it_score_costs", {"points": points}, ["--vars", json.dumps({"icecore": {"cost_score_max_nodes": 0}})])
+    assert zero == {"scored": {}, "left": 0}

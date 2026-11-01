@@ -66,3 +66,22 @@
   {%- endfor -%}
   {% do _it_result(icecore._icecore_backfill_costs(pending, ids_by_node, 8, chunk_size, _it_cost_runner)) %}
 {% endmacro %}
+
+{#- The metric events of a node's cost with an anomaly result, as emit_events takes them. -#}
+{% macro it_cost_metric_scored(node_attrs, cost, anomaly) %}
+  {% do _it_result(icecore._icecore_cost_metric_events(node_attrs, cost, anomaly)) %}
+{% endmacro %}
+
+{% macro it_backfill_items_scored(node, cost, backfilled_by, now_ns, anomaly) %}
+  {% do _it_result(icecore._icecore_backfill_items(node, cost, backfilled_by, now_ns, anomaly)) %}
+{% endmacro %}
+
+{% macro it_credit_history_points_sql(keys, delay) %}
+  {% do _it_result(icecore._icecore_credit_history_points_sql(keys, delay)) %}
+{% endmacro %}
+
+{#- _icecore_score_costs with a fresh batch: what it returns and the budget left (needs no connection when it scores nothing). -#}
+{% macro it_score_costs(points) %}
+  {% set batch = {'items': []} %}
+  {% do _it_result({'scored': icecore._icecore_score_costs(points, batch), 'left': batch.get('cost_score_left')}) %}
+{% endmacro %}

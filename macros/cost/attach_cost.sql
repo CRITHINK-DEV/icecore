@@ -38,10 +38,18 @@
     {%- set found = icecore._icecore_query_costs(icecore._icecore_flat_ids(ids_by_node)) -%}
     {%- set settled = icecore._icecore_settled_at_run_end(ids_by_node, found) -%}
     {%- set costs = icecore._icecore_node_costs(ids_by_node, found['costs'], settled, found['failed_ids']) -%}
+    {%- set points = [] -%}
+    {%- for unique_id, cost in costs.items() -%}
+      {%- if not cost.get('settled') -%}
+        {%- do points.append({'key': icecore._icecore_cost_key(nodes[unique_id]), 'credits': cost['credits']}) -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- set anomalies = icecore._icecore_score_costs(points, batch) -%}
     {%- set events = [] -%}
     {%- for unique_id, cost in costs.items() -%}
       {%- do batch['items'].append(icecore._icecore_cost_log(nodes[unique_id], cost)) -%}
-      {%- do events.extend(icecore._icecore_cost_metric_events(nodes[unique_id], cost)) -%}
+      {%- do events.extend(icecore._icecore_cost_metric_events(nodes[unique_id], cost,
+          anomalies.get(icecore._icecore_cost_key(nodes[unique_id])))) -%}
     {%- endfor -%}
     {%- if events -%}
       {%- do icecore.emit_events(events) -%}
@@ -162,11 +170,13 @@
 
 
 {#- The `credits` metric of a node, as emit_events takes it, with the node's unique id added. The metric is
-    keyed by the node's relation, or its unique id when it has none (a test). -#}
-{% macro _icecore_cost_metric_events(node_attrs, cost) %}
+    keyed by the node's relation, or its unique id when it has none (a test). With an anomaly result (score's
+    contract) the metric carries its dbt.anomaly.* keys and, when is_anomaly is true, an `icecore.anomaly` warn event
+    follows it: that is the cost regression record. -#}
+{% macro _icecore_cost_metric_events(node_attrs, cost, anomaly=none) %}
   {%- if cost.get('settled') -%}{{ return([]) }}{%- endif -%}
   {%- set unique_id = node_attrs.get('dbt.node.unique_id') -%}
-  {%- set events = icecore._icecore_metric_events(node_attrs.get('dbt.node.relation') or unique_id, 'credits', cost['credits']) -%}
+  {%- set events = icecore._icecore_metric_events(icecore._icecore_cost_key(node_attrs), 'credits', cost['credits'], anomaly=anomaly) -%}
   {%- for event in events -%}
     {%- do event['attributes'].update({'dbt.node.unique_id': unique_id}) -%}
   {%- endfor -%}
@@ -241,10 +251,19 @@
   {%- set found = decided['found'] -%}
   {%- set costs = decided['costs'] -%}
   {%- set now_ns = (batch.get('timing') or {}).get('completed_ns') or icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
+  {%- set points = [] -%}
+  {%- for node in pending -%}
+    {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
+    {%- if cost is not none and not cost.get('settled') -%}
+      {%- do points.append({'key': icecore._icecore_cost_key({'dbt.node.relation': node.get('relation'), 'dbt.node.unique_id': node['unique_id']}), 'credits': cost['credits']}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set anomalies = icecore._icecore_score_costs(points, batch) -%}
   {%- for node in pending -%}
     {%- set cost = costs.get(node['invocation_id'] ~ '|' ~ node['unique_id']) -%}
     {%- if cost is not none -%}
-      {%- do batch['items'].extend(icecore._icecore_backfill_items(node, cost, invocation_id, now_ns)) -%}
+      {%- do batch['items'].extend(icecore._icecore_backfill_items(node, cost, invocation_id, now_ns, anomalies.get(
+          icecore._icecore_cost_key({'dbt.node.relation': node.get('relation'), 'dbt.node.unique_id': node['unique_id']})))) -%}
     {%- endif -%}
   {%- endfor -%}
   {%- if found['error'] -%}
@@ -275,7 +294,7 @@
 
 
 {#- The cost LOG and the metric span of one backfilled node, both on the original invocation. -#}
-{% macro _icecore_backfill_items(node, cost, backfilled_by, now_ns) %}
+{% macro _icecore_backfill_items(node, cost, backfilled_by, now_ns, anomaly=none) %}
   {%- set attrs = {} -%}
   {%- for key, name in [('unique_id', 'dbt.node.unique_id'), ('type', 'dbt.node.type'), ('name', 'dbt.node.name'),
                         ('materialization', 'dbt.node.materialization'), ('relation', 'dbt.node.relation')] -%}
@@ -285,8 +304,9 @@
                       'icecore.backfilled_by': backfilled_by} -%}
   {%- do icecore._icecore_put(explicit, 'dbt.cost.node_at', node.get('node_at')) -%}
   {%- set span_events = [] -%}
-  {%- for event in icecore._icecore_cost_metric_events(attrs, cost) -%}
+  {%- for event in icecore._icecore_cost_metric_events(attrs, cost, anomaly) -%}
     {%- set event_attrs = {'icecore.level': event['level']} -%}
+    {%- do icecore._icecore_put(event_attrs, 'icecore.message', event.get('message')) -%}
     {%- do event_attrs.update(event['attributes']) -%}
     {%- do event_attrs.update(explicit) -%}
     {%- do span_events.append({'name': 'icecore.' ~ event['kind'], 'ts_ns': now_ns, 'attrs': event_attrs}) -%}
@@ -365,4 +385,71 @@ select array_agg(object_construct('invocation_id', invocation_id, 'unique_id', n
 from pending
   {%- endset -%}
   {{ return(sql | trim) }}
+{% endmacro %}
+
+
+{#- Cost regressions ---------------------------------------------------------------------------------- -#}
+
+{#- The metric key of a node: its relation, or its unique id when it has none (a test). -#}
+{% macro _icecore_cost_key(node_attrs) %}
+  {{ return(node_attrs.get('dbt.node.relation') or node_attrs.get('dbt.node.unique_id')) }}
+{% endmacro %}
+
+
+{#- {key: anomaly result} for points [{key, credits}] (the run's costed nodes, in order; backfill after the run's own
+    nodes), each scored with icecore.score against the node's earlier `credits` points before its own is written, so
+    a point never scores against itself. One query reads the number of history points of every key (the metrics
+    view of the obs schema, the window and the lag delay of get_metric_history), and score runs only for the keys
+    with at least 7 points, so a run with no history costs one query, not two per node. At most var
+    cost_score_max_nodes (default 50) nodes are scored per run, newest first (the budget is shared by the run's own
+    nodes and the backfill, kept in batch['cost_score_left']); the rest are written unscored with a warning. Nothing
+    is scored with var cost_score false, or when the history cannot be read (a warning). A regression is a rise: a
+    drop in credits scores as an anomaly too, as for any metric. -#}
+{% macro _icecore_score_costs(points, batch) %}
+  {%- set out = {} -%}
+  {%- if not execute or not points or not icecore._icecore_flag('cost_score', true) -%}{{ return(out) }}{%- endif -%}
+  {%- set budget = batch.get('cost_score_left') -%}
+  {%- if budget is none -%}
+    {%- set budget = (icecore._icecore_number(icecore._icecore_setting('cost_score_max_nodes', 50)) or 0) | int -%}
+  {%- endif -%}
+  {%- set candidates = (points | reverse | list)[:budget] -%}
+  {%- do batch.update({'cost_score_left': budget - (candidates | length)}) -%}
+  {%- if candidates | length < points | length -%}
+    {%- do log('icecore: cost scoring: ' ~ (candidates | length) ~ ' of ' ~ (points | length) ~ ' nodes scored (cost_score_max_nodes caps it per run, newest first)', info=True) -%}
+  {%- endif -%}
+  {%- if not candidates -%}{{ return(out) }}{%- endif -%}
+  {%- set keys = [] -%}
+  {%- for point in candidates -%}{%- do keys.append(point['key']) -%}{%- endfor -%}
+  {%- set counts = icecore._icecore_credit_history_points(keys) -%}
+  {%- set delay = icecore._icecore_history_delay(none) -%}
+  {%- for point in candidates -%}
+    {%- if counts.get(point['key'], 0) >= 7 -%}
+      {%- do out.update({point['key']: icecore.score(icecore.get_metric_history_sql(point['key'], 'credits', none, none, 30, delay), point['credits'])}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(out) }}
+{% endmacro %}
+
+
+{#- {key: number of points} of the `credits` series of each key, in one query over the metrics view with
+    get_metric_history's window (30 days, minus the history delay). {} with a warning when it cannot be read. -#}
+{% macro _icecore_credit_history_points(keys) %}
+  {%- set sql = icecore._icecore_credit_history_points_sql(keys, icecore._icecore_history_delay(none)) -%}
+  {%- set out = icecore._icecore_try_scalar(sql) -%}
+  {%- if 'error' in out -%}
+    {%- do log('icecore: warning: cost scoring could not read the credits history (' ~ out['error'] ~ '); no cost is scored this run', info=True) -%}
+    {{ return({}) }}
+  {%- endif -%}
+  {{ return(out.get('value') or {}) }}
+{% endmacro %}
+
+
+{% macro _icecore_credit_history_points_sql(keys, delay_minutes) %}
+  {%- set now = "convert_timezone('UTC', current_timestamp())::timestamp_ntz" -%}
+  {%- set literals = [] -%}
+  {%- for key in keys -%}{%- do literals.append(icecore._icecore_sql_literal(key)) -%}{%- endfor -%}
+  {{ return("select object_agg(relation, n) from (select relation, count(*) as n from " ~ icecore._icecore_procedure('METRICS')
+      ~ " where metric = 'credits' and \"COLUMN\" is not distinct from null and dimension is not distinct from null"
+      ~ " and observed_at > dateadd(day, -30, " ~ now ~ ") and observed_at <= dateadd(minute, -" ~ (delay_minutes | int) ~ ", " ~ now ~ ")"
+      ~ " and relation in (" ~ (literals | join(', ')) ~ ") group by relation)") }}
 {% endmacro %}

@@ -1,0 +1,23 @@
+version: 2
+
+macros:
+  - name: metrics_view_sql
+    description: >
+      The SELECT of the `metrics` view, one row per metric a monitor computed. It reads `icecore.base_events()`
+      and keeps the `icecore.metric` span events that `icecore.emit_metric` writes. Columns: `relation`
+      (dbt.node.relation, the quoted DB.SCHEMA.NAME), `"COLUMN"` (dbt.metric.column; COLUMN is a reserved word, so
+      quote it), `dimension`, `metric`, `observed_at` (the event TIMESTAMP, since OBSERVED_TIMESTAMP is NULL on
+      icecore records, spike S3), `value` (FLOAT), the anomaly fields `anomaly_engine`, `anomaly_expected`,
+      `anomaly_lower`, `anomaly_upper`, `anomaly_score`, `anomaly_is_anomaly` (null while the metric was not scored,
+      the view still succeeds), then `invocation_id`, `node_unique_id` and `emit_query_id`. The `icecore.anomaly`
+      warn events repeat their metric event's keys, so they are not rows of this view.
+    arguments:
+      - name: event_table
+        type: string
+        description: The relation to read. Default none, resolved with `resolve_event_table` when the macro executes.
+      - name: database
+        type: string
+        description: The database whose procedures wrote the records. Default `target.database`.
+      - name: obs_schema
+        type: string
+        description: The schema holding the emitter procedures. Default the `obs_schema` var.

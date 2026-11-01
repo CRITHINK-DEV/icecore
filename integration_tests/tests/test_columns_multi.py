@@ -4,7 +4,7 @@ import time
 import pytest
 
 from helpers.macros import run_macro, run_macro_with_logs
-from test_columns import DATABASE, SCHEMA, SINCE, quoted, rel, scan_stats, utc_now
+from test_columns import DATABASE, SCHEMA, SINCE, quoted, rel, utc_now
 
 NUM = [f"N{i}" for i in range(10)]
 TXT = [f"T{i}" for i in range(6)]
@@ -89,8 +89,8 @@ def test_twenty_columns_match_the_per_column_path_and_scan_once(dbt, sf, run_id)
         multi_ops, multi_parts = table_scans(sql)
         one_ops, one_parts = table_scans(one)
         print("TableScan operators and partitions scanned: 20 columns", (multi_ops, multi_parts), "one column", (one_ops, one_parts))
-        # a CHANGES read is one scan operator per query whatever the column count (S5: it reads old and new
-        # versions after DML); 20 columns in one query read the same partitions as one column, not 20 times that
+        # a CHANGES read shows two scan operators per query (old and new versions, S5) whatever the column
+        # count; 20 columns in one query read the same partitions as one column, not 20 times that
         assert multi_ops == one_ops and multi_parts == one_parts, ((multi_ops, multi_parts), (one_ops, one_parts))
     finally:
         sf.cursor().execute(f"drop table if exists {table}")
@@ -112,5 +112,30 @@ def test_multi_column_falls_back_once_and_reports_missing_columns(dbt, sf, run_i
         got2 = run_macro("it_columns_equivalence", {
             "rel": rel(name.lower()), "columns": ["n0", "nope"], "since": since, "timestamp_column": "d1"})
         assert got2["multi"]["nope"] is None and got2["multi"]["n0"] == got2["single"]["n0"], got2
+    finally:
+        sf.cursor().execute(f"drop table if exists {table}")
+
+
+@pytest.mark.sandbox
+def test_multi_column_run_time_fallback_happens_once(dbt, sf, run_id):
+    # table re-created after since: the CHANGES probe passes, the multi-column query fails with 707 and runs
+    # again over the timestamp column, once; the multi-column path runs first so it does the fallback itself
+    name = f"UC2_MULTI_ONCE_{run_id}".upper()
+    table = quoted(DATABASE, SCHEMA, name)
+    make_wide_table(sf, table)
+    try:
+        fill(sf, table, 5)
+        time.sleep(2)
+        since = utc_now(sf)
+        time.sleep(1)
+        sf.cursor().execute(f"drop table {table}")
+        make_wide_table(sf, table)
+        fill(sf, table, 12)
+        got, logs = run_macro_with_logs("it_columns_multi_first", {
+            "rel": rel(name.lower()), "columns": ["n0", "n1", "t0", "d1"], "since": since, "timestamp_column": "d1", "times": 3})
+        assert got["window"]["mode"] == "timestamp_column", got
+        assert sum("CHANGES query failed" in m for m in logs) == 1, logs
+        assert all(m == got["multi"][0] for m in got["multi"]) and got["multi"][0]["n0"]["window_rows"] > 0, got
+        assert got["multi"][0] == got["single"], got
     finally:
         sf.cursor().execute(f"drop table if exists {table}")

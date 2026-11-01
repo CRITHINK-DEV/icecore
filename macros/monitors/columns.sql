@@ -253,7 +253,9 @@
 
 
 {#- {'value': {COLUMN_NAME: DATA_TYPE}} of every column of the relation, from one INFORMATION_SCHEMA read, or {'error'}.
-    No column name goes into the SQL. -#}
+    No column name goes into the SQL. The database part is quoted by hand like the rest of this file (parts come from
+    the relation, never from a name the caller types).
+    TODO(PR #75): quote database, schema and table through the shared icecore._sql(..., 'name') helper once it is merged. -#}
 {% macro _icecore_column_types_read(relation) %}
   {%- set parts = icecore._icecore_name_parts(relation) -%}
   {%- set sql -%}

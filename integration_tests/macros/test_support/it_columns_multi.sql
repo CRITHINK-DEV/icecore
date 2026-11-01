@@ -18,3 +18,15 @@
   {% do log('icecore_it_result:' ~ tojson({'window': window, 'single': single,
       'multi': icecore.compute_columns_metrics(relation, columns, window, metrics)}), info=True) %}
 {% endmacro %}
+
+{#- The multi-column path first, `times` times on one window (it must do the fallback, once), then the per-column path
+    on the switched window for comparison. -#}
+{% macro it_columns_multi_first(rel, columns, since, timestamp_column, times) %}
+  {%- set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) -%}
+  {%- set window = icecore.get_change_window(relation, since, timestamp_column) -%}
+  {%- set multi = [] -%}
+  {%- for i in range(times) -%}{%- do multi.append(icecore.compute_columns_metrics(relation, columns, window)) -%}{%- endfor -%}
+  {%- set single = {} -%}
+  {%- for c in columns -%}{%- do single.update({c: icecore.compute_column_metrics(relation, c, window)}) -%}{%- endfor -%}
+  {% do log('icecore_it_result:' ~ tojson({'window': window, 'multi': multi, 'single': single}), info=True) %}
+{% endmacro %}

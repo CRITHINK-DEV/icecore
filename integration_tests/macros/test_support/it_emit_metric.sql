@@ -3,9 +3,9 @@
     quoted}, turned into a Relation with it_relation (it_metadata.sql). -#}
 
 {#- Renders without running: the events emit_metric builds, the records and chunks emit_events would send. -#}
-{% macro it_emit_metric_render(rel, metric, value, column=none, dimension=none, anomaly=none) %}
+{% macro it_emit_metric_render(rel, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
   {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
-  {% set events = icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly) %}
+  {% set events = icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly, attributes) %}
   {% set records = icecore._icecore_emit_records(events) %}
   {% set sizes = [] %}
   {% for chunk in icecore._icecore_emit_chunks(records) %}
@@ -18,4 +18,25 @@
 {% macro it_emit_metric(rel, metric, value, column=none, dimension=none, anomaly=none) %}
   {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
   {% do log('icecore_it_result:' ~ tojson(icecore.emit_metric(relation, metric, value, column, dimension, anomaly)), info=True) %}
+{% endmacro %}
+
+{#- The history read predicate for a relation (macros/monitors/test_support.sql). -#}
+{% macro it_history_bound(rel) %}
+  {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_history_bound(relation)), info=True) %}
+{% endmacro %}
+
+{#- Renders emit_metrics without running: the events, the records and how they chunk. -#}
+{% macro it_emit_metrics_render(rel, metrics) %}
+  {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
+  {% set events = [] %}
+  {% for m in metrics %}
+    {% do events.extend(icecore._icecore_metric_events(relation, m['metric'], m['value'], m.get('column'), m.get('dimension'), m.get('anomaly'), m.get('attributes'))) %}
+  {% endfor %}
+  {% set records = icecore._icecore_emit_records(events) %}
+  {% set sizes = [] %}
+  {% for chunk in icecore._icecore_emit_chunks(records) %}
+    {% do sizes.append(chunk | length) %}
+  {% endfor %}
+  {% do log('icecore_it_result:' ~ tojson({'records': records, 'chunk_sizes': sizes}), info=True) %}
 {% endmacro %}

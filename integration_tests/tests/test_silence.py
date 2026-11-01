@@ -200,7 +200,7 @@ def silence(dbt, sf):
     schema = f"ICECORE_OBS_{run_id}".upper()
     obs_vars = ["--vars", json.dumps({"icecore": {"obs_schema": schema}})]
     qs = f'"{DATABASE}"."{schema}"'
-    ids = {"late": f"model.it.late_{run_id}", "ok": f"model.it.ok_{run_id}", "failed": f"model.it.failed_{run_id}",
+    ids = {"late": f"model.it.late_{run_id}", "viatask": f"model.it.viatask_{run_id}", "ok": f"model.it.ok_{run_id}", "failed": f"model.it.failed_{run_id}",
            "evil": f"m$$';\\\nx;{run_id}"}
     cur = sf.cursor()
     cur.execute(f"create schema {qs}")
@@ -210,16 +210,15 @@ def silence(dbt, sf):
         # fixed instants, taken once on Snowflake's clock: a view over "now - 90 minutes" would move with every query
         t = {m: cur.execute(f"select dateadd(minute, -{m}, {NOW})::string").fetchone()[0] for m in (5, 10, 90, 200)}
         lit = lambda v: "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"  # noqa: E731
-        cur.execute(f"""create view {qs}."STANDIN_NODES" as
-            select unique_id, status, recorded_at::timestamp_ntz as recorded_at from values
+        cur.execute(f'create table {qs}."STANDIN_NODES" (unique_id varchar, status varchar, recorded_at timestamp_ntz)')
+        cur.execute(f"""insert into {qs}."STANDIN_NODES" values
               ({lit(ids["evil"])}, 'success', '{t[90]}'),
               ('{ids["late"]}', 'success', '{t[90]}'),
               ('{ids["late"]}', 'error', '{t[5]}'),
               ('{ids["ok"]}', 'success', '{t[10]}'),
-              ('{ids["failed"]}', 'error', '{t[200]}')
-            as t(unique_id, status, recorded_at)""")
+              ('{ids["failed"]}', 'error', '{t[200]}')""")
         entries = [entry(ids["late"], 60, 1, channel="data-platform", severity="error"), entry(ids["ok"], 60, 1),
-                   entry(ids["failed"], 60, 1), entry(ids["evil"], 60, 1, channel=EVIL, severity="warn")]
+                   entry(ids["failed"], 60, 1), entry(ids["viatask"], 60, 1), entry(ids["evil"], 60, 1, channel=EVIL, severity="warn")]
         since = cur.execute(f"select dateadd(minute, -2, {NOW})").fetchone()[0]
         # an overload left by the first version of this procedure, which took relation names from its caller
         cur.execute(f"""create procedure {qs}."ICECORE_SILENCE_CHECK"(sla variant, source varchar, silence varchar, emit varchar)
@@ -227,7 +226,7 @@ def silence(dbt, sf):
         created = run_macro("it_create_silence_task",
                             {"schema": schema, "entries": entries, "source": "STANDIN_NODES"}, obs_vars)
         yield {"schema": schema, "qs": qs, "ids": ids, "created": created, "since": since, "cur": cur, "sf": sf,
-               "entries": entries, "obs_vars": obs_vars}
+               "entries": entries, "obs_vars": obs_vars, "t90": t[90]}
     finally:
         try:
             cur.execute(f'alter task if exists {qs}."ICECORE_SILENCE" suspend')
@@ -237,17 +236,11 @@ def silence(dbt, sf):
 
 
 def run_task_once(env) -> str:
-    """EXECUTE TASK, the way the story asks. When the role lacks the EXECUTE TASK privilege on the account (error 091089),
-    run the task's own body with EXECUTE IMMEDIATE instead, so the logic is still proved; returns "task" or "body"."""
-    try:
-        env["cur"].execute(f'execute task {env["qs"]}."ICECORE_SILENCE"')
-        return "task"
-    except ProgrammingError as e:
-        if e.errno != 91089:
-            raise
-        body = run_macro("it_silence_task_sql", {"entries": env["entries"], "schema": env["schema"]}, env["obs_vars"])
-        env["cur"].execute(body)  # the task body is one CALL of ICECORE_SILENCE_CHECK
-        return "body"
+    """Runs the task's own body, one CALL of ICECORE_SILENCE_CHECK, with EXECUTE IMMEDIATE semantics: synchronous.
+    The scheduler path, EXECUTE TASK, is test_execute_task_runs_the_created_task."""
+    body = run_macro("it_silence_task_sql", {"entries": env["entries"], "schema": env["schema"]}, env["obs_vars"])
+    env["cur"].execute(body)
+    return "body"
 
 
 def _records(env, unique_id: str, min_rows: int = 1, settle_s: float = 0) -> list:
@@ -315,13 +308,37 @@ def test_a_second_run_does_not_repeat_the_verdict_once_it_is_readable(silence):
 
 @pytest.mark.sandbox
 def test_execute_task_runs_the_created_task(silence):
-    """Needs the EXECUTE TASK privilege on the account (an admin grants it); skipped, with the reason, without."""
-    try:
-        silence["cur"].execute(f'execute task {silence["qs"]}."ICECORE_SILENCE"')
-    except ProgrammingError as e:
-        if e.errno == 91089:
-            pytest.skip("role lacks EXECUTE TASK on the account: GRANT EXECUTE TASK ON ACCOUNT TO ROLE " + os.environ.get("SNOWFLAKE_ROLE", "<role>"))
-        raise
+    """The scheduler path: EXECUTE TASK on the suspended task (never resumed), wait for TASK_HISTORY to say SUCCEEDED, and the
+    verdict of a node that only this run could see landed. Needs EXECUTE TASK on the account for the role."""
+    cur, sf = silence["cur"], silence["sf"]
+    viatask = silence["ids"]["viatask"]
+    cur.execute(f"""insert into {silence["qs"]}."STANDIN_NODES" values ('{viatask}', 'success', '{silence["t90"]}')""")
+    assert _count(silence, viatask) == 0  # no verdict yet: the earlier body runs did not know this node
+    cur.execute(f'execute task {silence["qs"]}."ICECORE_SILENCE"')
+    state = error = None
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        rows = sf.cursor(DictCursor).execute(
+            f"select state, error_message from table({DATABASE}.information_schema.task_history("
+            f"task_name => 'ICECORE_SILENCE', scheduled_time_range_start => dateadd(minute, -15, current_timestamp()), "
+            f"result_limit => 20)) where schema_name = %s order by scheduled_time desc", (silence["schema"],)).fetchall()
+        if rows and rows[0]["STATE"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            state, error = rows[0]["STATE"], rows[0]["ERROR_MESSAGE"]
+            break
+        time.sleep(5)
+    assert state == "SUCCEEDED", (state, error)
+    (record,) = _records(silence, viatask, settle_s=10)
+    assert record["record_attributes"]["icecore.silence.severity"] == "warn"
+    (task,) = sf.cursor(DictCursor).execute(
+        f'show tasks like \'ICECORE_SILENCE\' in schema {silence["qs"]}').fetchall()
+    assert task["state"] == "suspended"  # EXECUTE TASK runs it once; it was never resumed
+
+
+def _count(env, unique_id: str) -> int:
+    return env["sf"].cursor().execute(
+        "select count(*) from " + os.environ.get("ICECORE_EVENT_TABLE", "ICECORE_SANDBOX.TELEMETRY.EVENTS")
+        + " where record:name::string = 'icecore.silence' and record_attributes:\"dbt.node.unique_id\"::string = %(u)s"
+        " and timestamp >= %(since)s", {"u": unique_id, "since": env["since"]}).fetchone()[0]
 
 
 @pytest.mark.sandbox

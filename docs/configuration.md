@@ -145,7 +145,7 @@ The role that runs `setup` needs:
 - CREATE PROCEDURE and CREATE VIEW on the schema;
 - read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table).
 
-`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
+`setup` sets `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ALWAYS` on the icecore schema (`ALTER SCHEMA <db>.<schema> SET ...`), if its role may; that needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account. The levels of the schema override the database's, so the rest of the database is not traced. `ON_EVENT` is not enough, because it drops the spans that `ICECORE_EMIT_RUN` writes without an event. When the role may not, `setup` prints the statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
 
 ### `icecore.doctor`
 

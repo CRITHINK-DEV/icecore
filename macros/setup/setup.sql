@@ -6,7 +6,7 @@
       1. detect_capabilities      reads only; recorded in step 5, once the procedures exist;
       2. create_schema            CREATE SCHEMA IF NOT EXISTS <target db>.<obs schema> (create_emit_procedures needs it);
       3. create_emit_procedures   ICECORE_EMIT and ICECORE_EMIT_RUN (CREATE OR REPLACE ... COPY GRANTS);
-      4. set_telemetry_levels     the database's levels; prints what the role cannot run;
+      4. set_telemetry_levels     the obs schema's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
@@ -66,7 +66,7 @@
       {'name': 'detect_capabilities', 'ready': true, 'detail': 'edition, event table, levels, Cortex'},
       {'name': 'create_schema', 'ready': true, 'detail': 'the obs schema'},
       {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT and ICECORE_EMIT_RUN'},
-      {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
+      {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the obs schema's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
       {'name': 'create_views', 'ready': true, 'detail': 'the core views over base_events'},
@@ -101,7 +101,8 @@
     {%- do state.update({'procedures': icecore.create_emit_procedures(state['schema'])}) -%}
     {{ return('CREATE OR REPLACE ... COPY GRANTS ' ~ (state['procedures'] | join(', '))) }}
   {%- elif name == 'set_telemetry_levels' -%}
-    {%- set levels = icecore.set_telemetry_levels(state['capabilities'], database=state['database']) -%}
+    {%- set levels = icecore.set_telemetry_levels(state['capabilities'], database=state['database'], schema=state['schema'],
+        schema_levels=icecore.schema_levels(state['database'], state['schema'])) -%}
     {%- do state.update({'levels': levels}) -%}
     {{ return(('levels sufficient' if levels['levels_ok'] else 'levels insufficient') ~ ', ran ' ~ (levels['executed'] | length)
         ~ ', printed ' ~ (levels['printed'] | length) ~ ' for an admin') }}

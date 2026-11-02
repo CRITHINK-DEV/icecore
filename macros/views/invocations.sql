@@ -14,7 +14,8 @@
     The event TIMESTAMP of these records is Snowflake's clock (the CALL's time). The two are never subtracted from
     each other. The 24 hour rule compares two Snowflake times (the start record's TIMESTAMP and now).
 
-    credits is null until cost attribution (UC4) writes it. -#}
+    credits is the sum of the nodes' credits (the latest cost record per invocation and node, as node_executions
+    reads them, backfilled ones included), null until a cost record exists. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -38,6 +39,15 @@ run_end as (
     select * from events
     where record_type = 'LOG' and attributes:"icecore.kind"::string = 'run_end' and invocation_id is not null
     qualify row_number() over (partition by invocation_id order by event_at desc) = 1
+),
+cost_latest as (
+    select * from events
+    where record_type = 'LOG' and attributes:"icecore.kind"::string = 'cost'
+      and invocation_id is not null and node_unique_id is not null
+    qualify row_number() over (partition by invocation_id, node_unique_id order by event_at desc) = 1
+),
+cost_total as (
+    select invocation_id, sum(cost_credits) as credits from cost_latest group by invocation_id
 ),
 ids as (
     select invocation_id from run_start
@@ -74,11 +84,12 @@ select
     try_to_number(run_end.attributes:"dbt.invocation.nodes_failed"::string) as nodes_failed,
     try_to_number(run_end.attributes:"dbt.invocation.nodes_warned"::string) as nodes_warned,
     try_to_number(run_end.attributes:"dbt.invocation.nodes_skipped"::string) as nodes_skipped,
-    null::float as credits
+    cost_total.credits as credits
 from ids
 left join run_start on run_start.invocation_id = ids.invocation_id
 left join invocation_span on invocation_span.invocation_id = ids.invocation_id
 left join run_end on run_end.invocation_id = ids.invocation_id
+left join cost_total on cost_total.invocation_id = ids.invocation_id
   {%- endset -%}
   {{ return(sql) }}
 {% endmacro %}

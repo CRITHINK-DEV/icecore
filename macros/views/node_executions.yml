@@ -8,9 +8,11 @@ macros:
       (`icecore.kind = node_result`) and the `icecore.query` span events. Columns: `invocation_id`, `unique_id`,
       `type`, `name`, `materialization`, `relation`, `status`, `rows_affected`, `execution_time_s`, `started_at`,
       `completed_at`, `query_id` (the result's `snow.query.id`, else the first query event's), `query_ids` (array of
-      every query id of the node), `credits`, `root_cause_unique_id`, `recorded_at` (the TIMESTAMP of the node's result record, Snowflake's clock, used by
-      the silence task to compare with Snowflake's now; null for a node with a span and no result). `credits` and `root_cause_unique_id` are read from
-      the node-result LOG and are null until UC4 writes them. A skipped node has a result and no span, so its times
+      every query id of the node), `credits`, `credits_settled`, `root_cause_unique_id`, `recorded_at` (the TIMESTAMP of the node's result record, Snowflake's clock, used by
+      the silence task to compare with Snowflake's now; null for a node with a span and no result). `credits` is the latest cost record's `dbt.cost.credits` for the node on its invocation
+      (attach_cost's LOG, or a backfilled one keyed to the original invocation); `credits_settled` is its
+      `dbt.cost.settled` (`no_attribution` when settled with 0 credits, else null). Both are null until a cost record
+      exists. `root_cause_unique_id` is read from the node-result LOG and is null until UC4 writes it. A skipped node has a result and no span, so its times
       are null. Clocks: `started_at` and `completed_at` are dbt's clock, the dbt host's, read from the `dbt.node.*`
       attributes; the TIMESTAMP of the records is Snowflake's clock, the time of the CALL. The two are never
       subtracted from each other.

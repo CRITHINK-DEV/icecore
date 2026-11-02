@@ -54,7 +54,7 @@ def test_setup_steps_keep_one_ordered_list():
     steps = call_macro("_icecore_setup_steps")
     assert [s["name"] for s in steps] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-        "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
+        "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
         "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"]

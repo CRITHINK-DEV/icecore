@@ -238,7 +238,7 @@ def test_create_alerts_has_no_resume_path():
 
 def test_setup_marks_create_alerts_ready():
     steps = {s["name"]: s["ready"] for s in call("_icecore_setup_steps", {})}
-    assert steps["create_alerts"] is True and steps["create_tasks"] is False
+    assert steps["create_alerts"] is True and steps["create_tasks"] is True
 
 
 def test_schedule_is_a_var():

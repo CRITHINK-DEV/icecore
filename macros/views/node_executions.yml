@@ -6,7 +6,7 @@ macros:
       The SELECT of the `node_executions` view, one row per node per invocation. It reads `icecore.base_events()` and
       joins on `dbt.invocation_id` and `dbt.node.unique_id` the `icecore.node` span, the node-result LOG
       (`icecore.kind = node_result`) and the `icecore.query` span events. Columns: `invocation_id`, `unique_id`,
-      `type`, `name`, `materialization`, `relation`, `status`, `rows_affected`, `execution_time_s`, `started_at`,
+      `type`, `name`, `materialization`, `relation`, `status`, `message` (dbt.result.message, as capped), `rows_affected`, `execution_time_s`, `started_at`,
       `completed_at`, `query_id` (the result's `snow.query.id`, else the first query event's), `query_ids` (array of
       every query id of the node), `credits`, `credits_settled`, `root_cause_unique_id`, `recorded_at` (the TIMESTAMP of the node's result record, Snowflake's clock, used by
       the silence task to compare with Snowflake's now; null for a node with a span and no result). `credits` is the latest cost record's `dbt.cost.credits` for the node on its invocation

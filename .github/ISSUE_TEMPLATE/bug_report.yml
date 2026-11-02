@@ -1,0 +1,62 @@
+name: Bug report
+description: Something icecore does is wrong or fails.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste passwords, private keys, account identifiers or webhook URLs. Use placeholders such as `<account>`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: input
+    id: icecore-version
+    attributes:
+      label: icecore version
+      description: The version in your `packages.yml`, or the commit if you installed from a clone.
+    validations:
+      required: true
+  - type: input
+    id: dbt-version
+    attributes:
+      label: dbt version and runtime
+      description: The output of `dbt --version`, and whether you run dbt Core, dbt Cloud or Fusion.
+      placeholder: "dbt Core 1.8.10, dbt-snowflake 1.8.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Snowflake edition
+      options:
+        - Standard
+        - Enterprise
+        - Business Critical
+        - Virtual Private Snowflake
+        - I do not know
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `dbt run-operation icecore.doctor`
+      description: "Paste all the lines that start with 'icecore: doctor:'. Replace database names you do not want to share."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: "Any 'icecore: warning:' lines or errors from your run."
+      render: text
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false

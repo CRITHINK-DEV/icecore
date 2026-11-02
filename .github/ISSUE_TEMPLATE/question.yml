@@ -1,0 +1,24 @@
+name: Question
+description: Ask how to use icecore.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Look at the [quickstart](https://github.com/CRITHINK-DEV/icecore/blob/develop/docs/quickstart.md), the [configuration reference](https://github.com/CRITHINK-DEV/icecore/blob/develop/docs/configuration.md) and the [troubleshooting guide](https://github.com/CRITHINK-DEV/icecore/blob/develop/docs/troubleshooting.md) first. Do not paste secrets or account identifiers.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What you have tried
+      description: The commands you ran and what you saw. If it is about records not appearing, paste the output of `dbt run-operation icecore.doctor`.
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: icecore and dbt versions, Snowflake edition

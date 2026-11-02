@@ -54,10 +54,10 @@ def test_setup_steps_keep_one_ordered_list():
     steps = call_macro("_icecore_setup_steps")
     assert [s["name"] for s in steps] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-        "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
+        "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
-        "estimate_telemetry_cost", "create_views", "create_tasks"]
+        "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():
@@ -223,7 +223,7 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
         assert out["levels"]["executed"] == [] and out["levels"]["levels_ok"] is True, out["levels"]
         assert [s["name"] for s in out["steps"] if s["status"] == "done"] == [
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-            "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks"], out["steps"]
+            "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"], out["steps"]
         assert out["recorded"] == "ok 1"
         # the silence task and, Cortex being available in the sandbox, the refresh task: created suspended, never resumed here
         assert sorted((t["name"], t["status"], t["resumed"]) for t in out["tasks"]["tasks"]) == [
@@ -243,7 +243,8 @@ def test_doctor_without_records_names_the_hooks_and_its_probes_land_tagged(sf, f
     out, logs = call("doctor", {"schema": schema})
     assert out["status"] == "no_records" and out["cause"] == "hooks", out
     assert out["records_24h"] == 0
-    assert out["probes"] == OK_PROBES, out["probes"]
+    assert {k: v for k, v in out["probes"].items() if k != "ICECORE_ACK"} == OK_PROBES, out["probes"]
+    assert "not_an_open_incident" in out["probes"]["ICECORE_ACK"], out["probes"]  # the refusal is the healthy answer
     assert any("no records in 24 h" in line and "icecore.end_run(results)" in line for line in logs), logs
 
     where = ("resource_attributes:\"snow.database.name\"::string = %(db)s"
@@ -283,3 +284,29 @@ def test_doctor_never_fails_when_the_procedures_are_missing(sf, run_id):
     assert out["status"] == "no_records" and out["cause"] == "procedures", out
     assert all(s.startswith("icecore-error") for s in out["probes"].values()), out["probes"]
     assert not sf.cursor().execute(f"show schemas like '{schema}' in database {DATABASE}").fetchall()
+
+
+# --- ICECORE_ACK probe (UC6) -----------------------------------------------------------------------
+
+def test_doctor_reports_the_ack_probe_as_information_when_the_role_can_call_it():
+    healthy = {**OK_PROBES, "ICECORE_ACK": "icecore-error not_an_open_incident: 000 is not a current unacknowledged incident"}
+    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=healthy, count=5)
+    ack = next(c for c in r["checks"] if c["name"] == "ICECORE_ACK")
+    assert ack["ok"] is True and ack["detail"].startswith("informational") and r["status"] == "ok"
+
+
+def test_doctor_never_fails_nor_suggests_a_grant_when_the_role_cannot_call_ack():
+    """The dbt role must not hold ICECORE_ACK: a refusal is expected, never a warning, never a grant to suggest."""
+    for refusal in ["icecore-error 2003: Procedure or view does not exist",
+                    "icecore-error 3001: Insufficient privileges to operate on procedure 'ICECORE_ACK'"]:
+        r = call_macro("_icecore_doctor_report", capabilities=caps(), probes={**OK_PROBES, "ICECORE_ACK": refusal}, count=5)
+        ack = next(c for c in r["checks"] if c["name"] == "ICECORE_ACK")
+        assert ack["ok"] is True and r["status"] == "ok" and r["cause"] is None, r
+        assert "grant" not in ack["detail"].lower() and "must not hold" in ack["detail"]
+    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes={**OK_PROBES, "ICECORE_ACK": "icecore-error x"}, count=0)
+    assert r["cause"] != "ICECORE_ACK" and "ICECORE_ACK" not in r["message"]
+
+
+def test_doctor_without_an_ack_probe_does_not_check_it():
+    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=OK_PROBES, count=5)
+    assert "ICECORE_ACK" not in [c["name"] for c in r["checks"]]

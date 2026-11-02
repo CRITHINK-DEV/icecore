@@ -5,7 +5,7 @@
     One ordered list of steps (_icecore_setup_steps), run in order:
       1. detect_capabilities      reads only; recorded in step 5, once the procedures exist;
       2. create_schema            CREATE SCHEMA IF NOT EXISTS <target db>.<obs schema> (create_emit_procedures needs it);
-      3. create_emit_procedures   ICECORE_EMIT and ICECORE_EMIT_RUN (CREATE OR REPLACE ... COPY GRANTS);
+      3. create_emit_procedures   ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK, ICECORE_NOTIFIED and ICECORE_SCORE (CREATE OR REPLACE ... COPY GRANTS);
       4. set_telemetry_levels     the obs schema's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
@@ -14,9 +14,10 @@
          views of step 7 (macros/compat/create_compat_views.sql);
       9. create_tasks            every task of icecore._icecore_task_entries (one list: the silence task and, when Cortex
          is available, the Cortex refresh task), created suspended;
-         create_alerts, deploy_app (app): planned. They keep
-         their place here and are reported as planned until their macros exist; a story that adds one marks it
-         ready and adds its branch to _icecore_setup_run_step.
+      10. create_alerts          one suspended ALERT per channel of var icecore.alert_channels (icecore.create_alerts);
+                                 prints the notification integrations and grants an admin must run;
+      deploy_app (app): planned. It keeps its place here and is reported as planned until its macro exists; a story
+         that adds it marks it ready and adds its branch to _icecore_setup_run_step.
 
     Every step is idempotent: a second run leaves the schema, the procedures' DDL and their grants as they were, and
     changes no level that is already sufficient. setup creates no tables. -#}
@@ -38,7 +39,7 @@
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
       'tasks': none,
-      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
+      'capabilities': none, 'procedures': [], 'alerts': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
   {% do log('icecore: setup in ' ~ icecore.obs_schema(state['schema']) ~ ' (' ~ steps | length ~ ' steps)', info=True) %}
@@ -67,7 +68,7 @@
   {%- set steps = [
       {'name': 'detect_capabilities', 'ready': true, 'detail': 'edition, event table, levels, Cortex'},
       {'name': 'create_schema', 'ready': true, 'detail': 'the obs schema'},
-      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT and ICECORE_EMIT_RUN'},
+      {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK, ICECORE_NOTIFIED and ICECORE_SCORE'},
       {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the obs schema's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
@@ -76,8 +77,8 @@
   {%- if (compat or 'none') | string | lower != 'none' -%}
     {%- do steps.append({'name': 'create_compat_views', 'ready': true, 'detail': 'the ' ~ compat ~ ' compat views'}) -%}
   {%- endif -%}
-  {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
   {%- do steps.append({'name': 'create_tasks', 'ready': true, 'detail': 'Snowflake tasks'}) -%}
+  {%- do steps.append({'name': 'create_alerts', 'ready': true, 'detail': 'one suspended alert per channel'}) -%}
   {%- if app is sameas true -%}
     {%- do steps.append({'name': 'deploy_app', 'ready': false, 'detail': 'the Streamlit app'}) -%}
   {%- endif -%}
@@ -139,6 +140,15 @@
       {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
     {%- endfor -%}
     {{ return(parts | join('; ')) }}
+  {%- elif name == 'create_alerts' -%}
+    {%- set made = icecore.create_alerts(state['schema']) -%}
+    {%- do state.update({'alerts': made}) -%}
+    {%- if not made -%}
+      {{ return('no alert channel configured (var icecore.alert_channels)') }}
+    {%- endif -%}
+    {%- set names = [] -%}
+    {%- for a in made -%}{%- do names.append(a['channel'] ~ ': ' ~ a['status'] ~ (', resumed' if a['resumed'] else ', suspended')) -%}{%- endfor -%}
+    {{ return('CREATE OR REPLACE ALERT ' ~ (names | join('; '))) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

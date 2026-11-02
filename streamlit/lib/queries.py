@@ -45,7 +45,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "node_unique_id", "emit_query_id")),
     "TEST_RESULTS": ("merged", "macros/views/test_results.sql", (
         "invocation_id", "project", "test_unique_id", "test_name", "test_type", "column", "severity", "status",
-        "failures", "message", "execution_time_s", "engine", "expected", "lower", "upper", "score", "executed_at",
+        "failures", "message", "execution_time_s", "root_cause_unique_id", "root_cause_kind", "engine", "expected", "lower", "upper", "score", "executed_at",
         "query_id")),
     "LINEAGE": ("merged", "macros/views/lineage.sql", (
         "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
@@ -59,7 +59,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "duration_s", "status", "nodes_total", "nodes_success", "nodes_failed", "nodes_warned", "nodes_skipped",
         "credits")),
     "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
-        "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "rows_affected",
+        "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "message", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
         "recorded_at")),
@@ -69,6 +69,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),
+    "SLA_DECLARED": ("merged", "macros/control/create_sla_declared_view.sql", (
+        "unique_id", "expected_every_minutes", "grace_minutes", "channel", "severity")),
 }
 
 
@@ -229,10 +231,11 @@ def build_invocations(views_schema, statuses=None, since=None, limit=200):
     return _build(views_schema, "INVOCATIONS", w, "started_at desc nulls last", limit)
 
 
-def build_node_executions(views_schema, invocation_id=None, statuses=None, limit=DEFAULT_LIMIT):
+def build_node_executions(views_schema, invocation_id=None, statuses=None, limit=DEFAULT_LIMIT, since=None):
     w = _Where()
     w.eq("invocation_id", invocation_id)
     w.in_("status", statuses)
+    w.at_least("started_at", since)
     return _build(views_schema, "NODE_EXECUTIONS", w, "started_at nulls last, unique_id", limit)
 
 
@@ -362,9 +365,9 @@ def invocations(statuses: list[str] | None = None, since=None, limit: int = 200,
 
 
 def node_executions(invocation_id: str | None = None, statuses: list[str] | None = None,
-                    limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
-    """NODE_EXECUTIONS of an invocation (or all), in start order."""
-    return _read(build_node_executions, layer, invocation_id, statuses, limit, view="NODE_EXECUTIONS")
+                    limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None, since=None) -> list[Row]:
+    """NODE_EXECUTIONS of an invocation (or all), in start order; since filters on started_at."""
+    return _read(build_node_executions, layer, invocation_id, statuses, limit, since, view="NODE_EXECUTIONS")
 
 
 def alerts_feed(acknowledged: bool | None = None, severity: str | None = None, kind: str | None = None,
@@ -377,3 +380,14 @@ def silence_events(unique_id: str | None = None, since=None, limit: int = DEFAUL
                    layer: QueryLayer | None = None) -> list[Row]:
     """SILENCE_EVENTS: silence verdicts written by the silence task (macros/views/silence_events.sql)."""
     return _read(build_silence_events, layer, unique_id, since, limit, view="SILENCE_EVENTS")
+
+
+def build_sla_declared(views_schema, unique_id=None, limit=MAX_LIMIT):
+    w = _Where()
+    w.eq("unique_id", unique_id)
+    return _build(views_schema, "SLA_DECLARED", w, "unique_id", limit)
+
+
+def sla_declared(unique_id: str | None = None, limit: int = MAX_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
+    """SLA_DECLARED: every model with meta.sla (created by setup, macros/control/create_sla_declared_view.sql)."""
+    return _read(build_sla_declared, layer, unique_id, limit, view="SLA_DECLARED")

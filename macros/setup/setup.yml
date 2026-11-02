@@ -5,18 +5,18 @@ macros:
     description: >
       Installs icecore in one command: `dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none,
       app: false, runs_per_day: 24}'`. Runs one ordered list of steps: detect_capabilities (reads only), `CREATE SCHEMA IF NOT EXISTS`
-      for the obs schema, create_emit_procedures (`ICECORE_EMIT` and `ICECORE_EMIT_RUN`, `CREATE OR REPLACE ... COPY
+      for the obs schema, create_emit_procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`, `ICECORE_ACK`, `ICECORE_NOTIFIED` and `ICECORE_SCORE`, `CREATE OR REPLACE ... COPY
       GRANTS`, so grants made by an admin survive a re-run), set_telemetry_levels (the database's levels only; what
       the role cannot run is printed for an admin), records the capabilities as an `icecore.capabilities` span
       event through the new `ICECORE_EMIT`, then prints the telemetry cost estimate (`estimate_telemetry_cost`) and creates the views (`create_views`: `CREATE OR REPLACE VIEW ... COPY
-      GRANTS` over `icecore.base_events()`, so grants made on them survive a re-run). With `compat: elementary` it then creates the Elementary-compatible views in their own schema (`create_compat_views`), then creates the tasks (`create_tasks`, one list, created suspended: the silence task when a model declares meta.sla, and the Cortex model refresh task only when Cortex is available, with the grant the dbt role needs printed). The steps that do not exist yet (create_alerts, deploy_app) keep their place in the list and are reported as planned. Idempotent:
+      GRANTS` over `icecore.base_events()`, so grants made on them survive a re-run). With `compat: elementary` it then creates the Elementary-compatible views in their own schema (`create_compat_views`), then creates the tasks (`create_tasks`, one list, created suspended: the silence task when a model declares meta.sla, and the Cortex model refresh task only when Cortex is available, with the grant the dbt role needs printed). Then create_alerts creates one suspended ALERT per channel of var `icecore.alert_channels` (nothing when none is configured) and prints the notification integrations and grants an admin must run; it needs CREATE ALERT on the schema. The step that does not exist yet (deploy_app) keeps its place in the list and is reported as planned. Idempotent:
       a second run leaves the schema, the procedures' and views' DDL and their grants as they were, and changes no level that is
       already sufficient. Creates no tables. When `schema` differs from the `obs_schema` var, a warning says to set
       the var, because dbt runs write through the procedures of the var's schema. The role needs USAGE on the target
       database, CREATE SCHEMA on it (or an existing schema it can use) CREATE PROCEDURE and CREATE VIEW on the schema (and CREATE TASK for the silence task; its procedure `ICECORE_SILENCE_CHECK` runs with its owner's rights, so grant USAGE on it to nobody but the task's owner: the dbt role never needs it),
       and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table)
       (spikes/GATE1.md, "What setup creates and the grants it needs"). Returns `{database, schema, compat, app,
-      capabilities, procedures, levels, recorded, estimate, steps}`, each step `{name, status, detail}` with status `done` or
+      capabilities, procedures, alerts, levels, recorded, estimate, steps}`, each step `{name, status, detail}` with status `done` or
       `planned`.
     arguments:
       - name: schema

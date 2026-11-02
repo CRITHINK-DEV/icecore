@@ -48,6 +48,7 @@ BUILDERS = {
     "NODE_EXECUTIONS": lambda s: queries.build_node_executions(s, EVIL, ["error"]),
     "ALERTS_FEED": lambda s: queries.build_alerts_feed(s, False, "error", EVIL, "2026-01-01"),
     "SILENCE_EVENTS": lambda s: queries.build_silence_events(s, EVIL, "2026-01-01"),
+    "SLA_DECLARED": lambda s: queries.build_sla_declared(s, EVIL),
 }
 
 
@@ -117,12 +118,12 @@ def rendered_views():
 
 
 def test_every_merged_view_is_marked_merged_and_the_others_are_not():
-    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted(MERGED)
+    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted([*MERGED, "SLA_DECLARED"])
     assert queries.VIEWS["ALERTS_FEED"][0] == "pr"
 
 
 def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
-    assert sorted(rendered_views) == sorted(MERGED)
+    assert sorted(rendered_views) == sorted(MERGED + ["ALERTS_FEED"])  # ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
 
 
 @pytest.mark.parametrize("view", MERGED)
@@ -409,3 +410,10 @@ def test_the_second_call_is_served_from_cache_on_the_real_session(seeded):
     finally:
         lay.session.sql = real
     assert len(seen) == 1
+
+
+def test_node_executions_since_is_bound_and_last():
+    sql, params = queries.build_node_executions("OBS", "inv", ["success"], 50, "2026-01-01")
+    assert "started_at >= to_timestamp_ntz(?)" in sql and "'" not in sql
+    assert params == ["inv", "success", "2026-01-01", 50]
+    assert queries.build_node_executions("OBS")[1] == [queries.DEFAULT_LIMIT]

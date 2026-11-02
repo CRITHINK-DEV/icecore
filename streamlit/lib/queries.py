@@ -229,10 +229,11 @@ def build_invocations(views_schema, statuses=None, since=None, limit=200):
     return _build(views_schema, "INVOCATIONS", w, "started_at desc nulls last", limit)
 
 
-def build_node_executions(views_schema, invocation_id=None, statuses=None, limit=DEFAULT_LIMIT):
+def build_node_executions(views_schema, invocation_id=None, statuses=None, limit=DEFAULT_LIMIT, since=None):
     w = _Where()
     w.eq("invocation_id", invocation_id)
     w.in_("status", statuses)
+    w.at_least("started_at", since)
     return _build(views_schema, "NODE_EXECUTIONS", w, "started_at nulls last, unique_id", limit)
 
 
@@ -362,9 +363,9 @@ def invocations(statuses: list[str] | None = None, since=None, limit: int = 200,
 
 
 def node_executions(invocation_id: str | None = None, statuses: list[str] | None = None,
-                    limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
-    """NODE_EXECUTIONS of an invocation (or all), in start order."""
-    return _read(build_node_executions, layer, invocation_id, statuses, limit, view="NODE_EXECUTIONS")
+                    limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None, since=None) -> list[Row]:
+    """NODE_EXECUTIONS of an invocation (or all), in start order; since filters on started_at."""
+    return _read(build_node_executions, layer, invocation_id, statuses, limit, since, view="NODE_EXECUTIONS")
 
 
 def alerts_feed(acknowledged: bool | None = None, severity: str | None = None, kind: str | None = None,

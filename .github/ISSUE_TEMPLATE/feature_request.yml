@@ -1,19 +1,32 @@
 name: Feature request
 description: Suggest something icecore should do.
-labels: ["enhancement", "triage"]
+labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/CRITHINK-DEV/icecore/blob/develop/docs/roadmap.md) first. Do not paste secrets or account identifiers.
   - type: textarea
     id: problem
     attributes:
       label: The problem
-      description: What you are trying to do and why icecore does not help today.
+      description: What you cannot do today, and why it matters to you.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: What you would like
+      description: How it could work, in a few sentences.
+    validations:
+      required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: What you do today instead
+      label: What you do instead
+      description: How you work around it now, and any other tool you use for it.
+  - type: input
+    id: environment
+    attributes:
+      label: dbt version and Snowflake edition
+      placeholder: "dbt Core 1.10, Enterprise"

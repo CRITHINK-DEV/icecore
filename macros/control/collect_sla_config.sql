@@ -93,7 +93,7 @@
 
   {% if alerts is not none %}
     {% if alerts is not mapping %}
-      {% do icecore._sla_fail(node, "meta.alerts must be a mapping like {channel: data-platform, severity: warn}") %}
+      {% do icecore._sla_fail(node, "meta.alerts must be a mapping like {channel: data_platform, severity: warn}") %}
     {% endif %}
     {% set unknown = alerts.keys() | reject('in', ['channel', 'severity']) | list %}
     {% if unknown %}

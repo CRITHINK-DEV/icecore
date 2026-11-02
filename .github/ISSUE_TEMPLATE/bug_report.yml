@@ -1,52 +1,62 @@
 name: Bug report
-description: Something in icecore does not work as documented.
-labels: ["bug", "triage"]
+description: Something icecore does is wrong or fails.
+labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste passwords, private keys, account identifiers or webhook URLs. Use placeholders such as `<account>`.
   - type: textarea
-    id: what
+    id: what-happened
     attributes:
       label: What happened
-      description: What you did, what you expected, and what happened instead.
-    validations:
-      required: true
-  - type: textarea
-    id: doctor
-    attributes:
-      label: Output of `dbt run-operation icecore.doctor`
-      render: text
+      description: What you did, what you expected, and what you saw instead.
     validations:
       required: true
   - type: input
-    id: icecore_version
+    id: icecore-version
     attributes:
       label: icecore version
+      description: The version in your `packages.yml`, or the commit if you installed from a clone.
     validations:
       required: true
   - type: input
-    id: dbt_version
+    id: dbt-version
     attributes:
-      label: dbt version (`dbt --version`)
-    validations:
-      required: true
-  - type: dropdown
-    id: runtime
-    attributes:
-      label: Where dbt runs
-      options:
-        - dbt Core on my machine or CI
-        - dbt Projects on Snowflake (EXECUTE DBT PROJECT)
-        - dbt Cloud
-        - Other
+      label: dbt version and runtime
+      description: The output of `dbt --version`, and whether you run dbt Core, dbt Cloud or Fusion.
+      placeholder: "dbt Core 1.8.10, dbt-snowflake 1.8.4"
     validations:
       required: true
   - type: dropdown
     id: edition
     attributes:
       label: Snowflake edition
-      options: ["Standard", "Enterprise", "Business Critical", "Not sure"]
+      options:
+        - Standard
+        - Enterprise
+        - Business Critical
+        - Virtual Private Snowflake
+        - I do not know
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `dbt run-operation icecore.doctor`
+      description: "Paste all the lines that start with 'icecore: doctor:'. Replace database names you do not want to share."
+      render: text
+    validations:
+      required: true
   - type: textarea
     id: logs
     attributes:
       label: Relevant log lines
-      description: Lines starting with `icecore`. Remove anything confidential.
+      description: "Any 'icecore: warning:' lines or errors from your run."
       render: text
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false

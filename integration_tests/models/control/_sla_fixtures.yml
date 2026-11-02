@@ -7,7 +7,7 @@ models:
     config:
       meta:
         sla: {expected_every: 1h, grace: 15m}
-        alerts: {channel: data-platform, severity: warn}
+        alerts: {channel: email, severity: warn}
   - name: sla_daily_default_grace
     config:
       meta:
@@ -15,5 +15,5 @@ models:
   - name: sla_alerts_only
     config:
       meta:
-        alerts: {channel: ops-oncall, severity: error}
+        alerts: {channel: chat, severity: error}
   - name: sla_none

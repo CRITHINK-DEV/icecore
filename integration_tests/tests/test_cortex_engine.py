@@ -355,7 +355,7 @@ def test_the_retired_drops_run_before_the_creates_and_a_failed_drop_is_logged():
     _, logs = run_macro_with_logs("it_call", {"name": "create_emit_procedures", "kwargs": {"schema": "obs_x"}},
                                   ["--vars", '{"it_query_stub": true, "it_drop_status": "icecore-error 3001: insufficient privileges"}'])
     queries = [line.split("icecore: query: ")[1] for line in logs if line.startswith("icecore: query: ")]
-    assert queries == ["drop", "create procedure", "create procedure", "create procedure"], queries
+    assert queries == ["drop", "create procedure", "create procedure", "create procedure", "create procedure", "create procedure"], queries
     assert any("could not drop a retired ICECORE_SCORE signature" in line and "3001" in line for line in logs), logs
 
 

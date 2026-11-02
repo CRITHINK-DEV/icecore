@@ -50,9 +50,9 @@ def test_hourly_sla_is_60_minutes_with_15_minutes_grace(from_graph):
 
 
 def test_alerts_channel_and_severity_are_read(from_graph):
-    assert from_graph["sla_hourly"]["channel"] == "data-platform"
+    assert from_graph["sla_hourly"]["channel"] == "email"
     assert from_graph["sla_hourly"]["severity"] == "warn"
-    assert from_graph["sla_alerts_only"]["channel"] == "ops-oncall"
+    assert from_graph["sla_alerts_only"]["channel"] == "chat"
     assert from_graph["sla_alerts_only"]["severity"] == "error"
 
 
@@ -90,7 +90,7 @@ def test_default_grace_is_twice_the_s3_p95_lag():
 
 
 def test_alerts_severity_defaults_to_warn():
-    [entry] = collect(node("fct_orders", meta={"alerts": {"channel": "data-platform"}}))
+    [entry] = collect(node("fct_orders", meta={"alerts": {"channel": "data_platform"}}))
     assert entry["severity"] == "warn"
 
 

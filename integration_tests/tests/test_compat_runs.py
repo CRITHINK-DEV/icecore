@@ -84,11 +84,12 @@ def test_dbt_invocations_fills_project_name_and_the_run_times_and_nulls_the_rest
 def test_dbt_run_results_fills_ids_times_and_query_id_and_nulls_the_rest():
     columns = {c["name"]: c["expr"] for c in rendered()["run_results"]}
     assert columns["model_execution_id"] == "t.invocation_id || '.' || t.unique_id"
+    assert columns["message"] == "t.message"
     assert columns["execution_time"] == "t.execution_time_s" and columns["query_id"] == "t.query_id"
     assert columns["resource_type"] == "t.type" and columns["created_at"] == "t.recorded_at"
     assert "t.started_at" in columns["execute_started_at"] and "t.completed_at" in columns["execute_completed_at"]
     assert sorted(n for n, e in columns.items() if e is None) == sorted([
-        "message", "compile_started_at", "compile_completed_at", "full_refresh", "compiled_code", "failures",
+        "compile_started_at", "compile_completed_at", "full_refresh", "compiled_code", "failures",
         "thread_id", "adapter_response", "group_name"])
 
 

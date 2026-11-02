@@ -12,5 +12,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 - Cost per node from `QUERY_ATTRIBUTION_HISTORY`, with backfill, settling and cost regressions.
 - Root-cause attribution of failed tests.
 - Views: `INVOCATIONS`, `NODE_EXECUTIONS`, `TEST_RESULTS`, `METRICS`, `SCHEMA_CHANGES`, `SILENCE_EVENTS`, `LINEAGE`, `CAPABILITIES`, and Elementary-compatible views.
-- Missed-run detection (silence task) from `meta.sla`.
-- Streamlit app shell.
+- Missed-run detection (silence task) from `meta.sla`, and the `SLA_DECLARED` view listing every model with an SLA.
+- Alerts: `ALERTS_FEED` (one row per incident, deduplicated per window), Snowflake alerts to email, Slack and Teams, repeat suppression, and acknowledgements through `ICECORE_ACK` (`icecore.acknowledge`).
+- Streamlit app: Runs, Lineage, Cost and SLAs pages.
+- Documentation: views reference, troubleshooting guide, CONTRIBUTING and roadmap.

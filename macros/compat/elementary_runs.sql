@@ -21,10 +21,11 @@
     dbt_run_results, from NODE_EXECUTIONS (one row per node per invocation; Elementary also loads every result of the run):
       model_execution_id invocation_id || '.' || unique_id, as Elementary builds it
       unique_id, invocation_id, name, status, rows_affected, query_id, materialization, execution_time
+      message            dbt.result.message, capped with its record (payload_cap_kb, default 64 KB)
       resource_type      type
       execute_started_at, execute_completed_at   started_at and completed_at (dbt's clock)
       generated_at, created_at                   recorded_at: Snowflake's clock, when the result record landed
-    Typed NULLs: message, compile_started_at, compile_completed_at, full_refresh, compiled_code, failures, thread_id,
+    Typed NULLs: compile_started_at, compile_completed_at, full_refresh, compiled_code, failures, thread_id,
     adapter_response, group_name.
     The two clocks are never subtracted from each other. -#}
 
@@ -117,7 +118,7 @@
     {'name': 'generated_at', 'type': 'string', 'expr': text('t.recorded_at')},
     {'name': 'created_at', 'type': 'timestamp', 'expr': 't.recorded_at'},
     {'name': 'name', 'type': 'long_string', 'expr': 't.name'},
-    {'name': 'message', 'type': 'long_string', 'expr': none},
+    {'name': 'message', 'type': 'long_string', 'expr': 't.message'},
     {'name': 'status', 'type': 'string', 'expr': 't.status'},
     {'name': 'resource_type', 'type': 'string', 'expr': 't.type'},
     {'name': 'execution_time', 'type': 'float', 'expr': 't.execution_time_s'},

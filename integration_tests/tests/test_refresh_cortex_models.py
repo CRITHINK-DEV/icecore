@@ -164,11 +164,11 @@ def test_cortex_off_creates_no_task_and_runs_no_query():
     assert out["status"] == "skipped" and out["task"] is None  # a query would have failed to connect
 
 
-def test_create_tasks_is_one_list_with_the_refresh_entry():
+def test_create_tasks_is_one_list_with_the_silence_and_refresh_entries():
     entries, _ = call("_icecore_task_entries")
-    assert [e["name"] for e in entries] == ["cortex_refresh"]
-    out, _ = call("create_tasks", {"schema": "icecore_obs_x", "capabilities": CORTEX_OFF})
-    assert [(t["name"], t["status"]) for t in out["tasks"]] == [("cortex_refresh", "skipped")]
+    assert [e["name"] for e in entries] == ["silence", "cortex_refresh"]
+    out, _ = call("create_refresh_cortex_task", {"schema": "icecore_obs_x", "capabilities": CORTEX_OFF})
+    assert out["status"] == "skipped"
 
 
 def test_the_task_is_created_suspended_on_a_schedule_from_cortex_refresh_days():

@@ -48,7 +48,7 @@ One row per dbt invocation. It joins three records on `dbt.invocation_id`: the `
 | `duration_s` | float | Seconds | `dbt.invocation.duration_s` |
 | `status` | text | `success`, `warn`, `error`, `unknown`, `running` or `unfinished` | `dbt.invocation.status`, else derived |
 | `nodes_total`, `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped` | number | Node counts. Null if unfinished | `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped` |
-| `credits` | float | Always null today. The view does not read cost: credits are attributed per node (see `NODE_EXECUTIONS.credits`), and nothing sums them per invocation | none |
+| `credits` | float | Always null today. The view hard-codes null. Cost is attributed per node, and nothing sums it per invocation | none |
 
 ## `NODE_EXECUTIONS`
 
@@ -68,8 +68,8 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `started_at`, `completed_at` | time | The node's times, dbt's clock | `dbt.node.started_at`, `dbt.node.completed_at` |
 | `query_id` | text | The node's Snowflake query: the result's, else the first query event's | `snow.query.id` |
 | `query_ids` | array | Every query id of the node | `snow.query.id` of the `icecore.query` events |
-| `credits` | float | Credits attributed to the node's queries. Null unless the `cost` var is on, and null until Snowflake's attribution is available (hours) | `dbt.cost.credits` |
-| `root_cause_unique_id` | text | The upstream node that explains a failed test. Null unless the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
+| `credits` | float | Read from the node's result record (`dbt.cost.credits`). The `cost` var writes credits as a separate `cost` record, which this view does not join yet, so the column stays null today. Read the credits from `METRICS`, metric `credits` | `dbt.cost.credits` |
+| `root_cause_unique_id` | text | The upstream node that explains a failed test. Set on the test's row only, and only when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |
 
 ## `TEST_RESULTS`

@@ -89,7 +89,7 @@ The metric names written today are `freshness_lag_seconds` and `row_count`.
 
 ### Not written yet
 
-The design also names keys for schema changes (`dbt.schema.*`), cost (`dbt.cost.*`), root cause (`dbt.root_cause.*`), failed-row samples (`dbt.sample.*`) and acknowledgements (`icecore.ack.*`). No merged code writes them. They are **coming**. The `SCHEMA_CHANGES` view exists and stays empty until its emitter is merged.
+The design also names keys for schema changes (`dbt.schema.*`), cost (`dbt.cost.*`), root cause (`dbt.root_cause.*`), failed-row samples (`dbt.sample.*`) and acknowledgements (`icecore.ack.*`). No merged code writes them. They are **coming**. `schema_changes` also writes `icecore.schema_signature` records (`dbt.schema.columns`, a JSON list of `{name, data_type}`, split in chunks under the payload cap: `dbt.schema.chunk_index` is the 0-based chunk and `dbt.schema.chunk_count` the number of chunks of that snapshot). The `SCHEMA_CHANGES` view exists and stays empty until its emitter is merged.
 
 ### Schema version
 

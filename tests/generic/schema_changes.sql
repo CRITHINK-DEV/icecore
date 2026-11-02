@@ -27,7 +27,9 @@
       {#- The full column state, every run: one `schema_signature` record per chunk of columns (a wide table is split
           so no record reaches the payload cap and no column is lost). The chunk index and count let the baseline read
           and the schema_columns view put the chunks back together. -#}
-      {%- set chunks = icecore._icecore_signature_chunks(current) -%}
+      {%- set overhead = (tojson(icecore.base_attributes()) | length) + (tojson({'dbt.node.relation': name, 'dbt.schema.columns': '',
+          'dbt.schema.chunk_index': 99999, 'dbt.schema.chunk_count': 99999, 'icecore.level': 'info', 'icecore.message': ''}) | length) + 128 -%}
+      {%- set chunks = icecore._icecore_signature_chunks(current, none, overhead) -%}
       {%- set events = [] -%}
       {%- for chunk in chunks -%}
         {%- do events.append({'kind': 'schema_signature', 'level': 'info',

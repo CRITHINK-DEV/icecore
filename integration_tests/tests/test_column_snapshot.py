@@ -47,9 +47,9 @@ def test_fixtures_parse_and_register_the_snapshot_tests():
 def snap(dbt, sf):
     run_id = uuid.uuid4().hex
     schema = f"ICECORE_OBS_{run_id}".upper()
-    small, wide = f"IT_SNAP_{run_id}".upper(), f"IT_SNAPW_{run_id}".upper()
+    small, wide = f"IT_SNAP_{run_id}".upper(), f"IT_SNAPW_{run_id}_{'L' * 150}".upper()
     base = {"it_uc8_snap_table": small, "it_uc8_wide_table": wide}
-    # payload_cap_kb 1 forces the wide table across many records (cap 1 KB, chunks of at most half of it)
+    # payload_cap_kb 1 forces the wide table across many records; its long name takes room from every record
     obs = {"icecore": {"obs_schema": schema, "payload_cap_kb": 1}, **base}
     cur = sf.cursor()
     cur.execute(f'create schema "{DATABASE}"."{schema}"')
@@ -96,7 +96,7 @@ def test_an_unchanged_table_holds_all_its_columns_on_both_runs(snap):
     assert len(runs) == 3
     first, second = ({r["column"] for r in run} for run in runs[:2])
     assert first == second == {"ID", "NOTE", "GONE"}
-    assert [r["is_new"] for r in runs[0]] == [True] * 3 and [r["is_new"] for r in runs[1]] == [False] * 3
+    assert [r["is_new"] for r in runs[0]] == [False] * 3 and [r["is_new"] for r in runs[1]] == [False] * 3
 
 
 @pytest.mark.sandbox
@@ -143,3 +143,34 @@ def test_a_chunked_baseline_is_read_back_whole(snap):
     # runs 2 and 3 compare the wide table with its multi-record snapshot: no phantom removed or added column
     assert [st["it_snapshot_wide"] for st in snap["statuses"]] == ["pass", "pass", "pass"]
     assert [st["it_snapshot_snap"] for st in snap["statuses"]] == ["pass", "pass", "warn"]  # only the dropped column
+
+
+@pytest.mark.sandbox
+def test_an_incomplete_snapshot_is_neither_listed_nor_used_as_baseline(sf):
+    """Invocation 1 lands both chunks of a snapshot, invocation 2 only chunk 0 of two: the view lists invocation 1 only,
+    and the baseline read is invocation 1's three columns, not the newest partial set."""
+    from helpers.run_hooks import obs_schema
+    run_id = uuid.uuid4().hex[:8].upper()
+    table = f"IT_PARTIAL_{run_id}"
+    rel = f'"{DATABASE}"."{SCHEMA}"."{table}"'
+
+    def chunk(cols, idx, count):
+        return {"kind": "schema_signature", "attributes": {
+            "dbt.node.relation": rel, "dbt.schema.columns": json.dumps([{"name": c, "data_type": "TEXT"} for c in cols]),
+            "dbt.schema.chunk_index": idx, "dbt.schema.chunk_count": count}}
+
+    with obs_schema(sf) as obs:
+        obs_vars = ["--vars", json.dumps({"icecore": {"obs_schema": obs}})]
+        since = sf.cursor().execute("select dateadd(minute, -2, convert_timezone('UTC', current_timestamp())::timestamp_ntz)").fetchone()[0]
+        run_macro("it_compat_emit_events", {"events": [chunk(["A", "B"], 0, 2), chunk(["C"], 1, 2)]}, obs_vars)
+        time.sleep(3)
+        run_macro("it_compat_emit_events", {"events": [chunk(["A"], 0, 2)]}, obs_vars)
+        wait_for_events(sf, EVENTS + " and record_attributes:\"dbt.node.relation\"::string = %(rel)s",
+                        {"db": DATABASE, "schema": obs, "rel": rel}, min_rows=3, since=since, settle_s=15)
+        view = f'"{DATABASE}"."{obs}"."SCHEMA_COLUMNS"'
+        sf.cursor().execute(f"create view {view} as " + run_macro("it_schema_columns_view_real", {"schema": obs}, obs_vars))
+        rows = sf.cursor(DictCursor).execute(f"select * from {view} where relation = %s", (rel,)).fetchall()
+        assert sorted(r["COLUMN"] for r in rows) == ["A", "B", "C"] and len({r["INVOCATION_ID"] for r in rows}) == 1
+        baseline = run_macro("it_previous_signature", {"rel": {"database": DATABASE, "schema": SCHEMA, "identifier": table,
+                                                              "quoted": True}}, obs_vars)
+        assert sorted(c["name"] for c in baseline) == ["A", "B", "C"]

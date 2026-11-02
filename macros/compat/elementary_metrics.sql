@@ -19,7 +19,7 @@
       column_state_id        md5 of full_table_name, column_name and data_type
       full_column_name       upper(full_table_name.column_name);  full_table_name as above
       column_name, data_type to_type
-      is_new                 not in the previous snapshot of the table (true on its first)
+      is_new                 the table had a previous snapshot and the column is not in it (false on its first)
       detected_at, created_at   snapshot_at -#}
 
 

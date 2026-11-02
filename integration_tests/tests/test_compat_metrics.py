@@ -4,7 +4,7 @@ Offline, the contract: each view's columns, their order and their types equal El
 the package pinned in macros/compat/ELEMENTARY_VERSION (empty_data_monitoring_metrics, empty_schema_columns_snapshot in
 its empty_table.sql). Neither relation is one `edr report` reads, so spike S4 has no types for them: the package is the
 contract. The views select only from the core views METRICS and SCHEMA_COLUMNS. Sandbox: the views are created, the
-described types equal Elementary's, row counts match the core views (schema_columns_snapshot reads the full column state,
+described types equal Elementary's, row counts match the core views (schema_columns_snapshot reads the full column state),
 and the values are as documented.
 """
 import json
@@ -66,6 +66,13 @@ def columns(n, width=20):
     return [{"name": f"COLUMN_{i:04d}_" + "X" * width, "data_type": "VARCHAR(16777216)"} for i in range(n)]
 
 
+def test_signature_chunks_leave_room_for_the_other_attributes():
+    cols = columns(100)
+    chunks = run_macro("it_signature_chunks", {"columns": cols, "cap_bytes": 1024, "overhead": 600})
+    assert [c for chunk in chunks for c in chunk] == cols
+    assert all(len(json.dumps(json.dumps(chunk, separators=(",", ":")))) <= 1024 - 600 for chunk in chunks if len(chunk) > 1)
+
+
 @pytest.mark.parametrize("n,cap_kb", [(0, 64), (3, 64), (400, 1), (2000, 64)])
 def test_signature_chunks_keep_every_column_in_order_and_under_the_cap(n, cap_kb):
     cols = columns(n)
@@ -74,7 +81,7 @@ def test_signature_chunks_keep_every_column_in_order_and_under_the_cap(n, cap_kb
     assert len(chunks) >= 1 and (n == 0 or all(chunks))
     assert len(chunks) > 1 if n >= 400 else len(chunks) == 1
     for chunk in chunks:  # as an attribute string: JSON inside JSON, the way the payload cap measures it
-        assert len(json.dumps(json.dumps(chunk, separators=(",", ":")))) <= cap_kb * 1024 // 2
+        assert len(json.dumps(json.dumps(chunk, separators=(",", ":")))) <= cap_kb * 1024
 
 
 def test_compat_list_holds_all_three_elementary_views():
@@ -147,7 +154,7 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
             snapshot = {r["column_name"]: r for r in rows_of(
                 sf, f'select * from "{DATABASE}"."{compat}"."SCHEMA_COLUMNS_SNAPSHOT" where full_table_name = %s', (full_name,))}
             assert sorted(snapshot) == ["amount", "legacy"]  # every column of the snapshot
-            assert snapshot["legacy"]["is_new"] is True and snapshot["legacy"]["data_type"] == "TEXT"
+            assert snapshot["legacy"]["is_new"] is False and snapshot["legacy"]["data_type"] == "TEXT"
             assert snapshot["amount"]["data_type"] == "NUMBER(38,0)"
             assert snapshot["amount"]["full_column_name"] == f"{full_name}.AMOUNT".upper() and snapshot["amount"]["column_state_id"]
             assert snapshot["amount"]["detected_at"] == snapshot["amount"]["created_at"]

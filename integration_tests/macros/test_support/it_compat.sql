@@ -44,8 +44,8 @@
 {% endmacro %}
 
 {#- schema_changes' split of a column list under the payload cap. -#}
-{% macro it_signature_chunks(columns, cap_bytes) %}
-  {% do _it_result(icecore._icecore_signature_chunks(columns, cap_bytes)) %}
+{% macro it_signature_chunks(columns, cap_bytes, overhead=0) %}
+  {% do _it_result(icecore._icecore_signature_chunks(columns, cap_bytes, overhead)) %}
 {% endmacro %}
 
 {#- The SELECT of the core schema_columns view against the real event table and the obs schema. -#}
@@ -56,4 +56,10 @@
 {#- The compat schema_columns_snapshot SELECT over the SCHEMA_COLUMNS view of the (qualified) obs schema. -#}
 {% macro it_compat_snapshot_sql(obs) %}
   {% do _it_result(icecore.elementary_schema_columns_snapshot_view_sql(obs)) %}
+{% endmacro %}
+
+{#- The baseline columns the schema_changes test would read for a relation. -#}
+{% macro it_previous_signature(rel) %}
+  {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
+  {% do _it_result(icecore._icecore_previous_signature(relation)) %}
 {% endmacro %}

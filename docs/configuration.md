@@ -190,6 +190,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |
+| `SCHEMA_COLUMNS` | view | One row per column per schema_changes run (the full column state; feeds the Elementary compat view `schema_columns_snapshot`). |
 | `TEST_RESULTS` | view | One row per test per invocation. |
 | `LINEAGE` | view | One row per dependency edge per invocation. |
 | `LINEAGE_LATEST` | view | The edges of each project's latest invocation that wrote lineage. |

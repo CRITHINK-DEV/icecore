@@ -7,8 +7,9 @@
       dbt.schema.chunk_index     0-based position of the chunk (records written before chunking have none: chunk 0)
     A snapshot is the chunks of one invocation for one relation; a repeat of a chunk in the same invocation (two tests
     on one relation) counts once. Columns: relation, "COLUMN", data_type, snapshot_at (the first record of the
-    snapshot: the same for all its columns), is_new (the column is not in the relation's previous snapshot; true on
-    the first), invocation_id. -#}
+    snapshot: the same for all its columns), is_new (the relation had a previous snapshot and the column is not in it,
+    as in Elementary: false on the first snapshot), invocation_id. Only complete snapshots are listed (all chunk_count
+    chunks landed). -#}
 
 
 {#- SQL text of the view's SELECT. Without event_table it is resolved when the macro executes. -#}
@@ -19,6 +20,7 @@ with events as (
 ),
 chunks as (
     select node_relation as relation, invocation_id, event_at,
+           coalesce(attributes:"dbt.schema.chunk_count"::int, 1) as chunk_count,
            parse_json(attributes:"dbt.schema.columns"::string) as cols
     from events
     where record_type = 'SPAN_EVENT'
@@ -28,10 +30,12 @@ chunks as (
                                order by event_at desc) = 1
 ),
 snapshots as (
+    -- only complete snapshots: a chunk not landed yet must not show its columns as removed
     select relation, invocation_id, min(event_at) as snapshot_at,
            lag(invocation_id) over (partition by relation order by min(event_at), invocation_id) as previous_invocation_id
     from chunks
     group by relation, invocation_id
+    having count(*) = max(chunk_count)
 ),
 current_columns as (
     select c.relation, c.invocation_id, f.value:name::string as column_name, f.value:data_type::string as data_type
@@ -43,7 +47,7 @@ select
     cc.column_name as "COLUMN",
     cc.data_type as data_type,
     s.snapshot_at as snapshot_at,
-    previous.column_name is null as is_new,
+    s.previous_invocation_id is not null and previous.column_name is null as is_new,
     cc.invocation_id as invocation_id
 from current_columns cc
 join snapshots s on s.relation = cc.relation and s.invocation_id = cc.invocation_id

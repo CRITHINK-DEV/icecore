@@ -59,11 +59,11 @@ end;
 {#- Private --------------------------------------------------------------------------------------- -#}
 
 {#- Columns -> lists of columns whose JSON, as an attribute string (quotes escaped, as the payload cap measures it),
-    stays within half the payload cap, so a record never reaches the cap and no column is ever cut. A table that fits
+    stays within the payload cap minus `overhead` (the measured size of the record's other attributes), so a record never reaches the cap and no column is ever cut. A table that fits
     gives one chunk. No columns gives one empty chunk (the snapshot of an empty table is still a record). -#}
-{% macro _icecore_signature_chunks(columns, cap_bytes=none) %}
+{% macro _icecore_signature_chunks(columns, cap_bytes=none, overhead=0) %}
   {%- set cap = cap_bytes if cap_bytes is not none else icecore._icecore_payload_cap_bytes() -%}
-  {%- set budget = [cap // 2, 256] | max -%}
+  {%- set budget = [cap - overhead, 256] | max -%}
   {%- set chunks = [] -%}
   {%- set ns = namespace(current=[], size=4) -%}
   {%- for c in columns -%}

@@ -59,8 +59,8 @@ end;
 
 
 {#- The columns of the newest complete `icecore.schema_signature` snapshot of the relation, as get_columns_signature
-    returns them, or none (no record, no event table, unreadable, or the newest snapshot's chunks are not all there
-    yet: a partial baseline would read as removed columns, so it counts as no baseline). A snapshot is the chunks
+    returns them, or none (no record, no event table, unreadable, or no snapshot with all its chunks: a
+    partial one would read as removed columns, so the newest COMPLETE snapshot is used). A snapshot is the chunks
     (dbt.schema.chunk_index of chunk_count) of one invocation; a record without them is a whole snapshot (older
     records). -#}
 {% macro _icecore_previous_signature(relation) %}
@@ -76,9 +76,10 @@ end;
       where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.schema_signature'
       qualify row_number() over (partition by invocation_id, idx order by event_at desc) = 1
     ), newest as (
-      select invocation_id from s order by event_at desc limit 1
+      select invocation_id from s group by invocation_id having count(*) = max(cnt)
+      order by max(event_at) desc limit 1
     )
-    select iff(count(*) = max(cnt), array_flatten(array_agg(cols) within group (order by idx))::string, null)
+    select iff(count(*) = 0, null, array_flatten(array_agg(cols) within group (order by idx))::string)  -- no snapshot: none, not []
     from s where invocation_id = (select invocation_id from newest)
   {%- endset -%}
   {%- set raw = icecore._icecore_safe_scalar(sql, 'schema_changes baseline', relation) -%}

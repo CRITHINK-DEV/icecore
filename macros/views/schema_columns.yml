@@ -6,8 +6,9 @@ macros:
       The SELECT of the `schema_columns` view, one row per column per schema_changes run (the full column state, not
       the changes). It reads `icecore.base_events()` and the span events named `icecore.schema_signature`, which the
       schema_changes test writes on every run, one per chunk of columns under the payload cap. Columns: `relation`,
-      `"COLUMN"` (quote it), `data_type`, `snapshot_at` (the same for every column of one run), `is_new` (not in the
-      previous snapshot of the relation; true on the first) and `invocation_id`.
+      `"COLUMN"` (quote it), `data_type`, `snapshot_at` (the same for every column of one run), `is_new` (the relation had a
+      previous snapshot and the column is not in it; false on the first snapshot, as in Elementary). Only complete
+      snapshots (every chunk landed) are listed and `invocation_id`.
     arguments:
       - name: event_table
         type: string

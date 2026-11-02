@@ -9,6 +9,7 @@ status is fail, error or warn, and whose id contains the source's name (the last
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 FAILED = {"error", "fail", "failed"}
@@ -63,19 +64,29 @@ def latest_tests(test_rows: Iterable[dict]) -> dict[str, dict]:
     return latest
 
 
+def _is_freshness_test(t: dict) -> bool:
+    """test_name is exactly freshness or recency, with or without a package prefix (icecore.freshness, dbt_utils.recency)."""
+    return (t.get("test_name") or "").lower().split(".")[-1] in FRESHNESS_WORDS
+
+
 def stale_sources(source_ids: Iterable[str], test_rows: Iterable[dict]) -> dict[str, str]:
-    """source unique_id -> the freshness test result status that marks it stale (only stale sources are returned)."""
-    bad = [t for t in latest_tests(test_rows).values()
-           if (t.get("status") or "").lower() in FAILED | WARNED
-           and any(w in f"{t.get('test_name') or ''} {t.get('test_unique_id') or ''}".lower() for w in FRESHNESS_WORDS)]
+    """source unique_id -> the freshness test status that marks it stale (only stale sources are returned).
+
+    A test id must contain `source_<src>_<tbl>` with a boundary before `source_`; each test goes only to the source with
+    the longest matching key, so raw.orders_archive never marks raw.orders."""
+    sources = {sid: source_key(sid).lower().replace(".", "_") for sid in source_ids}
     out: dict[str, str] = {}
-    for sid in source_ids:
-        key = source_key(sid).lower().replace(".", "_")
-        for t in bad:
-            hay = f"{t.get('test_unique_id') or ''} {t.get('test_name') or ''}".lower()
-            if key in hay or source_key(sid).lower() in hay:
-                out[sid] = (t.get("status") or "").lower()
-                break
+    for t in latest_tests(test_rows).values():
+        status = (t.get("status") or "").lower()
+        if status not in FAILED | WARNED or not _is_freshness_test(t):
+            continue
+        tid = (t.get("test_unique_id") or "").lower()
+        best = None
+        for sid, key in sources.items():
+            if re.search(rf"(?<![a-z0-9]){re.escape('source_' + key)}", tid) and (best is None or len(key) > len(sources[best])):
+                best = sid
+        if best is not None:
+            out[best] = status
     return out
 
 
@@ -131,19 +142,35 @@ def failed_tests(test_rows: list[dict]) -> list[dict]:
     return sorted(bad, key=lambda t: str(t.get("executed_at") or ""), reverse=True)
 
 
-def root_cause_for(test_unique_id: str, node_rows: list[dict]) -> str | None:
-    """The root cause node of a test: NODE_EXECUTIONS.root_cause_unique_id of the test's row (None if not recorded)."""
+def latest_per_node(node_rows: list[dict]) -> list[dict]:
+    """The most recent NODE_EXECUTIONS row of each node across invocations (a node absent from the latest run keeps its last status)."""
+    best: dict[str, dict] = {}
     for r in node_rows:
+        uid = r.get("unique_id")
+        if not uid:
+            continue
+        key = str(r.get("started_at") or r.get("recorded_at") or "")
+        if uid not in best or key >= str(best[uid].get("started_at") or best[uid].get("recorded_at") or ""):
+            best[uid] = r
+    return list(best.values())
+
+
+def root_cause_for(test_unique_id: str, node_rows: list[dict], invocation_id: str | None = None) -> str | None:
+    """The root cause node of a test: NODE_EXECUTIONS.root_cause_unique_id of the test's row, in the test result's own
+    invocation when given (None if not recorded)."""
+    for r in node_rows:
+        if invocation_id and r.get("invocation_id") != invocation_id:
+            continue
         if r.get("unique_id") == test_unique_id and r.get("root_cause_unique_id"):
             return r["root_cause_unique_id"]
     return None
 
 
-def highlight(graph: dict, test_unique_id: str | None, node_rows: list[dict]) -> dict[str, str | None]:
+def highlight(graph: dict, test_unique_id: str | None, node_rows: list[dict], invocation_id: str | None = None) -> dict[str, str | None]:
     """{selected, root_cause}: the node ids to emphasise when a failed test is selected."""
     if not test_unique_id:
         return {"selected": None, "root_cause": None}
-    return {"selected": test_unique_id, "root_cause": root_cause_for(test_unique_id, node_rows)}
+    return {"selected": test_unique_id, "root_cause": root_cause_for(test_unique_id, node_rows, invocation_id)}
 
 
 def to_dot(graph: dict, hl: dict[str, str | None] | None = None) -> str:

@@ -17,7 +17,7 @@ EXECS = [
 ]
 TESTS = [
     {"test_unique_id": TEST, "test_name": "not_null", "status": "fail", "executed_at": "2026-11-02 10:00:00"},
-    {"test_unique_id": "test.shop.dbt_utils_recency_raw_orders_loaded_at.f1", "test_name": "recency", "status": "fail",
+    {"test_unique_id": "test.shop.dbt_utils_recency_source_raw_orders_loaded_at.f1", "test_name": "dbt_utils.recency", "status": "fail",
      "executed_at": "2026-11-02 10:00:00"},
 ]
 
@@ -69,6 +69,19 @@ def test_cycle_does_not_hang():
     assert set(g["layers"]) == {"a", "b"}
 
 
+def test_archive_freshness_does_not_mark_orders():
+    t = [{"test_unique_id": "test.shop.source_freshness_source_raw_orders_archive_loaded_at.a", "test_name": "freshness",
+          "status": "fail", "executed_at": "2026-11-02"}]
+    arch = "source.shop.raw.orders_archive"
+    assert dag.stale_sources([SRC, arch], t) == {arch: "fail"}
+
+
+def test_recency_on_model_does_not_mark_source():
+    t = [{"test_unique_id": "test.shop.dbt_utils_recency_stg_raw_orders_loaded_at.a", "test_name": "recency",
+          "status": "fail", "executed_at": "2026-11-02"}]
+    assert dag.stale_sources([SRC], t) == {}
+
+
 # --- page render (needs streamlit; skipped in the dbt venvs) -----------------------------------------
 
 def _render(monkeypatch, edges, execs, tests):
@@ -95,3 +108,32 @@ def test_page_renders_graph_and_stale_warning(monkeypatch):
 def test_page_empty_state(monkeypatch):
     at = _render(monkeypatch, [], [], [])
     assert not at.exception and at.info
+
+
+def test_root_cause_read_in_the_tests_own_invocation():
+    rows = [dict(EXECS[2], invocation_id="build"), {"unique_id": TEST, "invocation_id": "run", "status": "fail"}]
+    assert dag.root_cause_for(TEST, rows, "build") == STG
+    assert dag.root_cause_for(TEST, rows, "run") is None
+
+
+def test_node_keeps_last_status_when_absent_from_latest_run():
+    rows = [{"unique_id": STG, "status": "error", "started_at": "2026-11-01"},
+            {"unique_id": STG, "status": "success", "started_at": "2026-11-02"},
+            {"unique_id": MART, "status": "success", "started_at": "2026-11-01"}]
+    got = {r["unique_id"]: r["status"] for r in dag.latest_per_node(rows)}
+    assert got == {STG: "success", MART: "success"}
+
+
+def test_page_without_session_shows_empty_state(monkeypatch):
+    import pytest
+    pytest.importorskip("streamlit")
+    from lib import queries
+
+    def boom(*a, **k):
+        raise RuntimeError("no active session")
+    monkeypatch.setattr(queries, "lineage_latest", boom)
+    from streamlit.testing.v1 import AppTest
+    page = Path(queries.__file__).resolve().parents[1] / "pages" / "lineage.py"
+    monkeypatch.syspath_prepend(str(page.parents[1]))
+    at = AppTest.from_file(str(page), default_timeout=30).run()
+    assert not at.exception and at.info and at.caption

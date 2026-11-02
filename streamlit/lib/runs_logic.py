@@ -63,7 +63,6 @@ def totals(rows: list[Row]) -> dict[str, Any]:
         "runs": len(rows),
         "failed": failed,
         "credits": sum(float(r["credits"]) for r in rows if r.get("credits") is not None),
-        "credits_known": sum(1 for r in rows if r.get("credits") is not None),
         "total_duration_s": sum(float(r["duration_s"]) for r in rows if r.get("duration_s") is not None),
     }
 
@@ -73,16 +72,3 @@ def slowest_nodes(nodes: list[Row], n: int = 10) -> list[Row]:
     return [{"name": r.get("name"), "status": r.get("status"), "execution_time_s": r["execution_time_s"],
              "credits": r.get("credits"), "rows_affected": r.get("rows_affected")}
             for r in sorted(timed, key=lambda r: -float(r["execution_time_s"]))[:n]]
-
-
-PENDING = "pending"
-
-
-def pending_credits(rows: list[Row]) -> list[Row]:
-    """Display copy of rows: credits as text, 'pending' when none yet (attribution lags by hours), never None or 0."""
-    return [{**r, "credits": PENDING if r.get("credits") is None else f"{float(r['credits']):.4f}"} for r in rows]
-
-
-def credits_metric(t: dict[str, Any]) -> str:
-    """The Credits tile: 'pending' until some run has credits, else the sum over the runs that have them."""
-    return f"{t['credits']:.4f}" if t.get("credits_known") else PENDING

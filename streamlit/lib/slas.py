@@ -39,12 +39,12 @@ def _as_dt(value) -> datetime | None:
 
 
 def format_minutes(minutes) -> str:
-    """90 -> '1h30m', 1440 -> '1d'; a gap under a minute -> '<1m'; None -> ''."""
+    """90 -> '1h30m', 1440 -> '1d'; None -> ''."""
     if minutes is None:
         return ""
     total = int(round(minutes))
     if total <= 0:
-        return "<1m"
+        return "0m"
     parts = []
     for unit, size in (("d", 1440), ("h", 60), ("m", 1)):
         n, total = divmod(total, size)

@@ -38,6 +38,8 @@ This is the way we recommend for developers who want to browse their own observa
 
    The app is at <http://localhost:8501>. `PORT=8600 make app` changes the port. You can also change the schema in the sidebar (Views schema).
 
+If the browser console shows 404s for `/<page>/_stcore/health` when you open a page by its URL, that is Streamlit trying the page path as a base path before falling back to `/`: the page still loads. `scripts/smoke_app_local.sh` checks health and every page URL on a running app.
+
 With no login configured the pages open and show their empty state, as in the tests.
 
 **Try it with demo data.** `make demo-data` (`scripts/demo_data.sh`) runs a copy of [examples/shop](../examples/shop/README.md) several times into a demo schema (`<DB>.ICECORE_DEMO` for the models, `<DB>.ICECORE_DEMO_OBS` for the icecore views): one run with a failing test, a jump in row count after eight runs (recorded as a metric; the tests do not score anomalies yet, and the Tests and anomalies page is not built yet), a `meta.sla` on one model and `cost: true`. It needs a dbt-snowflake environment and the login variables above, and creates objects only in those two schemas. The Cost page fills a few hours later: Snowflake publishes query attribution with a lag, and a later dbt run writes the credits it finds.

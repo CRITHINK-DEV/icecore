@@ -48,6 +48,7 @@ BUILDERS = {
     "NODE_EXECUTIONS": lambda s: queries.build_node_executions(s, EVIL, ["error"]),
     "ALERTS_FEED": lambda s: queries.build_alerts_feed(s, False, "error", EVIL, "2026-01-01"),
     "SILENCE_EVENTS": lambda s: queries.build_silence_events(s, EVIL, "2026-01-01"),
+    "SLA_DECLARED": lambda s: queries.build_sla_declared(s, EVIL),
 }
 
 
@@ -117,7 +118,7 @@ def rendered_views():
 
 
 def test_every_merged_view_is_marked_merged_and_the_others_are_not():
-    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted(MERGED)
+    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted([*MERGED, "SLA_DECLARED"])
     assert queries.VIEWS["ALERTS_FEED"][0] == "pr"
 
 

@@ -48,3 +48,13 @@
 {% macro it_create_silence_task(schema=none, entries=none, source=none, resume=none) %}
   {% do log('icecore_it_result:' ~ tojson(icecore.create_silence_task(schema, entries, source, none, none, resume)), info=True) %}
 {% endmacro %}
+
+
+{#- UC7 SLA_DECLARED (macros/control/create_sla_declared_view.sql). -#}
+{% macro it_sla_declared_ddl(entries, schema=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore.sla_declared_view_ddl(entries, schema)), info=True) %}
+{% endmacro %}
+
+{% macro it_create_sla_declared_view(schema=none, entries=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore.create_sla_declared_view(schema, entries)), info=True) %}
+{% endmacro %}

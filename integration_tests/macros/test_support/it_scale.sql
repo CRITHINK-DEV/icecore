@@ -14,9 +14,9 @@
     Returns the rows, CALLs and statuses, the invocation id, and the wall time of the two halves. -#}
 {% macro it_scale_end_run(nodes, edges=0, near_cap_kb=0, over_cap_kb=0) %}
   {% set results = [] %}
-  {#- timings are recent: the event table drops spans that are hours old (measured while writing this) -#}
-  {% set started = (modules.datetime.datetime.utcnow() - modules.datetime.timedelta(seconds=5)).strftime('%Y-%m-%dT%H:%M:%S.000000Z') %}
-  {% set completed = (modules.datetime.datetime.utcnow() - modules.datetime.timedelta(seconds=2)).strftime('%Y-%m-%dT%H:%M:%S.000000Z') %}
+  {#- timings from Snowflake's clock, a few seconds old (S6: old spans land too; a real older time would do) -#}
+  {% set now = run_query("select to_varchar(dateadd(second, -5, convert_timezone('UTC', current_timestamp())::timestamp_ntz), 'YYYY-MM-DD\"T\"HH24:MI:SS') || '.000000Z', to_varchar(dateadd(second, -2, convert_timezone('UTC', current_timestamp())::timestamp_ntz), 'YYYY-MM-DD\"T\"HH24:MI:SS') || '.000000Z'").rows[0] %}
+  {% set started, completed = now[0], now[1] %}
   {% for i in range(nodes | int) %}
     {% set unique_id = 'model.scale.m_' ~ i %}
     {% set message = ('x' * ((over_cap_kb | int) * 1024) if i == 0 and over_cap_kb else

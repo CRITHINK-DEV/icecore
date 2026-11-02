@@ -19,9 +19,9 @@ so they catch a regression and not noise. They are not service levels. Measured 
 608 rows, 2 CALLs; both with 2,500 synthetic lineage edges in 5 records):
   n=50   build_s 0.18   send_s 6.7    views 1.8 / 1.4 / 0.4 s (INVOCATIONS / NODE_EXECUTIONS / LINEAGE_LATEST)
   n=300  build_s 0.32   send_s 13.9   views 1.8 / 1.2 / 0.4 s
-Finding (measured here): ICECORE_EMIT_RUN lands every record of a batch except node spans whose times are hours
-old (3 hours in the probe): the call returns ok and the spans, with their query events, are silently dropped. The
-synthetic results therefore carry recent times.
+Old spans are not a limit: spike S6 (spikes/S6-old-spans.md) measured ICECORE_EMIT_RUN landing spans from 5 minutes
+to 30 days old. The synthetic timings here are a few seconds old on Snowflake's clock (it_scale.sql), and the rows
+are read back by invocation_id with a wide `since`: TIMESTAMP is a span's end time.
 
 Not covered: the Streamlit Runs page load time. The app cannot be loaded from this suite; it is measured with the
 app (test_app_shell_sandbox.py) when the Runs page exists.
@@ -56,7 +56,23 @@ def test_a_300_node_batch_is_rendered_and_chunked_under_512_kb():
     out = run_macro("it_end_run_render", {"results": results})
     kinds = [r.get("name") or r["attrs"].get("icecore.kind") for r in out["records"]]
     assert kinds.count("icecore.node") == 300 and kinds.count("node_result") == 300 and kinds.count("run_end") == 1
-    assert sum(out["chunk_sizes"]) == len(out["records"]) and all(b <= 512 * KB * 1.01 for b in out["chunk_bytes"])  # measured: 524,718 bytes for the first chunk, 0.08% over 512 KB (the chunker adds 2 bytes a record, tojson of the chunk adds fewer): a soft limit, the hard one is about 1 MB
+    assert sum(out["chunk_sizes"]) == len(out["records"]) and all(b <= 512 * KB for b in out["chunk_bytes"])  # tojson of a chunk is at most the escaped literal the chunker counts
+
+
+def test_a_chunk_literal_as_sent_never_exceeds_max_bytes():
+    """The chunker counts each record's literal (quotes included); the CALL sends the literal of the whole array.
+    Tight limit, equal records: 10 records of 18 bytes would be 202 bytes sent against a 194 limit."""
+    from helpers.macros import call_macro
+    records = [{"k": "x" * 9} for _ in range(30)]  # json.dumps is 18 characters, nothing to escape
+    limit = 194
+    chunks = call_macro("_icecore_emit_chunks", records=records, max_bytes=limit)
+
+    def sent(chunk):  # the escaped literal of the array, as _icecore_block_literal builds it
+        s = json.dumps(chunk).replace("\\", "\\\\").replace("'", "\\'").replace("$", "\\x24")
+        return len("'" + s.replace("\n", "\\n").replace("\r", "\\r") + "'")
+
+    assert sum(len(c) for c in chunks) == 30
+    assert all(sent(c) <= limit for c in chunks), [sent(c) for c in chunks]
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -71,7 +87,7 @@ def obs(sf):
 @pytest.fixture(scope="module", params=SIZES)
 def scaled(sf, obs, request):
     n = request.param
-    since = snowflake_since(sf)
+    since = snowflake_since(sf, minutes=60)  # wide: TIMESTAMP is a span's end time; rows are matched by invocation_id
     dbt_vars = {**icecore_vars(obs, result_message="full"), "it_edges": EDGES}
     out, _ = run_macro_with_logs("it_scale_end_run", {"nodes": n, "edges": EDGES, "near_cap_kb": NEAR_CAP_KB,
                                                        "over_cap_kb": OVER_CAP_KB}, ["--vars", json.dumps(dbt_vars)])

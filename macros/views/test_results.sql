@@ -7,7 +7,8 @@
     icecore.result_message), dbt.root_cause.unique_id / kind (when root-cause attribution wrote them), dbt.test.failures, dbt.result.execution_time_s and, when a scored test wrote them, the
     dbt.anomaly.* keys. A retried or duplicated record collapses to the latest one per (invocation, test).
     executed_at is the event's TIMESTAMP: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3).
-    model_unique_id of the spec is not a column: no emitter writes the tested model's id on the node result. -#}
+    tested_unique_id is dbt.test.attached_node: the model or source the test is attached to (attributes.sql), null for a
+    singular test over several nodes. It is the spec's model_unique_id, widened to sources. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -22,6 +23,7 @@ select
     invocation_id,
     project,
     node_unique_id as test_unique_id,
+    test_attached_node as tested_unique_id,
     test_name,
     test_type,
     test_column as "COLUMN",

@@ -72,6 +72,7 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `credits` | float | The node's credits from its latest `cost` record for this run, so a backfill later replaces an earlier value. Falls back to the result record's credits. Null while attribution has not landed | `dbt.cost.credits` |
 | `credits_settled` | text | `no_attribution` when the latest `cost` record closed the node with what was attributed (0 when Snowflake never wrote an attribution row). Null otherwise: the credits are attributed, or may still change | `dbt.cost.settled` |
 | `root_cause_unique_id` | text | The upstream node that explains a failed test. Set on the test's row only, and only when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
+| `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source`. Set with `root_cause_unique_id` | `dbt.root_cause.kind` |
 | `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |
 
 ## `TEST_RESULTS`
@@ -83,6 +84,7 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `invocation_id` | text | The dbt run | `dbt.invocation_id` |
 | `project` | text | Root dbt project | `dbt.project` |
 | `test_unique_id` | text | The test's dbt unique id | `dbt.node.unique_id` |
+| `tested_unique_id` | text | The model or source the test is attached to (dbt's `attached_node`, else the single model, seed, snapshot or source the test depends on). Null for a singular test over several nodes, and for records written before this key existed | `dbt.test.attached_node` |
 | `test_name` | text | Test name, such as `not_null` | `dbt.test.name` |
 | `test_type` | text | `generic` or `singular` | `dbt.test.type` |
 | `COLUMN` | text | Tested column | `dbt.test.column` |
@@ -98,7 +100,6 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `root_cause_unique_id` | text | The upstream node that explains the failure, when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source` | `dbt.root_cause.kind` |
 
-There is no `model_unique_id` column: no emitter writes the tested model's id on the node result.
 
 ## `METRICS`
 
@@ -244,7 +245,7 @@ Limits, from the macros:
 
 - `SCHEMA_COLUMNS_SNAPSHOT` is a change log, not a snapshot. Elementary appends every current column on every run. Here a column has a row only when it was added or its type changed, so "the latest snapshot per table" returns only the columns of the latest change.
 - icecore holds no manifest metadata. `DBT_MODELS`, `DBT_TESTS` and `DBT_SOURCES` know only what the run records say, so a node appears once it has run. Description, tags, owner, paths and similar columns are NULL.
-- `ELEMENTARY_TEST_RESULTS` has no `model_unique_id`, table or schema name (typed NULLs). Scored tests carry their band in `other` as JSON.
+- `ELEMENTARY_TEST_RESULTS` has no table or schema name (typed NULLs). Its `model_unique_id` is `tested_unique_id`, which can be a source. Scored tests carry their band in `other` as JSON.
 - Times that Elementary stores as text are written as `YYYY-MM-DD HH24:MI:SS` text that Snowflake can cast. The two clocks are never subtracted.
 
 ## Keeping this page in step

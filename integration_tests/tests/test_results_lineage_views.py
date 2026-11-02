@@ -49,10 +49,15 @@ def test_test_results_reads_node_result_logs_of_tests():
     sql = views()["TEST_RESULTS"]
     assert "record_type = 'LOG'" in sql and """attributes:"icecore.kind"::string = 'node_result'""" in sql
     assert "node_unique_id like 'test.%'" in sql
-    for column in ["test_name", 'test_column as "COLUMN"', "test_severity as severity", "result_status as status",
+    for column in ["test_name", "test_attached_node as tested_unique_id", 'test_column as "COLUMN"', "test_severity as severity", "result_status as status",
                    "test_failures as failures", "result_message as message", "event_at as executed_at"]:
         assert column in sql, column
     assert "partition by invocation_id, node_unique_id order by event_at desc) = 1" in sql
+
+
+def test_test_results_and_node_executions_expose_the_new_columns():
+    assert "test_attached_node as tested_unique_id" in views()["TEST_RESULTS"]
+    assert "node_result.root_cause_kind as root_cause_kind" in views()["NODE_EXECUTIONS"]
 
 
 def test_lineage_flattens_the_edge_lists_of_lineage_logs():
@@ -108,6 +113,12 @@ def seeded(dbt, sf):
             rows = invocation_records(sf, schema, invocation, min_rows=3 * len(nodes) + 2, since=since)
         finally:
             drop_fixture_views(sf, run_id)
+        # a failed test with a root cause, in the record shape root cause writes (emit_root_cause.sql)
+        run_macro("it_emit_run_items", {"items": [{
+            "type": "log", "level": "error", "message": "rc",
+            "attrs": {"icecore.kind": "node_result", "dbt.node.unique_id": f"test.p.rc_{run_id}", "dbt.node.type": "test",
+                      "dbt.result.status": "fail", "dbt.root_cause.unique_id": f"source.p.s.t_{run_id}",
+                      "dbt.root_cause.kind": "stale_source", "dbt.invocation_id": "rc-" + run_id}}]}, obs_vars)
         # lineage: an old two-record emission, then a newer single-record one (a later invocation each)
         run_macro("it_emit_run_items", {"items": lineage_logs(run_id, EDGES_OLD, parts=2)}, obs_vars)
         time.sleep(3)
@@ -136,7 +147,7 @@ def test_create_views_creates_the_views_of_this_file(seeded):
 
 @pytest.mark.sandbox
 def test_warning_test_is_one_row_with_three_failures(sf, seeded):
-    rows = _rows(sf, seeded, "TEST_RESULTS")
+    rows = _rows(sf, seeded, "TEST_RESULTS", "invocation_id = %(i)s", {"i": seeded["invocation"]})
     assert len(rows) == 1 and rows[0]["invocation_id"] == seeded["invocation"]
     r = rows[0]
     assert r["test_unique_id"].startswith("test.") and r["test_name"] == "accepted_values"
@@ -145,6 +156,18 @@ def test_warning_test_is_one_row_with_three_failures(sf, seeded):
     assert r["engine"] is None and r["score"] is None
     expected = next(n for n in seeded["nodes"] if n["unique_id"].startswith("test."))
     assert r["test_unique_id"] == expected["unique_id"]
+    # the test is attached to hooks_c: the real attached_node of the real dbt build
+    assert r["tested_unique_id"] == "model.icecore_integration_tests.hooks_c", r["tested_unique_id"]
+    assert r["tested_unique_id"] in {n["unique_id"] for n in seeded["nodes"]}
+
+
+@pytest.mark.sandbox
+def test_node_executions_exposes_root_cause_kind(sf, seeded):
+    rid = seeded["run_id"]
+    (r,) = _rows(sf, seeded, "NODE_EXECUTIONS", "unique_id = %(u)s", {"u": f"test.p.rc_{rid}"})
+    assert r["root_cause_unique_id"] == f"source.p.s.t_{rid}" and r["root_cause_kind"] == "stale_source"
+    models = _rows(sf, seeded, "NODE_EXECUTIONS", "type = 'model' and root_cause_unique_id is null")
+    assert models and all(m["root_cause_kind"] is None for m in models)
 
 
 @pytest.mark.sandbox

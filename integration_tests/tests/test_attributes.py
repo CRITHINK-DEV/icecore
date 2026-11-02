@@ -97,6 +97,58 @@ def test_test_node_attributes():
     assert attrs["dbt.test.severity"] == "ERROR"
 
 
+def _test_node(**kw):
+    node = {"unique_id": "test.p.t", "name": "t", "resource_type": "test", "config": {"severity": "ERROR"},
+            "test_metadata": {"name": "not_null"}}
+    node.update(kw)
+    return node
+
+
+def _attached(node):
+    return run_macro("it_node_attributes", {"node": node}).get("dbt.test.attached_node")
+
+
+def test_generic_test_names_its_attached_node():
+    assert _attached(_test_node(attached_node="model.p.orders", depends_on={"nodes": ["model.p.orders"]})) == "model.p.orders"
+
+
+def test_attached_node_wins_over_depends_on():
+    # a relationships test depends on two models; attached_node says which one it tests
+    node = _test_node(attached_node="model.p.orders", depends_on={"nodes": ["model.p.orders", "model.p.customers"]})
+    assert _attached(node) == "model.p.orders"
+
+
+def test_source_test_names_the_source():
+    node = _test_node(attached_node="source.p.raw.orders", depends_on={"nodes": ["source.p.raw.orders"]})
+    assert _attached(node) == "source.p.raw.orders"
+
+
+def test_without_attached_node_the_single_model_or_source_in_depends_on_is_used():
+    assert _attached(_test_node(depends_on={"nodes": ["model.p.orders"], "macros": ["macro.p.m"]})) == "model.p.orders"
+    assert _attached(_test_node(depends_on={"nodes": ["source.p.raw.orders"]})) == "source.p.raw.orders"
+
+
+def test_singular_test_over_several_nodes_has_no_attached_node():
+    singular = {"unique_id": "test.p.s", "name": "s", "resource_type": "test", "config": {},
+                "depends_on": {"nodes": ["model.p.orders", "model.p.customers"]}}
+    attrs = run_macro("it_node_attributes", {"node": singular})
+    assert "dbt.test.attached_node" not in attrs and attrs["dbt.test.type"] == "singular"
+    assert _attached(_test_node(depends_on={"nodes": []})) is None
+    assert _attached(_test_node()) is None
+
+
+def test_singular_test_over_one_model_names_it():
+    singular = {"unique_id": "test.p.s", "name": "s", "resource_type": "test", "config": {},
+                "depends_on": {"nodes": ["model.p.orders"]}}
+    assert _attached(singular) == "model.p.orders"
+
+
+def test_non_test_nodes_have_no_attached_node():
+    node = {"unique_id": "model.p.m", "name": "m", "resource_type": "model", "config": {},
+            "depends_on": {"nodes": ["model.p.orders"]}}
+    assert _attached(node) is None
+
+
 def test_result_values_stay_typed():
     result = {"status": "success", "execution_time": 4.2, "message": "SUCCESS 1200",
               "adapter_response": {"rows_affected": 1200, "query_id": "01c5a039-0000-0000-0000-000000000001"}}

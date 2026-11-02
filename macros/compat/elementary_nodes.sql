@@ -11,7 +11,7 @@
                    depends_on_nodes (JSON list of the node's parents in LINEAGE_LATEST, the latest invocation's graph, null when it has none).
       dbt_tests    one row per test that ran (its latest execution joined to TEST_RESULTS): unique_id, name, short_name
                    (the test's name), test_column_name, severity, type (generic or singular), package_name, generated_at.
-                   Tests are not lineage edges, so depends_on_nodes and parent_model_unique_id are NULL.
+                   Tests are not lineage edges, so depends_on_nodes is NULL; parent_model_unique_id is the tested node.
       dbt_sources  one row per source that is a parent in LINEAGE_LATEST: unique_id, source_name, name, package_name (from
                    the unique_id source.<package>.<source>.<table>) and generated_at (the latest lineage record time).
     Every other column is a typed NULL (description, tags, meta, owner, paths, checksum and hashes, database and schema of
@@ -51,7 +51,7 @@
   {%- set obs = obs or icecore.obs_schema() -%}
   {%- set source -%}
 (
-    select n.unique_id, n.name, n.recorded_at, r.test_name, r.test_type, r."COLUMN" as test_column, r.severity
+    select n.unique_id, n.name, n.recorded_at, r.test_name, r.test_type, r."COLUMN" as test_column, r.severity, r.tested_unique_id
     from {{ obs }}."NODE_EXECUTIONS" as n
     left join {{ obs }}."TEST_RESULTS" as r on r.invocation_id = n.invocation_id and r.test_unique_id = n.unique_id
     where n.type = 'test'
@@ -131,7 +131,7 @@
     {'name': 'meta', 'type': 'long_string', 'expr': none},
     {'name': 'depends_on_macros', 'type': 'long_string', 'expr': none},
     {'name': 'depends_on_nodes', 'type': 'long_string', 'expr': none},
-    {'name': 'parent_model_unique_id', 'type': 'string', 'expr': none},
+    {'name': 'parent_model_unique_id', 'type': 'string', 'expr': 't.tested_unique_id'},
     {'name': 'description', 'type': 'long_string', 'expr': none},
     {'name': 'package_name', 'type': 'string', 'expr': "split_part(t.unique_id, '.', 2)"},
     {'name': 'type', 'type': 'string', 'expr': "t.test_type"},

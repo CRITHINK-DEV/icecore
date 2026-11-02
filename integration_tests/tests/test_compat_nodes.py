@@ -78,8 +78,8 @@ def test_tests_fill_name_short_name_column_severity_and_type_and_null_the_rest()
     columns = {c["name"]: c["expr"] for c in rendered()["tests"]}
     assert (columns["name"], columns["short_name"], columns["test_column_name"], columns["severity"], columns["type"]) == (
         "t.name", "t.test_name", "t.test_column", "t.severity", "t.test_type")
-    assert columns["parent_model_unique_id"] is None and columns["depends_on_nodes"] is None
-    assert len([n for n, e in columns.items() if e is None]) == 29 - 8
+    assert columns["parent_model_unique_id"] == "t.tested_unique_id" and columns["depends_on_nodes"] is None
+    assert len([n for n, e in columns.items() if e is None]) == 29 - 9
 
 
 def test_sources_are_read_from_the_unique_id_and_lineage():

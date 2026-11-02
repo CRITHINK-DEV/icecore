@@ -43,6 +43,7 @@
       {%- do icecore._icecore_put(out, 'dbt.test.type', 'generic' if test_metadata is not none else 'singular') -%}
       {%- do icecore._icecore_put(out, 'dbt.test.column', get(node, 'column_name')) -%}
       {%- do icecore._icecore_put(out, 'dbt.test.severity', get(config, 'severity')) -%}
+      {%- do icecore._icecore_put(out, 'dbt.test.attached_node', icecore._icecore_tested_node(node)) -%}
     {%- endif -%}
   {%- endif -%}
   {%- if result is not none -%}
@@ -56,6 +57,25 @@
     {%- do icecore._icecore_put(out, 'snow.query.id', get(response, 'query_id')) -%}
   {%- endif -%}
   {{ return(out) }}
+{% endmacro %}
+
+
+{#- The node a test tests: dbt's `attached_node` (dbt 1.5 and later, set on generic tests) or, without it, the one
+    model, seed, snapshot or source in depends_on.nodes. None when there is none or more than one (a singular test
+    over several nodes): the key is then left out rather than guessed. -#}
+{% macro _icecore_tested_node(node) %}
+  {%- set get = icecore._icecore_get -%}
+  {%- set attached = get(node, 'attached_node') -%}
+  {%- if attached is not none and (attached | string) != '' -%}
+    {{ return(attached | string) }}
+  {%- endif -%}
+  {%- set parents = [] -%}
+  {%- for uid in (get(get(node, 'depends_on'), 'nodes') or []) -%}
+    {%- if (uid | string).split('.')[0] in ['model', 'seed', 'snapshot', 'source'] and (uid | string) not in parents -%}
+      {%- do parents.append(uid | string) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(parents[0] if parents | length == 1 else none) }}
 {% endmacro %}
 
 

@@ -121,6 +121,7 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('test_column', 'dbt.test.column', 'string'),
     ('test_severity', 'dbt.test.severity', 'string'),
     ('test_failures', 'dbt.test.failures', 'integer'),
+    ('test_attached_node', 'dbt.test.attached_node', 'string'),
     ('metric_name', 'dbt.metric.name', 'string'),
     ('metric_column', 'dbt.metric.column', 'string'),
     ('metric_dimension', 'dbt.metric.dimension', 'string'),

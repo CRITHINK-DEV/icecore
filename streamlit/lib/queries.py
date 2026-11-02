@@ -44,7 +44,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "relation", "change_kind", "column", "from_type", "to_type", "detected_at", "invocation_id",
         "node_unique_id", "emit_query_id")),
     "TEST_RESULTS": ("merged", "macros/views/test_results.sql", (
-        "invocation_id", "project", "test_unique_id", "test_name", "test_type", "column", "severity", "status",
+        "invocation_id", "project", "test_unique_id", "tested_unique_id", "test_name", "test_type", "column", "severity", "status",
         "failures", "message", "execution_time_s", "root_cause_unique_id", "root_cause_kind", "engine", "expected", "lower", "upper", "score", "executed_at",
         "query_id")),
     "LINEAGE": ("merged", "macros/views/lineage.sql", (
@@ -61,7 +61,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "message", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
-        "root_cause_unique_id",
+        "root_cause_unique_id", "root_cause_kind",
         "recorded_at")),
     "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",

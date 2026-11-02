@@ -10,13 +10,16 @@ from lib.ui import empty_state, page_header
 
 page_header("Cost", "What to optimise.", ["node_executions", "invocations", "metrics"])
 
-now = datetime.now()
-since = now - timedelta(days=cost.TREND_DAYS)
+since = datetime.now() - timedelta(days=cost.TREND_DAYS)
 try:
     invocation_rows = queries.invocations(since=since, limit=5000)
-    models = cost.credits_per_model(queries.node_executions(limit=queries.MAX_LIMIT))
-except Exception:  # no Snowpark session (offline) or the views are not created yet: show the empty state
-    invocation_rows, models = [], []
+    models = cost.credits_per_model(queries.node_executions(since=since, limit=queries.MAX_LIMIT))
+except Exception as exc:  # no Snowpark session (offline) or the views are not created yet: show the empty state
+    invocation_rows, models, load_error = [], [], str(exc)
+else:
+    load_error = None
+starts = [r["started_at"] for r in invocation_rows if r.get("started_at")]
+now = max(starts) if starts else datetime.now()  # day buckets follow the dbt host's clock, not the app's
 runs = cost.credits_per_run(invocation_rows)
 
 if not runs and not models:
@@ -24,6 +27,8 @@ if not runs and not models:
         "No cost data yet. Set `cost: true` under `vars: icecore:` in dbt_project.yml, "
         "run `dbt run-operation icecore.setup`, then run dbt."
     )
+    if load_error:
+        st.caption(f"Reading the views failed: {load_error}")
     st.stop()
 
 st.subheader("Trend, last 30 days")

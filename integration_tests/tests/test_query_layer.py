@@ -409,3 +409,10 @@ def test_the_second_call_is_served_from_cache_on_the_real_session(seeded):
     finally:
         lay.session.sql = real
     assert len(seen) == 1
+
+
+def test_node_executions_since_is_bound_and_last():
+    sql, params = queries.build_node_executions("OBS", "inv", ["success"], 50, "2026-01-01")
+    assert "started_at >= to_timestamp_ntz(?)" in sql and "'" not in sql
+    assert params == ["inv", "success", "2026-01-01", 50]
+    assert queries.build_node_executions("OBS")[1] == [queries.DEFAULT_LIMIT]

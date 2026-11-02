@@ -5,9 +5,10 @@
     are the only verdict. The previous observation is the newest metric record of this column of this relation, read
     through icecore.base_events(), from the window end it recorded (`dbt.window.until`); with none, the window starts `lookback_hours` ago, and `since` overrides both.
     Pass or fail comes only from the bounds: the history read and the emits are guarded. -#}
-{% test column_anomaly(model, column_name, metrics=none, bounds=none, since=none, timestamp_column=none, lookback_hours=24) %}
+{% test column_anomaly(model, column_name, metrics=none, bounds=none, since=none, timestamp_column=none, lookback_hours=24, window_tag=none) %}
   {%- set names = icecore._icecore_column_metric_defaults() if metrics is none else metrics -%}
   {%- do icecore._icecore_validate_bounds(bounds, names, 'icecore.column_anomaly') -%}
+  {%- do icecore._icecore_validate_window_tag(window_tag) -%}
   {%- set bounds = bounds or {} -%}
 
   {%- set breaches = [] -%}
@@ -15,7 +16,7 @@
     {%- set name = icecore._icecore_quoted_name(model) -%}
     {#- the window end is taken before the read and recorded on every metric, so the next window starts from it -#}
     {%- set until = icecore._icecore_now_iso() -%}
-    {%- set since = icecore._icecore_window_since(model, 'column', column_name, since, lookback_hours) -%}
+    {%- set since = icecore._icecore_window_since(model, 'column', column_name, since, lookback_hours, window_tag) -%}
     {%- set window = icecore.get_change_window(model, since, timestamp_column, until) -%}
     {%- set values = icecore.compute_column_metrics(model, column_name, window, names) -%}
     {%- if values is none -%}
@@ -25,8 +26,9 @@
       {%- for metric, value in values.items() -%}
         {#- UC3 scoring hook: icecore.score(<history of this metric>, value) plugs in here and its result goes to
             emit_metrics as `anomaly` of the entry. Not called at this stage (engine none). -#}
-        {%- do to_emit.append({'metric': metric, 'value': value, 'column': column_name,
-            'attributes': {'dbt.window.until': until, 'dbt.window.monitor': 'column_anomaly'}}) -%}
+        {%- set attrs = {'dbt.window.until': until, 'dbt.window.monitor': 'column_anomaly'} -%}
+        {%- if window_tag is not none -%}{%- do attrs.update({'dbt.window.tag': window_tag}) -%}{%- endif -%}
+        {%- do to_emit.append({'metric': metric, 'value': value, 'column': column_name, 'attributes': attrs}) -%}
         {%- if icecore._icecore_outside(value, bounds.get(metric)) -%}
           {%- set limit = bounds.get(metric) -%}
           {%- do breaches.append({'metric': metric, 'value': value, 'min': limit.get('min'), 'max': limit.get('max')}) -%}

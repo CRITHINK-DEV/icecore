@@ -191,14 +191,19 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |
+| `INVOCATIONS` | view | One row per dbt invocation. |
+| `NODE_EXECUTIONS` | view | One row per node per invocation. |
 | `TEST_RESULTS` | view | One row per test per invocation. |
 | `LINEAGE` | view | One row per dependency edge per invocation. |
 | `LINEAGE_LATEST` | view | The edges of each project's latest invocation that wrote lineage. |
 | `CAPABILITIES` | view | The latest detection of edition, event table, levels and Cortex, per database. |
+| `SILENCE_EVENTS` | view | One row per missed run, written by the silence task. |
+
+Columns, types and source keys of every view are in the [views reference](reference/views.md).
 
 The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. The role that runs dbt also needs SELECT on the views. Readers need USAGE on the database and schema, SELECT on the views, and the `EVENTS_VIEWER` application role when the views read the account table.
 
-Which view fills from which record today: `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness` and `icecore.volume` tests. `SCHEMA_CHANGES` stays empty until the test that writes it is merged.
+Which view fills from which record today: `INVOCATIONS`, `NODE_EXECUTIONS`, `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` tests, `SCHEMA_CHANGES` from the `icecore.schema_changes` test, and `SILENCE_EVENTS` from the silence task.
 
 ## Generic tests
 

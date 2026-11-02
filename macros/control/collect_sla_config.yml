@@ -6,7 +6,7 @@ macros:
       Reads the SLA and alert settings that users declare in model YAML, next to the model.
       Declare them under `config: meta:` (top-level `meta:` raises
       PropertyMovedToConfigDeprecation on dbt 1.12):
-      `config: {meta: {sla: {expected_every: 1h, grace: 15m}, alerts: {channel: data-platform, severity: warn}}}`.
+      `config: {meta: {sla: {expected_every: 1h, grace: 15m}, alerts: {channel: data_platform, severity: warn}}}`.
       dbt merges `config()` in SQL > YAML > `+meta` in dbt_project.yml into both `node.meta`
       and `node.config.meta`, so any of those places works. The macro reads `meta` over
       `config.meta`, which only matters for nodes built by hand.

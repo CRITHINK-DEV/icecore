@@ -144,10 +144,10 @@ flowchart LR
 | **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `building` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
 | **Setup and doctor** | `icecore.setup` creates the schema, the two emitter procedures and the views, and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
-| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; `metrics` and `schema_changes` exist, the rest follow. | `building` |
+| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; all exist. | `building` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
 | **Missed-run detection** | A Snowflake task compares `meta.sla` schedules with the last successful run. | `planned` |
-| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `planned` |
+| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. Missed runs and cost regressions do not raise alerts yet. | `building` |
 | **Cortex engine and shadow scoring** | `SNOWFLAKE.ML.ANOMALY_DETECTION` when the account allows it, compared side by side with the native engine. | `planned` |
 | **Failed-row samples** | A capped sample of failing rows on test failure (payload limits from spike S2). | `planned` |
 | **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. | `planned` |
@@ -201,7 +201,11 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
+- [Public roadmap](docs/roadmap.md): what is built, what comes next and what is only considered.
+- [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
+- [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
+- [Troubleshooting](docs/troubleshooting.md): by symptom, with how to confirm and the fix.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 
 ## Develop icecore
@@ -217,7 +221,7 @@ The full guide is [docs/development.md](docs/development.md): the two dbt enviro
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
+Issues and pull requests are welcome. Read [CONTRIBUTING](CONTRIBUTING.md) first. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
 
 <!-- enable at public release (Gate 3) -->
 <!--

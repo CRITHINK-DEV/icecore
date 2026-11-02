@@ -357,7 +357,7 @@ def test_hostile_sla_text_is_data_end_to_end(silence):
     objects = silence["sf"].cursor().execute(f"show objects in schema {silence['qs']}").fetchall()
     assert not [o for o in objects if o[1] not in ("ICECORE_SILENCE", "STANDIN_NODES")
                 and o[1] not in {"METRICS", "SCHEMA_CHANGES", "INVOCATIONS", "NODE_EXECUTIONS", "SILENCE_EVENTS", "TEST_RESULTS",
-                                 "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "SCHEMA_COLUMNS"}]
+                                 "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "ALERTS_FEED", "SLA_DECLARED", "SCHEMA_COLUMNS"}]
 
 
 @pytest.mark.sandbox
@@ -411,3 +411,53 @@ def test_recorded_at_of_a_real_build_is_within_seconds_of_snowflakes_clock(sf, r
             assert lag[1] >= 0 and lag[0] < 300, lag  # the record landed seconds ago on Snowflake's clock, not dbt's
     finally:
         drop_fixture_views(sf, run_id)
+
+
+# --- UC7 SLA_DECLARED (macros/control/create_sla_declared_view.sql) ---------------------------------
+
+def declared_ddl(entries, **kwargs) -> str:
+    return run_macro("it_sla_declared_ddl", {"entries": entries, **kwargs})
+
+
+@pytest.mark.parametrize("value", ["a$$b", "a'b", "a\\b", "a;b", "a\nb", EVIL])
+def test_sla_declared_hostile_text_stays_data(value):
+    ddl = declared_ddl([entry(value, channel=value)])
+    outside, found = literals(ddl)
+    assert ";" not in outside and "$$" not in outside and len(found) == 1, outside
+    row = json.loads(found[0])[0]
+    assert row["unique_id"] == value and row["channel"] == value
+
+
+def test_sla_declared_text_does_not_depend_on_the_sla_and_lists_only_meta_sla_entries():
+    plain = declared_ddl([entry("model.p.a")], schema="my_obs")
+    hostile = declared_ddl([entry(EVIL, channel=EVIL), {**entry("model.p.alerts"), "expected_every_minutes": None}],
+                           schema="my_obs")
+    assert literals(plain)[0] == literals(hostile)[0]
+    assert plain.startswith('CREATE OR REPLACE VIEW "') and '."MY_OBS"."SLA_DECLARED" COPY GRANTS AS' in plain
+    assert [e["unique_id"] for e in json.loads(literals(hostile)[1][0])] == [EVIL]
+    assert "flatten(input => parse_json(<lit>))" in literals(plain)[0]
+
+
+def test_sla_declared_with_no_sla_is_an_empty_typed_array():
+    ddl = declared_ddl([])
+    assert json.loads(literals(ddl)[1][0]) == [] and "f.value:expected_every_minutes::number" in ddl
+
+
+@pytest.mark.sandbox
+def test_setup_creates_sla_declared_with_the_declared_rows_and_zero_rows_when_none(sf):
+    schema = f"ICECORE_OBS_{uuid.uuid4().hex}".upper()
+    qs = f'"{DATABASE}"."{schema}"'
+    cur = sf.cursor(DictCursor)
+    cur.execute(f"create schema {qs}")
+    try:
+        entries = [entry(EVIL, 60, 5, channel=EVIL, severity="error"), entry("model.it.b", 1440, 1),
+                   {**entry("model.it.alerts_only"), "expected_every_minutes": None}]
+        obs = ["--vars", json.dumps({"icecore": {"obs_schema": schema}})]
+        assert run_macro("it_create_sla_declared_view", {"schema": schema, "entries": entries}, obs) == "ok"
+        rows = cur.execute(f"select * from {qs}.SLA_DECLARED order by expected_every_minutes").fetchall()
+        assert [(r["UNIQUE_ID"], r["EXPECTED_EVERY_MINUTES"], r["GRACE_MINUTES"], r["CHANNEL"], r["SEVERITY"])
+                for r in rows] == [(EVIL, 60, 5, EVIL, "error"), ("model.it.b", 1440, 1, None, "warn")]
+        assert run_macro("it_create_sla_declared_view", {"schema": schema, "entries": []}, obs) == "ok"
+        assert cur.execute(f"select count(*) c from {qs}.SLA_DECLARED").fetchone()["C"] == 0
+    finally:
+        cur.execute(f"drop schema if exists {qs} cascade")

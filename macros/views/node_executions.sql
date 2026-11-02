@@ -70,6 +70,7 @@ select
     coalesce(node_span.node_materialization, node_result.node_materialization) as materialization,
     coalesce(node_span.node_relation, node_result.node_relation) as relation,
     node_result.result_status as status,
+    node_result.result_message as message,
     node_result.result_rows_affected as rows_affected,
     node_result.result_execution_time_s as execution_time_s,
     coalesce(

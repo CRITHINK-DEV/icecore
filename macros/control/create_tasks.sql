@@ -1,7 +1,9 @@
 {#- UC5 setup step `create_tasks`: ONE list of the package's tasks (_icecore_task_entries), run in order by create_tasks.
     A story that adds a task adds an entry here; setup calls only create_tasks. Each entry is
     {name, create}: `create` names a macro that takes (schema, capabilities) and returns {task, status, resumed, printed},
-    status ok, skipped or the guarded error. Tasks are created suspended unless their own var resumes them. -#}
+    status ok, skipped or the guarded error. Tasks are created suspended unless their own var resumes them.
+    The silence task is created only when var alerts is true (then resumed unless silence_task_resume is false);
+    the Cortex task does not depend on it. -#}
 
 {% macro create_tasks(schema=none, capabilities=none) %}
   {%- set out = {'tasks': [], 'printed': []} -%}
@@ -12,7 +14,12 @@
     {%- if entry['name'] == 'cortex_refresh' -%}
       {%- set result = icecore.create_refresh_cortex_task(schema=schema, capabilities=capabilities) -%}
     {%- elif entry['name'] == 'silence' -%}
-      {%- set result = icecore.create_silence_task(schema=schema) -%}
+      {%- if icecore._icecore_flag('alerts', false) -%}
+        {%- set result = icecore.create_silence_task(schema=schema) -%}
+      {%- else -%}
+        {#- var alerts false: no silence task (it feeds the alerts) -#}
+        {%- set result = {'task': none, 'status': 'skipped', 'resumed': false, 'printed': []} -%}
+      {%- endif -%}
     {%- else -%}
       {{ exceptions.raise_compiler_error('icecore: unknown task entry ' ~ entry['name']) }}
     {%- endif -%}

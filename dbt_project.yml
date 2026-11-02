@@ -21,7 +21,8 @@ vars:
     cost: false
     root_cause: false
     root_cause_lookback_hours: 24       # root cause: how far back SCHEMA_CHANGES and METRICS signals count (UC4)
-    alerts: false
+    alerts: false                       # true: setup creates the alerts and the silence task AND resumes them (warehouse time); false: it creates neither
+    alert_resume: null                  # true or false overrides `alerts` for the alerts' resume only; null follows `alerts`
     anomaly_engine: auto
     anomaly_sensitivity: medium
     anomaly_min_consecutive: 1
@@ -32,7 +33,7 @@ vars:
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
     silence_task_schedule: 5 MINUTE      # schedule of the silence task (UC6)
-    silence_task_resume: false           # true resumes the task at setup; it needs EXECUTE TASK on the account
+    silence_task_resume: null            # true or false overrides `alerts` for the silence task's resume only; null follows `alerts`. Resuming needs EXECUTE TASK on the account
     metadata_fallback_kinds: [iceberg, materialized_view]   # table kinds whose metadata row count is not trusted (spike S5; materialized views: uc2-table-kinds)
     baseline_lookback_days: 30          # how far the generic tests look back for a baseline (schema signature, previous window); older counts as first run
     dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

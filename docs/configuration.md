@@ -95,9 +95,21 @@ These keys are in the package's `dbt_project.yml`, but no merged macro reads the
 | --- | --- | --- |
 | `monitors` | `true` | **coming** |
 | `cost` | `false` | **coming** |
-| `alerts` | `false` | **coming** |
+The app is **coming** too.
 
-The `meta.sla` and `meta.alerts` model settings, the alerts and the app are **coming** too.
+### Alerts and tasks
+
+`setup` creates the alerts and the silence task only when `alerts` is `true`. With `alerts: false` (the default) it creates no ALERT and no silence TASK (the Cortex refresh task does not depend on this var). The settings:
+
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `alerts` | `false` | boolean | `true`: `setup` creates one ALERT per channel of `alert_channels` and the silence TASK, **and resumes them**. `false`: it creates neither. | **Cost: a resumed alert or task runs on its warehouse every schedule period (default 5 minutes for the task) and uses the warehouse time of the account that owns it.** |
+| `alert_channels` | none | mapping | One alert per channel: `{name: {type: email\|slack\|teams, integration: <notification integration>, recipients: [...], default: true}}`. An admin creates the integrations: `setup` prints the statements. | None until an alert is resumed and finds an incident. |
+| `alert_resume` | `null` | boolean | `null` follows `alerts`. `false` keeps the alerts suspended even with `alerts: true`; `true` resumes them. | Cost as above. |
+| `silence_task_resume` | `null` | boolean | Same, for the silence task. `false` keeps it suspended with `alerts: true`. | Cost as above. |
+| `alert_schedule_minutes`, `alert_warehouse`, `silence_task_schedule`, `silence_task_warehouse` | see the macros | | Schedule and warehouse of each object. | Shorter schedules use more warehouse time. |
+
+`setup` is safe to run twice: each object has a fixed name (`ICECORE_ALERT_<CHANNEL>`, `ICECORE_SILENCE`), is created with `CREATE OR REPLACE`, and is resumed again by the same rule, so a second run leaves the same objects and no duplicates. The silence task needs at least one model with `meta.sla`. Resuming needs the `EXECUTE ALERT` and `EXECUTE TASK` privileges on the account: when the role lacks one, `setup` prints the grant and the object stays suspended. The setup output warns when it resumed something. To stop the cost, `ALTER ALERT ... SUSPEND` and `ALTER TASK ... SUSPEND`.
 
 ## Hooks
 
@@ -136,7 +148,7 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
-Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for alerts and tasks always print the same line, because they are **coming**.
+Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
 
 The role that runs `setup` needs:
 

@@ -23,9 +23,12 @@
                   then one CALL of ICECORE_NOTIFIED(incident_key, channel) per incident (never an INSERT, never ICECORE_EMIT, which
                   refuses `icecore.notified`), so the incident is not sent again inside the dedup window. The alerts' owner
                   role needs USAGE on ICECORE_NOTIFIED; the dbt role must not have it. At most 50 incidents per run.
-    Alerts are created SUSPENDED (Snowflake's default) and icecore never resumes one: create_alerts prints the
-    `ALTER ALERT ... RESUME` statements for an admin (nothing sends or costs anything without consent). Re-running
-    setup replaces an alert and so suspends it again.
+    Alerts are created SUSPENDED (Snowflake's default) and resumed only with consent: the var icecore.alert_resume
+    (true or false) when set, otherwise the var icecore.alerts. Both default to not resuming (alerts: false). A
+    resumed alert runs on its warehouse every schedule period and costs the owner warehouse time. Resuming needs
+    EXECUTE ALERT on the account: when it fails the grant is printed and the alert stays suspended. CREATE OR REPLACE
+    ALERT suspends an alert, so a re-run of setup resumes it again under the same rule (one alert per channel, never a
+    duplicate: the name is fixed by the channel).
     The alert text is constant: node ids from meta, the channel, the integration and the recipients enter only as one
     PARSE_JSON string literal of a JSON config object (condition and action each have one), read inside the text.
     Notification integrations need an admin: create_alerts prints the CREATE NOTIFICATION INTEGRATION statements and
@@ -36,9 +39,10 @@
 
 {#- Creates every channel's alert in <target db>.<schema>; returns [{channel, alert, status}]. Prints the
     integration statements and grants. With no channel configured it creates nothing and says how to configure. -#}
-{% macro create_alerts(schema=none) %}
+{% macro create_alerts(schema=none, resume=none) %}
   {%- set created = [] -%}
   {%- if execute -%}
+    {%- set want_resume = icecore._icecore_resume_flag('alert_resume') if resume is none else resume -%}
     {%- set channels = icecore.alert_channels() -%}
     {%- if not channels -%}
       {%- do log('icecore: create_alerts: no alert channel configured; set vars: icecore: alert_channels: {<name>: {type: email|slack|teams, integration: <notification integration>}}', info=True) -%}
@@ -49,14 +53,33 @@
       {%- if status != 'ok' -%}
         {%- do log('icecore: warning: alert ' ~ channel['name'] ~ ' not created (' ~ status ~ '); the role needs CREATE ALERT on the schema, USAGE on the warehouse and on the notification integration', info=True) -%}
       {%- endif -%}
-      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status}) -%}
-      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ ', suspended', info=True) -%}
+      {%- set resumed = false -%}
+      {%- if status == 'ok' and want_resume -%}
+        {%- set r = icecore._icecore_guarded_ddl('ALTER ALERT ' ~ icecore.alert_name(channel, schema) ~ ' RESUME') -%}
+        {%- if r == 'ok' -%}
+          {%- set resumed = true -%}
+        {%- else -%}
+          {%- do log('icecore: warning: could not resume alert ' ~ channel['name'] ~ ' (' ~ r ~ '); it stays suspended. An admin must run: GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ target.role, info=True) -%}
+        {%- endif -%}
+      {%- endif -%}
+      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status, 'resumed': resumed}) -%}
+      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ (', resumed (it uses warehouse time on every schedule period)' if resumed else ', suspended'), info=True) -%}
     {%- endfor -%}
     {%- if channels -%}
       {%- do log('icecore: an admin runs these once (icecore never creates integrations):\n' ~ (icecore.alert_integration_sql(channels, schema) | join('\n')), info=True) -%}
     {%- endif -%}
   {%- endif -%}
   {{ return(created) }}
+{% endmacro %}
+
+
+{#- Whether setup resumes an object it created: its own var (alert_resume, silence_task_resume) when set to true or
+    false, otherwise the var `alerts`. Both default to not resuming. -#}
+{% macro _icecore_resume_flag(key) %}
+  {%- if icecore._icecore_setting(key, none) is none -%}
+    {{ return(icecore._icecore_flag('alerts', false)) }}
+  {%- endif -%}
+  {{ return(icecore._icecore_flag(key, false)) }}
 {% endmacro %}
 
 
@@ -165,7 +188,7 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
     {%- do out.append('GRANT USAGE ON INTEGRATION ' ~ i ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- endfor -%}
   {%- for c in channels -%}
-    {%- do out.append('ALTER ALERT ' ~ icecore.alert_name(c, schema) ~ ' RESUME;  -- only once the integration and its grants exist; icecore never resumes an alert') -%}
+    {%- do out.append('ALTER ALERT ' ~ icecore.alert_name(c, schema) ~ ' RESUME;  -- only once the integration and its grants exist; setup resumes alerts itself only when var alerts is true') -%}
   {%- endfor -%}
   {%- do out.append('GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- do out.append('GRANT USAGE ON WAREHOUSE ' ~ icecore._icecore_identifier(wh) ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}

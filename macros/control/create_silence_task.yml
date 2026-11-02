@@ -31,4 +31,4 @@ macros:
         description: The task's SCHEDULE. Default the `silence_task_schedule` var.
       - name: resume
         type: boolean
-        description: Resume the task after creating it. Default the `silence_task_resume` var (false).
+        description: Resume the task after creating it. Default the `silence_task_resume` var; when that is unset, the `alerts` var.

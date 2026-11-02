@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in icecore does not work as documented.
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `dbt run-operation icecore.doctor`
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: icecore_version
+    attributes:
+      label: icecore version
+    validations:
+      required: true
+  - type: input
+    id: dbt_version
+    attributes:
+      label: dbt version (`dbt --version`)
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Where dbt runs
+      options:
+        - dbt Core on my machine or CI
+        - dbt Projects on Snowflake (EXECUTE DBT PROJECT)
+        - dbt Cloud
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Snowflake edition
+      options: ["Standard", "Enterprise", "Business Critical", "Not sure"]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: Lines starting with `icecore`. Remove anything confidential.
+      render: text

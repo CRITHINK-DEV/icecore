@@ -21,7 +21,7 @@ from helpers.macros import IT_DIR, invoke, run_macro_with_logs
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES").upper()
-FIXTURE_MODELS = ["hooks_a", "hooks_b", "hooks_c", "hooks_fail"]
+FIXTURE_MODELS = ["hooks_a", "hooks_b", "hooks_c", "hooks_fail", "hooks_dup", "hooks_weird"]
 
 BASE_FILTER = ("resource_attributes:\"snow.database.name\"::string = %(db)s"
                " and resource_attributes:\"snow.schema.name\"::string = %(schema)s"
@@ -80,6 +80,15 @@ def assert_no_invocation_records(sf, schema: str, invocation_id: str, since, wai
 def drop_fixture_views(sf, run_id: str) -> None:
     for model in FIXTURE_MODELS:
         sf.cursor().execute(f'drop view if exists "{DATABASE}"."{SCHEMA}"."{model.upper()}_{run_id.upper()}"')
+
+
+def drop_stored_failures(sf, run_id):
+    """The tests' stored failures, named with the run_id, in <schema>_dbt_test__audit."""
+    cur = sf.cursor()
+    audit = f"{SCHEMA}_DBT_TEST__AUDIT"
+    if cur.execute(f"show schemas like '{audit}' in database \"{DATABASE}\"").fetchall():
+        for row in cur.execute(f"show tables like '%{run_id.upper()}' in schema \"{DATABASE}\".\"{audit}\"").fetchall():
+            cur.execute(f'drop table if exists "{DATABASE}"."{audit}"."{row[1]}"')
 
 
 def node_results(run_results: dict) -> list[dict]:

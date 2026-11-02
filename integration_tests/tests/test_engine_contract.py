@@ -132,10 +132,12 @@ WRITE_STATEMENTS = [
 
 
 def strip_sql_comments_and_strings(sql: str) -> str:
-    """One left-to-right pass: a string literal, a line comment or a block comment, whichever starts first, becomes a space.
-    Two passes let `-- see /* x` hide real SQL (the block comment never closes on that line) and let `'--'` or `'/*'`
-    inside a string do the same."""
-    return re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/", " ", sql, flags=re.S)
+    """One left-to-right pass over string literals, line comments and block comments, whichever starts first: comments
+    become a space, string literals are kept as they are. Two passes let `-- see /* x` hide real SQL (the block comment
+    never closes on that line) and `'--'` or `'/*'` inside a string do the same; keeping strings means SQL run from a
+    string (`run_query('create table ...')`, `execute immediate 'insert ...'`) is still seen (review of #39, round 3)."""
+    return re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/",
+                  lambda m: m.group(0) if m.group(0).startswith("'") else " ", sql, flags=re.S)
 
 
 def writes_in(sql: str) -> list[str]:
@@ -268,3 +270,11 @@ def test_auto_with_10_days_of_history_scores_native():
     )
     assert result["engine"] == "native"
     assert result["fallback_reason"] is not None
+
+
+@pytest.mark.parametrize("sql", [
+    "{% do run_query('create table t (a int)') %}",
+    "execute immediate 'insert into t values (1)'",
+])
+def test_sql_run_from_a_string_is_still_a_write(sql):
+    assert writes_in(sql)

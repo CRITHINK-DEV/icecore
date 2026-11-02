@@ -4,7 +4,7 @@
 
     Checks, in order, and reports; it never fails the run (every read and CALL is guarded):
       1. event_table       re-detects the capabilities (detect_capabilities, reads only): an active event table;
-      2. levels            the database's LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS
+      2. levels            the obs schema's LOG_LEVEL at least INFO and TRACE_LEVEL ALWAYS
                            (telemetry_levels_plan); the fix is printed, never run;
       3. ICECORE_EMIT, ICECORE_EMIT_RUN
                            one guarded test CALL of each, tagged icecore.doctor.probe = true (an
@@ -37,7 +37,7 @@
     {%- endif -%}
   {%- endif -%}
 
-  {%- set report = icecore._icecore_doctor_report(capabilities, probes, count, count_error, schema) -%}
+  {%- set report = icecore._icecore_doctor_report(capabilities, probes, count, count_error, schema, icecore.schema_levels(capabilities['database'], schema)) -%}
   {%- for check in report['checks'] -%}
     {% do log('icecore: doctor: check ' ~ check['name'] ~ ': ' ~ ('ok' if check['ok'] else 'FAILED') ~ ' (' ~ check['detail'] ~ ')', info=True) %}
   {%- endfor -%}
@@ -85,7 +85,7 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
 {#- Pure: the checks and the verdict. status: ok (every check passed, records found), no_records (cause:
     event_table, levels, procedures or hooks), or warn (records found but a check failed, or the count could not be
     read). Returns {status, cause, message, records_24h, checks: [{name, ok, detail}]}. -#}
-{% macro _icecore_doctor_report(capabilities, probes, count, count_error=none, schema=none) %}
+{% macro _icecore_doctor_report(capabilities, probes, count, count_error=none, schema=none, schema_levels=none) %}
   {%- set where = (capabilities.get('database') or target.database) ~ '.' ~ icecore.obs_schema_name(schema) -%}
   {%- set checks = [] -%}
   {%- set causes = {} -%}
@@ -94,10 +94,10 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
   {%- do checks.append({'name': 'event_table', 'ok': event_table != '',
       'detail': event_table or 'no active event table; an admin must set one (icecore.set_telemetry_levels prints the statement)'}) -%}
 
-  {%- set plan = icecore.telemetry_levels_plan(capabilities) -%}
+  {%- set plan = icecore.telemetry_levels_plan(capabilities, none, none, schema, schema_levels) -%}
   {%- set levels = 'LOG_LEVEL ' ~ plan['log_level'] ~ ', TRACE_LEVEL ' ~ plan['trace_level'] -%}
   {%- do checks.append({'name': 'levels', 'ok': plan['levels_ok'], 'detail': levels if plan['levels_ok'] else levels
-      ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS on the database; an admin can run: '
+      ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ALWAYS on its schema; an admin can run: '
       ~ (plan['attempt'] | join('; '))}) -%}
 
   {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}

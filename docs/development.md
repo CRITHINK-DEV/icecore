@@ -99,18 +99,25 @@ The `run_id` fixture (`tests/conftest.py`) is a fresh 32-character hex string fo
 If a run was interrupted, find leftovers of your own by their prefix and drop them:
 
 ```bash
+cd integration_tests
 source ~/.snowflake/icecore_ci.env
 .venv/bin/python - <<'EOF'
 import os, snowflake.connector
 c = snowflake.connector.connect(account=os.environ["SNOWFLAKE_ACCOUNT"], user=os.environ["SNOWFLAKE_USER"],
     private_key_file=os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"], role=os.environ["SNOWFLAKE_ROLE"],
     warehouse=os.environ["SNOWFLAKE_WAREHOUSE"], database="ICECORE_SANDBOX", schema="SPIKES")
-for row in c.cursor().execute("show tables like 'UC2\\_%' in schema ICECORE_SANDBOX.SPIKES"):
-    print(row[1])          # list first; drop with: drop table "<name>"
+cur = c.cursor()
+for kind in ("tables", "views", "procedures"):
+    for row in cur.execute(f"show {kind} like 'UC2\\_%' in schema ICECORE_SANDBOX.SPIKES"):
+        print(kind, row[1])
+for prefix in ("ICECORE_OBS\\_%", "ELEMENTARY_PROBE\\_%"):
+    for row in cur.execute(f"show schemas like '{prefix}' in database ICECORE_SANDBOX"):
+        print("schema", row[1])
+# list first; drop with: drop table|view "<name>", drop procedure "<name>"(<arg types>), drop schema "<name>"
 EOF
 ```
 
-Replace `UC2` with your own prefix, and read the list before dropping anything: tables of other contributors' runs may be listed too, and those are not yours to drop.
+Replace `UC2` with your own prefix, and read the list before dropping anything: objects of other contributors' runs may be listed too, and those are not yours to drop. The `ICECORE_OBS_*` and `ELEMENTARY_PROBE_*` schemas are created by setup tests and by spike S4 with a run tag in the name; drop only the ones that carry yours.
 
 ## Elementary environment (spike S4)
 
@@ -124,7 +131,7 @@ source ~/.snowflake/icecore_ci.env
 elementary_probe/.venv/bin/pytest -m sandbox tests/spikes/test_s4_edr_contract.py -v    # about 2 minutes
 ```
 
-The run rewrites `spikes/results/s4.json` and `spikes/results/s4_edr_queries.sql`. Commit them only when the capture is the point of your change; otherwise `git checkout spikes/results`.
+The run rewrites `spikes/results/s4.json` and `spikes/results/s4_edr_queries.sql`. Commit them only when the capture is the point of your change; otherwise `git -C .. checkout spikes/results` (run from `integration_tests/`).
 
 The test builds a small probe project (`integration_tests/elementary_probe/`) in its own schema, `ICECORE_SANDBOX.ELEMENTARY_PROBE_<run_id>`, which the role may create (`GRANT CREATE SCHEMA` in the bootstrap) and which the test drops at the end. Without `edr` next to the interpreter the test is skipped, so the floor and latest environments never run it. Do not change the pinned versions without a new S4 capture; `tests/test_elementary_version.py` keeps the files in step.
 

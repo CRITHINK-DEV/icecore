@@ -34,7 +34,7 @@ def views(schema=None) -> dict:
 def test_create_views_list_is_the_full_current_list():
     """The one place that asserts the whole list, in order; every other test checks a prefix or membership."""
     assert list(views()) == ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES",
-                             "INVOCATIONS", "NODE_EXECUTIONS"]
+                             "INVOCATIONS", "NODE_EXECUTIONS", "SILENCE_EVENTS"]
 
 
 @pytest.mark.parametrize("name", ["TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"])

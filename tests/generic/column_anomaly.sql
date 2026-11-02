@@ -1,4 +1,4 @@
-{#- icecore.column_anomaly: incremental column metrics test (UC2). Documented in column_anomaly.yml.
+{#- icecore.column_anomaly: incremental column metrics test (UC2). Documented in macros/tests/column_anomaly.yml (dbt reads a generic test's docs only from macro-paths).
     Reads the rows that changed since the previous observation (icecore.get_change_window: CHANGES, or the
     timestamp_column fallback), computes the requested metrics over them (icecore.compute_column_metrics), emits one
     metric per value (column = the tested column) and compares each with the static `bounds`. Until UC3 the bounds

@@ -156,3 +156,7 @@ The sandbox job never runs on a pull request: it spends warehouse credits and ne
 - Pull requests are merged by a person, after review. Agents never merge, never push to `develop` or `main`, and never force-push a branch that is not theirs.
 - Keep Jinja (`{{` and `{%`) out of yml `description` fields: dbt renders them.
 - Never commit credentials, keys or env files; never change `.github/` or the bootstrap script in a feature pull request.
+
+## Reference docs
+
+`docs/reference/macros.md` and `docs/reference/tests.md` are generated from the `.yml` files next to the macros (a generic test's is `macros/tests/<name>.yml`, under the name `test_<name>`, because dbt reads docs only from macro paths). Edit the `.yml`, then run `python integration_tests/tests/helpers/reference_docs.py` from the repository root. `test_macro_reference_docs.py` fails for a public macro or a generic test argument without a description, and when the pages are stale.

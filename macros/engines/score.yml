@@ -88,6 +88,35 @@ macros:
       - name: observed_at
         type: string
         description: As for `score`.
+      - name: min_points
+        type: integer
+        description: As for `score`. Default 7.
+
+  - name: native__score_sql
+    description: >
+      The SQL that `native__score` runs, returned as text and not executed, so it can be read or tested without a
+      warehouse. Same baseline, band and verdict rules as `native__score`: one row with expected, lower, upper, score,
+      is_anomaly, baseline, history_points and history_days. Refuses `min_points` below 1 and any number that is not a
+      plain number, so no value is pasted into the SQL as text.
+    arguments:
+      - name: series_sql
+        type: string
+        description: As for `score`.
+      - name: current_value
+        type: number
+        description: As for `score`.
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`."
+      - name: min_consecutive
+        type: integer
+        description: As for `score`.
+      - name: observed_at
+        type: string
+        description: As for `score`. Default none, the current UTC time.
+      - name: min_points
+        type: integer
+        description: As for `score`. Default 7. At least 1.
 
   - name: cortex__score
     description: >
@@ -131,6 +160,3 @@ macros:
       - name: observed_at
         type: string
         description: As for `score`.
-      - name: min_points
-        type: integer
-        description: As for `score`. Default 7.

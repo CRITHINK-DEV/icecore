@@ -205,6 +205,8 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
 - [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
+- [Macro reference](docs/reference/macros.md): every public macro, with its arguments, types and defaults.
+- [Generic test reference](docs/reference/tests.md): every `icecore.*` test and each of its arguments.
 - [Troubleshooting](docs/troubleshooting.md): by symptom, with how to confirm and the fix.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 

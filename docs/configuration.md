@@ -255,6 +255,7 @@ In that case no metric is written, and the test logs a warning. What happens nex
 
 A threshold you cannot check is not reported as a pass.
 
-### Coming
+### The other tests
 
-The other monitor tests are **coming**: `icecore.schema_changes`, `icecore.column_anomaly` and `icecore.dimension_anomaly`. Their arguments will be documented here when they are merged.
+`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` have every argument documented in the [generic test reference](reference/tests.md), as do `freshness` and `volume`. Every public macro is in the [macro reference](reference/macros.md).
+

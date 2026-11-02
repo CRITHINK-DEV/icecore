@@ -1,4 +1,4 @@
-{#- icecore.freshness: zero-scan freshness test (UC2). Documented in freshness.yml.
+{#- icecore.freshness: zero-scan freshness test (UC2). Documented in macros/tests/freshness.yml (dbt reads a generic test's docs only from macro-paths).
     Reads the last change time with icecore.get_last_change_time (SYSTEM$LAST_CHANGE_COMMIT_TIME, no data scan),
     takes the lag against Snowflake's clock, emits it as the metric freshness_lag_seconds, then compares it with
     max_lag. The test fails or passes only on that comparison: emit_metric guards its own CALL. -#}

@@ -210,7 +210,7 @@ model.shop.orders | model.shop.order_summary
 
 Each `CALL` is its own trace, and every record of one `CALL` shares it. A dbt run therefore has no single trace: a run whose records need several `CALL`s spans several traces (S1.md, "Trace grouping"). Use `dbt.invocation_id` to group a run. Node spans are not parented to the invocation span. Whether they can be, across `CALL`s, is unmeasured (GATE1.md, open item 6).
 
-Records land in the event table of the procedures' database, at that database's `LOG_LEVEL` and `TRACE_LEVEL`. A session setting does not switch icecore off: with the session at `OFF`, procedure records still landed (S1.md, `proc.levels_off`). Use `telemetry: false` instead.
+Records land in the event table of the procedures' database, at the `LOG_LEVEL` and `TRACE_LEVEL` that apply to the icecore schema (its own, else the database's). A session setting does not switch icecore off: with the session at `OFF`, procedure records still landed (S1.md, `proc.levels_off`). Use `telemetry: false` instead.
 
 ## Timestamps
 

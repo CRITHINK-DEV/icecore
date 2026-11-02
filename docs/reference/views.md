@@ -10,7 +10,7 @@ Every time column is the event's `TIMESTAMP`, because `OBSERVED_TIMESTAMP` is NU
 
 Re-running `icecore.setup` replaces the views with `COPY GRANTS`, so grants you made on them stay.
 
-Views not merged yet are **coming**: `SILENCE_EVENTS` and `ALERTS_FEED`.
+One view is not merged yet and is **coming**: `ALERTS_FEED`. The Elementary-compatible views are a separate set, in [their own section](#elementary-compatible-views).
 
 ## Who can read
 
@@ -48,7 +48,7 @@ One row per dbt invocation. It joins three records on `dbt.invocation_id`: the `
 | `duration_s` | float | Seconds | `dbt.invocation.duration_s` |
 | `status` | text | `success`, `warn`, `error`, `unknown`, `running` or `unfinished` | `dbt.invocation.status`, else derived |
 | `nodes_total`, `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped` | number | Node counts. Null if unfinished | `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped` |
-| `credits` | float | Always null until cost attribution is merged | none yet |
+| `credits` | float | Always null today. The view does not read cost: credits are attributed per node (see `NODE_EXECUTIONS.credits`), and nothing sums them per invocation | none |
 
 ## `NODE_EXECUTIONS`
 
@@ -68,8 +68,9 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `started_at`, `completed_at` | time | The node's times, dbt's clock | `dbt.node.started_at`, `dbt.node.completed_at` |
 | `query_id` | text | The node's Snowflake query: the result's, else the first query event's | `snow.query.id` |
 | `query_ids` | array | Every query id of the node | `snow.query.id` of the `icecore.query` events |
-| `credits` | float | Null until cost attribution is merged | `dbt.cost.credits` |
-| `root_cause_unique_id` | text | Null until root-cause attribution is merged | `dbt.root_cause.unique_id` |
+| `credits` | float | Credits attributed to the node's queries. Null unless the `cost` var is on, and null until Snowflake's attribution is available (hours) | `dbt.cost.credits` |
+| `root_cause_unique_id` | text | The upstream node that explains a failed test. Null unless the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
+| `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |
 
 ## `TEST_RESULTS`
 
@@ -97,7 +98,7 @@ There is no `model_unique_id` column: no emitter writes the tested model's id on
 
 ## `METRICS`
 
-One row per metric a monitor computed, from the `icecore.metric` span events that `emit_metric` writes. Today the `icecore.freshness` and `icecore.volume` tests write them: `freshness_lag_seconds` and `row_count`. The `icecore.anomaly` warn events repeat their metric event's keys, so they are not rows here.
+One row per metric a monitor computed, from the `icecore.metric` span events that `emit_metric` writes. These tests write them: `icecore.freshness` (`freshness_lag_seconds`), `icecore.volume` (`row_count`), `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` (the column and dimension metrics they compute). With the `cost` var on, each node whose cost is known also gets a `credits` metric. The `icecore.anomaly` warn events repeat their metric event's keys, so they are not rows here.
 
 | Column | Type | Meaning | Source key |
 | --- | --- | --- | --- |
@@ -116,7 +117,7 @@ One row per metric a monitor computed, from the `icecore.metric` span events tha
 
 ## `SCHEMA_CHANGES`
 
-One row per detected column change, from `icecore.schema_change` span events. Nothing writes these records yet, so the view is empty until the schema monitor test is merged.
+One row per detected column change, from `icecore.schema_change` span events. The `icecore.schema_changes` test writes them, so the view is empty until that test has run on a table whose columns changed.
 
 | Column | Type | Meaning | Source key |
 | --- | --- | --- | --- |
@@ -129,6 +130,23 @@ One row per detected column change, from `icecore.schema_change` span events. No
 | `invocation_id` | text | The dbt run | `dbt.invocation_id` |
 | `node_unique_id` | text | The node | `dbt.node.unique_id` |
 | `emit_query_id` | text | Query id of the writing `CALL` | `snow.query.id` in `RESOURCE_ATTRIBUTES` |
+
+## `SILENCE_EVENTS`
+
+One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. `icecore.setup` creates the task suspended. The `silence_task_resume` var resumes it. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.
+
+`expected_at` and `last_success_at` are the verdict's own values, UTC to the second, on Snowflake's clock: they come from the `recorded_at` of the node's results. `detected_at` is the `TIMESTAMP` of the verdict record.
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `unique_id` | text | The node that did not run | `dbt.node.unique_id` |
+| `expected_at` | time | When the run was expected | `icecore.silence.expected_at` |
+| `grace` | number | Grace in minutes | `icecore.silence.grace_minutes` |
+| `expected_every_minutes` | number | The node's expected interval in minutes | `icecore.silence.expected_every_minutes` |
+| `last_success_at` | time | Last successful result of the node | `icecore.silence.last_success_at` |
+| `detected_at` | time | When the task wrote the verdict | event `TIMESTAMP` |
+| `channel` | text | Alert channel from the node's `meta.sla` | `icecore.silence.channel` |
+| `severity` | text | Severity from the node's `meta.sla`, `warn` by default | `icecore.silence.severity` |
 
 ## `LINEAGE`
 
@@ -164,6 +182,34 @@ What the account supported when icecore last looked. One row per database, the l
 | `icecore_version` | text | Package version that detected it | `icecore.version` |
 | `invocation_id` | text | The dbt invocation | `dbt.invocation_id` |
 
+## Elementary-compatible views
+
+`icecore.setup` with `compat: elementary` creates 8 more views in the compat schema, by default `<target_db>.<obs_schema>_ELEMENTARY` (for example `ICECORE_OBS_ELEMENTARY`). Set another name with the `compat_schema` var. The name may contain only letters, digits and underscores. The schema is created if it does not exist, so the role needs CREATE SCHEMA on the database, or an admin creates it first.
+
+```bash
+dbt run-operation icecore.setup --args '{compat: elementary}'
+```
+
+The views have the relation names, column names, column order and types of the Elementary dbt package release pinned in `macros/compat/ELEMENTARY_VERSION`. They select from the core views above and never from the event table, so each has the row count of its source view. A column icecore has no source for is a typed NULL. Like the core views, they are replaced with `COPY GRANTS`.
+
+| View | One row per | Source view |
+| --- | --- | --- |
+| `ELEMENTARY_TEST_RESULTS` | test per invocation | `TEST_RESULTS` |
+| `DATA_MONITORING_METRICS` | metric | `METRICS` |
+| `SCHEMA_COLUMNS_SNAPSHOT` | column change that leaves the column in the table (`added`, `type_changed`) | `SCHEMA_CHANGES` |
+| `DBT_INVOCATIONS` | invocation | `INVOCATIONS` |
+| `DBT_RUN_RESULTS` | node per invocation | `NODE_EXECUTIONS` |
+| `DBT_MODELS` | model that ran (its latest execution) | `NODE_EXECUTIONS`, `LINEAGE_LATEST` |
+| `DBT_TESTS` | test that ran (its latest execution) | `NODE_EXECUTIONS`, `TEST_RESULTS` |
+| `DBT_SOURCES` | source that is a parent in the latest lineage | `LINEAGE_LATEST` |
+
+Limits, from the macros:
+
+- `SCHEMA_COLUMNS_SNAPSHOT` is a change log, not a snapshot. Elementary appends every current column on every run. Here a column has a row only when it was added or its type changed, so "the latest snapshot per table" returns only the columns of the latest change.
+- icecore holds no manifest metadata. `DBT_MODELS`, `DBT_TESTS` and `DBT_SOURCES` know only what the run records say, so a node appears once it has run. Description, tags, owner, paths and similar columns are NULL.
+- `ELEMENTARY_TEST_RESULTS` has no `model_unique_id`, table or schema name (typed NULLs). Scored tests carry their band in `other` as JSON.
+- Times that Elementary stores as text are written as `YYYY-MM-DD HH24:MI:SS` text that Snowflake can cast. The two clocks are never subtracted.
+
 ## Keeping this page in step
 
-An offline test, `integration_tests/tests/test_views_reference_docs.py`, renders each view and fails when a column of a view is missing from its section here. Add the column here when it fails.
+An offline test, `integration_tests/tests/test_views_reference_docs.py`, renders each core view and fails when a column of a view is missing from its section here. Add the column here when it fails.

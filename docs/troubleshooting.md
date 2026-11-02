@@ -14,6 +14,7 @@ Messages below were produced on a Snowflake sandbox with dbt Core 1.8.10, unless
 - [Records go to the wrong schema, or `obs_schema` looks like template text](#vars-do-not-render-jinja)
 - [Messages show `'?'` where values should be](#messages-show--where-values-should-be)
 - [The anomaly engine says Cortex is unavailable](#cortex-is-unavailable)
+- [Costs are missing](#missing-costs)
 
 ## Read doctor's output
 
@@ -35,7 +36,7 @@ icecore: doctor: OK: 12 icecore records in the last 24 h in <db>.ICECORE_OBS
 | Check | What it tests |
 | --- | --- |
 | `event_table` | The database has an active event table. |
-| `levels` | `LOG_LEVEL` is at least `INFO` and `TRACE_LEVEL` is `ON_EVENT` or `ALWAYS`. |
+| `levels` | On icecore's schema, `LOG_LEVEL` is at least `INFO` and `TRACE_LEVEL` is `ALWAYS`. |
 | `ICECORE_EMIT`, `ICECORE_EMIT_RUN` | A test `CALL` of each procedure works. The test records carry `icecore.doctor.probe` and are not counted. |
 | `records` | icecore records of the last 24 hours exist, counted on Snowflake's clock. The `capabilities` records of `setup` and `doctor` are not counted. |
 
@@ -78,24 +79,23 @@ Then run `dbt run-operation icecore.setup` again, so the views read the right ta
 
 ## Levels too low
 
-**Symptom.** `doctor` prints `check levels: FAILED`, with the statement an admin can run. Records written while the levels are too low are lost, and the `records` check is 0.
+**Symptom.** `doctor` prints `check levels: FAILED`, with the statement an admin can run. Records written while the levels are too low are lost or incomplete, and the `records` check is 0.
 
-**Confirm.**
-
-```sql
-SHOW PARAMETERS LIKE 'LOG_LEVEL' IN DATABASE <db>;
-SHOW PARAMETERS LIKE 'TRACE_LEVEL' IN DATABASE <db>;
-```
-
-icecore needs `LOG_LEVEL` of `INFO` or finer, and `TRACE_LEVEL` of `ON_EVENT` or `ALWAYS`. On the sandbox the database has `INFO` and `ALWAYS`.
-
-**Fix.** `setup` sets the levels when its role may. When it may not, it prints the statement. An admin runs it:
+**Confirm.** Show the levels in effect on icecore's schema, not the database's:
 
 ```sql
-ALTER DATABASE <db> SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS';
+SHOW PARAMETERS LIKE '%LEVEL' IN SCHEMA <db>.<obs_schema>;
 ```
 
-Levels belong to the database. A session setting does not turn icecore on or off: with the session at `OFF`, records still landed (spike S1, `proc.levels_off`). To switch icecore off for a run, use `telemetry: false`.
+icecore needs `LOG_LEVEL` of `INFO` or finer and `TRACE_LEVEL` of `ALWAYS`. `ON_EVENT` is not enough. `ICECORE_EMIT_RUN` writes spans with explicit times and no event, and under `ON_EVENT` only a span that carries an event lands, so spans are lost (spikes/GATE1.md, open item 7, measured with the S12 levels matrix).
+
+**Fix.** `setup` runs the statement below when its role has the `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` privileges on the account. Otherwise it prints it and an admin runs it:
+
+```sql
+ALTER SCHEMA <db>.<obs_schema> SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS';
+```
+
+Levels belong to the schema, so only the icecore procedures are traced. icecore never proposes `ALTER DATABASE ... SET TRACE_LEVEL`, which would trace every procedure and function in the database, and it never changes the account. A level set on the schema, or on a procedure, takes over from the database's. A session setting does not turn icecore on or off: with the session at `OFF`, records still landed (spike S1, `proc.levels_off`). To switch icecore off for a run, use `telemetry: false`.
 
 ## Missing procedure or grant: `icecore-error 2141`
 
@@ -262,7 +262,7 @@ On the sandbox, `full` stored `Numeric value 'jane@x.com' is not recognized`. Th
 
 ## Cortex is unavailable
 
-**Symptom.** You set `anomaly_engine: cortex` or `auto`, and scoring uses the native engine.
+**Symptom.** You set `anomaly_engine: cortex` or `auto`, and scoring uses the native engine. Scored rows show `engine` = `native`.
 
 **Confirm.** `CAPABILITIES.cortex_available` and `cortex_reason` say what `setup` found:
 
@@ -270,8 +270,40 @@ On the sandbox, `full` stored `Numeric value 'jane@x.com' is not recognized`. Th
 select database_name, cortex_available, cortex_reason from <obs_schema>.CAPABILITIES;
 ```
 
-**What happens.** The native engine scores. It is a pure SQL engine with seasonal median and MAD bands, and it needs no account feature. The Cortex engine is **coming**. Until it is merged, every `anomaly_engine` choice scores with the native engine, and `auto` and `cortex` log the reason at debug level only (run dbt with `--debug`). No fix is needed.
+**What happens.** The Cortex engine is merged. It scores with a `SNOWFLAKE.ML.ANOMALY_DETECTION` model that a task trains per table, and when it cannot score, the native engine scores instead. Nothing fails: a test never fails because Cortex could not score. The native engine is pure SQL, with seasonal median and MAD bands, and needs no account feature. The reason is logged at debug level only: run dbt with `--debug` to see `anomaly engine 'cortex' scored with native (<reason>)`.
+
+| Reason | Meaning | Fix |
+| --- | --- | --- |
+| `cortex_unavailable` | The `SNOWFLAKE.ML.ANOMALY_DETECTION` class is not visible to the role, or not available in the account or region. `cortex_reason` has the text. | Use `anomaly_engine: native`, or have an admin grant access. |
+| `history_too_short` | `auto` and `cortex` need at least 14 days of history for the series. | Wait, or accept the native engine meanwhile. |
+| `model_missing` | No model exists for the table yet: the refresh task has not run, or the series had too few points when it last ran. | Run `setup` to create the refresh task. It is created suspended: resume it, or set `cortex_refresh_task_resume: true` and run `setup` again. Then wait for a run. |
+| `model_stale` | The model is older than `cortex_refresh_days` (default 7). | Check that the refresh task is resumed and running. |
+| `cortex_error` | The scoring call failed for another reason. The detail has the error text. | Read the detail in the debug log. |
+
+Models cannot be shared across roles, so they are trained and scored in the role that ran `setup`. The dbt role needs only USAGE on `ICECORE_SCORE`.
 
 ## Missing costs
 
-Cost per model is **coming**.
+**Symptom.** You set `cost: true`, and the `credits` metric or the cost record is missing for some nodes, or the run prints:
+
+```text
+icecore: warning: cost: attribution is not available yet for 3 of 5 nodes; a later run backfills them (QUERY_ATTRIBUTION_HISTORY lags by hours)
+```
+
+The `cost` var is off by default. With it off, nothing is read or written.
+
+**Why.** Credits come from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY`, joined to the node by its query ids. That view lags by hours, Snowflake documents up to 6, so right after a run there is usually nothing to read. The run then writes nothing for those nodes and does not fail.
+
+**Fix by cause.**
+
+- **Attribution lag.** Nothing to fix. A later run backfills nodes of the last `cost_lookback_days` (default 7), at most `cost_backfill_limit` nodes per run. The backfilled record keeps the original invocation id. It needs a later dbt run with `cost` on: no run, no backfill.
+- **0 credits after a day.** Snowflake writes no attribution row for many statements, such as views and plain table creation. After `cost_settle_hours` (default 24) a node whose queries still have no attribution is closed at the credits that were attributed, 0 when none, and its cost record carries `dbt.cost.settled = no_attribution`. It gets no `credits` metric. A 0 is not an error.
+- **Missing privilege.** The role that runs dbt must read `ACCOUNT_USAGE`. An admin grants it:
+
+  ```sql
+  GRANT DATABASE ROLE SNOWFLAKE.USAGE_VIEWER TO ROLE <dbt_role>;
+  ```
+
+  or `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <dbt_role>`. Without it the warning above carries the error text and every node stays unattributed.
+
+`NODE_EXECUTIONS.credits` and `INVOCATIONS.credits` are null today whatever the cost state: read the credits from `METRICS`, metric `credits` (see the [views reference](reference/views.md)).

@@ -8,6 +8,7 @@
 {% test column_anomaly(model, column_name, metrics=none, bounds=none, since=none, timestamp_column=none, lookback_hours=24, window_tag=none) %}
   {%- set names = icecore._icecore_column_metric_defaults() if metrics is none else metrics -%}
   {%- do icecore._icecore_validate_bounds(bounds, names, 'icecore.column_anomaly') -%}
+  {%- do icecore._icecore_validate_window_tag(window_tag) -%}
   {%- set bounds = bounds or {} -%}
 
   {%- set breaches = [] -%}

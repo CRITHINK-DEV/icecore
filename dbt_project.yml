@@ -12,6 +12,10 @@ vars:
     node_results: true                  # end_run: one LOG per node result (UC1)
     query_events: true                  # end_run: one icecore.query span event per node query id (UC1)
     lineage: true                       # end_run: the DAG's edges (parent, child unique ids) as LOG records (UC1)
+    samples: false                      # end_run: failed rows of failed tests with store_failures, as LOG records at INFO (UC1). Opt-in: they copy row values
+    sample_rows: 10                     # rows per sample (1..1000)
+    sample_exclude_columns: []          # column names (any case) whose sampled values become '?'
+    samples_on_warn: false              # also sample tests that only warned
     result_message: redacted            # dbt.result.message: redacted (quoted literals as '?', max 1,000 chars), full or none
     monitors: true
     cost: false
@@ -27,6 +31,8 @@ vars:
     payload_cap_kb: 64
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
+    silence_task_schedule: 5 MINUTE      # schedule of the silence task (UC6)
+    silence_task_resume: false           # true resumes the task at setup; it needs EXECUTE TASK on the account
     metadata_fallback_kinds: [iceberg, materialized_view]   # table kinds whose metadata row count is not trusted (spike S5; materialized views: uc2-table-kinds)
     baseline_lookback_days: 30          # how far the generic tests look back for a baseline (schema signature, previous window); older counts as first run
     dimension_max_values: 20            # distinct values counted per dimension column; the rest are grouped as other

@@ -1,8 +1,8 @@
 {#- Test wrappers for the end_run row counts the cost estimate reads (tests/test_end_run_row_counts.py). -#}
 
 {#- The counts for n nodes, as the estimate reads them. -#}
-{% macro it_end_run_row_counts(nodes, query_events_per_node=1) %}
-  {% do _it_result(icecore._icecore_end_run_row_counts(nodes, query_events_per_node)) %}
+{% macro it_end_run_row_counts(nodes, query_events_per_node=1, failing_tests=0) %}
+  {% do _it_result(icecore._icecore_end_run_row_counts(nodes, query_events_per_node, failing_tests)) %}
 {% endmacro %}
 
 {#- The rows end_run really writes for these results: records (spans and logs) plus the events of the spans. -#}

@@ -4,8 +4,8 @@ macros:
   - name: doctor
     description: >
       Checks an icecore install and reports; it never fails the run. `dbt run-operation icecore.doctor`. Re-detects
-      the capabilities (detect_capabilities, reads only), then checks in order: an active event table; the database's
-      levels (`LOG_LEVEL` at least INFO, `TRACE_LEVEL` ON_EVENT or ALWAYS; the `ALTER DATABASE` fix is printed, never
+      the capabilities (detect_capabilities, reads only), then checks in order: an active event table; the obs schema's
+      levels (`LOG_LEVEL` at least INFO, `TRACE_LEVEL` ALWAYS; the `ALTER SCHEMA` fix is printed, never
       run); one guarded test `CALL` of `ICECORE_EMIT` and of `ICECORE_EMIT_RUN`, tagged `icecore.doctor.probe = true`, and an informational probe of `ICECORE_ACK` with a key that is no incident (never a failure and never a grant suggestion: the dbt role must not hold it; nothing is written)
       (an `icecore.doctor_probe` span event and an INFO LOG record), so a missing procedure or grant shows; and the
       icecore records of the last 24 hours, counted through `base_events` on Snowflake's clock, without doctor's

@@ -4,7 +4,7 @@
   engine was not the one that scored. Computes and returns values only; emission is emit_metric's job.
 -#}
 
-{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none) %}
+{% macro score(series_sql, current_value, engine=none, sensitivity=none, min_consecutive=none, observed_at=none, model=none, series=none, capabilities=none, min_points=7, schema=none) %}
   {% set settings = icecore._anomaly_settings(engine, sensitivity, min_consecutive) %}
   {#- At parse time nothing runs: return the contract shape with nulls so callers can render. -#}
   {% if not execute %}
@@ -12,28 +12,31 @@
                'is_anomaly': none, 'fallback_reason': none}) }}
   {% endif %}
 
-  {% if settings.engine == 'native' %}
-    {% set choice = {'engine': 'native', 'fallback_reason': none} %}
-  {% else %}
-    {% set cortex_unavailable_reason = icecore._cortex_unavailable_reason() %}
-    {% set history_days = none %}
-    {% if cortex_unavailable_reason is none %}
-      {% set history_days = icecore._history_days(series_sql) %}
+  {#- native never considers Cortex. cortex and auto trust the anomaly_engine var (setup prints auto only where Cortex is
+      available) and go straight to the guarded calls: no detection up front. -#}
+  {% set choice = {'engine': 'native', 'fallback_reason': none} %}
+  {% set result = none %}
+  {% if settings.engine != 'native' %}
+    {% set attempt = icecore._cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities, schema) %}
+    {% if attempt.result is not none %}
+      {% set result = attempt.result %}
+      {% do result.update({'fallback_reason': none}) %}
+    {% else %}
+      {% set choice = {'engine': 'native', 'fallback_reason': attempt.fallback_reason, 'fallback_detail': attempt.detail} %}
     {% endif %}
-    {% set choice = icecore._select_engine(settings.engine, cortex_unavailable_reason, history_days) %}
-  {% endif %}
-
-  {% if choice.engine == 'cortex' %}
-    {#- Unreachable until the Cortex engine ships: _cortex_unavailable_reason() always answers. -#}
-    {% set choice = {'engine': 'native', 'fallback_reason': 'cortex_unavailable'} %}
   {% endif %}
 
   {% if choice.fallback_reason is not none %}
     {{ log("icecore: anomaly engine '" ~ settings.engine ~ "' scored with native (" ~ choice.fallback_reason ~ ")") }}
   {% endif %}
 
-  {% set result = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at) %}
-  {% do result.update({'fallback_reason': choice.fallback_reason}) %}
+  {% if result is none %}
+    {% set result = icecore.native__score(series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at, min_points) %}
+    {% do result.update({'fallback_reason': choice.fallback_reason}) %}
+    {% if choice.get('fallback_detail') is not none %}
+      {% do result.update({'fallback_detail': choice.fallback_detail}) %}
+    {% endif %}
+  {% endif %}
   {{ return(result) }}
 {% endmacro %}
 
@@ -76,9 +79,55 @@
 {% endmacro %}
 
 
-{#- None when Cortex can score, else why not. The Cortex engine and its detection are not shipped yet. -#}
-{% macro _cortex_unavailable_reason() %}
+{#- None when Cortex can score, else why not, from a `detect_capabilities` result the caller already holds (its `cortex` and
+    `cortex_reason`). Without one nothing is detected here: the anomaly_engine var decides (setup prints auto only where
+    Cortex is available) and a failing guarded call is diagnosed afterwards by _cortex_diagnose. -#}
+{% macro _cortex_unavailable_reason(capabilities=none) %}
+  {% if capabilities is none or capabilities.get('cortex') is sameas true %}
+    {{ return(none) }}
+  {% endif %}
+  {% do log('icecore: Cortex is unavailable: ' ~ capabilities.get('cortex_reason'), info=True) %}
   {{ return('cortex_unavailable') }}
+{% endmacro %}
+
+
+{#- After a failed guarded Cortex call: run detect_capabilities (without recording) to tell cortex_unavailable (the class is not
+    visible to the role or region) from cortex_error (anything else). Returns {'fallback_reason', 'detail'}. -#}
+{% macro _cortex_diagnose(error) %}
+  {% set capabilities = icecore.detect_capabilities(record=false) %}
+  {% if capabilities is not none and capabilities.get('cortex') is not sameas true %}
+    {{ return({'fallback_reason': 'cortex_unavailable', 'detail': capabilities.get('cortex_reason')}) }}
+  {% endif %}
+  {{ return({'fallback_reason': 'cortex_error', 'detail': error}) }}
+{% endmacro %}
+
+
+{#- Try the Cortex engine for one series: {'result': contract dict} or {'result': none, 'fallback_reason', 'detail'}.
+    Never raises. Order, cheapest first: capabilities given and Cortex off (no query), no model given (no query),
+    history under 14 days (1 query), then ONE guarded CALL of ICECORE_SCORE (the SHOW of the model's age and the DETECT happen
+    inside it, in setup's role). A failing call is diagnosed with detect_capabilities. A working call costs 2 queries. -#}
+{% macro _cortex_attempt(model, series, series_sql, current_value, settings, observed_at, capabilities=none, schema=none) %}
+  {% set unavailable = icecore._cortex_unavailable_reason(capabilities) %}
+  {% if unavailable is not none %}
+    {{ return({'result': none, 'fallback_reason': unavailable, 'detail': capabilities.get('cortex_reason')}) }}
+  {% endif %}
+  {% if model is none or series is none %}
+    {{ return({'result': none, 'fallback_reason': 'model_missing', 'detail': 'no Cortex model was given for this series'}) }}
+  {% endif %}
+  {% set choice = icecore._select_engine('cortex', none, icecore._history_days(series_sql)) %}
+  {% if choice.engine != 'cortex' %}
+    {{ return({'result': none, 'fallback_reason': choice.fallback_reason, 'detail': 'fewer than 14 days of history'}) }}
+  {% endif %}
+  {% set scored = icecore.cortex__score(model, series, series_sql, current_value, settings.sensitivity, settings.min_consecutive, observed_at, schema) %}
+  {% if 'error' not in scored %}
+    {{ return({'result': scored}) }}
+  {% elif scored.state == 'missing' %}
+    {{ return({'result': none, 'fallback_reason': 'model_missing', 'detail': scored.error}) }}
+  {% elif scored.state == 'stale' %}
+    {{ return({'result': none, 'fallback_reason': 'model_stale', 'detail': scored.error ~ ' (' ~ (scored.age_days | round(1)) ~ ' days)'}) }}
+  {% endif %}
+  {% set d = icecore._cortex_diagnose(scored.error) %}
+  {{ return({'result': none, 'fallback_reason': d.fallback_reason, 'detail': d.detail}) }}
 {% endmacro %}
 
 
@@ -89,5 +138,5 @@
     select coalesce(datediff('day', min(observed_at)::date, max(observed_at)::date) + 1, 0) as days
     from ({{ series_sql }}) as series
   {% endset %}
-  {{ return(run_query(sql).columns[0].values()[0] | int) }}
+  {{ return(run_query(sql).rows[0][0] | int) }}
 {% endmacro %}

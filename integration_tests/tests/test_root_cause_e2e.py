@@ -97,7 +97,8 @@ def test_only_tests_are_explained(test_id):
 def test_root_cause_is_an_end_run_emitter_off_by_default():
     emitters = {e["name"]: e for e in run_macro("it_end_run_emitters", {})}
     assert emitters["root_cause"]["var"] == "root_cause" and emitters["root_cause"]["default"] is False
-    assert list(emitters)[-1] == "root_cause"  # after node_results, whose LOGs it annotates
+    names = list(emitters)
+    assert names.index("root_cause") > names.index("node_results")  # after node_results, whose LOGs it annotates
 
 
 # --- sandbox: the signals come from the views, the cause from a real build --------------------------

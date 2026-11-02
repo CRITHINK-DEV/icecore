@@ -1,0 +1,16 @@
+version: 2
+
+macros:
+  - name: dbt_invocations_view_sql
+    description: "The SELECT of the compat view dbt_invocations: Elementary's 35 columns, in its order and types (Elementary dbt package pinned in macros/compat/ELEMENTARY_VERSION), over the core view INVOCATIONS only, so it has the core view's rows. Filled: invocation_id, command, dbt_version, target_name, run_started_at, run_completed_at, generated_at and created_at from the invocation's times (dbt's clock), project_name from the run's dbt project, and elementary_version, the pinned release, because edr checks its own version against it. Every other column is a typed NULL: job_*, full_refresh, invocation_vars, vars, target_database, target_schema, target_profile_name, threads, selected, yaml_selector, project_id, env, env_id, cause_category, cause, pull_request_id, git_sha, orchestrator, dbt_user, job_url, job_run_url, account_id, target_adapter_specific_fields. Text timestamps are in Elementary's format YYYY-MM-DD HH24:MI:SS, which Snowflake can cast."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema holding the core views. Default the current one."
+
+  - name: dbt_run_results_view_sql
+    description: "The SELECT of the compat view dbt_run_results: Elementary's 23 columns, in its order and types, over the core view NODE_EXECUTIONS only, so it has one row per node per invocation and the core view's row count. Filled: model_execution_id (invocation_id and unique_id joined by a dot, as Elementary builds it), unique_id, invocation_id, name, status, resource_type, execution_time, rows_affected, query_id, materialization, execute_started_at and execute_completed_at (dbt's clock, with microseconds), generated_at and created_at (recorded_at, Snowflake's clock). Typed NULLs: message, compile_started_at, compile_completed_at, full_refresh, compiled_code, failures, thread_id, adapter_response, group_name. The two clocks are never subtracted from each other."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema holding the core views. Default the current one."

@@ -50,6 +50,16 @@ sources:
                   name: it_column_from_history
                   metrics: [window_rows]
               - icecore.column_anomaly:
+                  name: it_column_tag_a
+                  metrics: [window_rows]
+                  window_tag: tag_a
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_tag_b
+                  metrics: [window_rows]
+                  window_tag: tag_b
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
                   name: it_column_bad_bounds
                   metrics: "{{ var('it_bad_metrics', ['avg']) }}"
                   bounds: "{{ var('it_bad_bounds', {'avg': {'max': 1}}) }}"

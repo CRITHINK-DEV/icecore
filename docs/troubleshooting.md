@@ -8,6 +8,7 @@ Messages below were produced on a Snowflake sandbox with dbt Core 1.8.10, unless
 - [`doctor` says no records, and `event_table` failed](#no-records-and-event_table-failed)
 - [`doctor` says `levels` failed](#levels-too-low)
 - [A warning says `icecore-error 2141`](#missing-procedure-or-grant-icecore-error-2141)
+- [`doctor` passes every check, but there are no records](#no-records-and-all-checks-pass)
 - [Records appear a few seconds late](#records-arrive-late)
 - [`setup` fails when it creates the Python procedure](#the-anaconda-terms-are-not-accepted)
 - [`dbt deps` says the packages.yml file is malformed](#the-packagesyml-file-is-malformed-after-switching-dbt-versions)
@@ -270,7 +271,7 @@ On the sandbox, `full` stored `Numeric value 'jane@x.com' is not recognized`. Th
 select database_name, cortex_available, cortex_reason from <obs_schema>.CAPABILITIES;
 ```
 
-**What happens.** The Cortex engine is merged. It scores with a `SNOWFLAKE.ML.ANOMALY_DETECTION` model that a task trains per table, and when it cannot score, the native engine scores instead. Nothing fails: a test never fails because Cortex could not score. The native engine is pure SQL, with seasonal median and MAD bands, and needs no account feature. The reason is logged at debug level only: run dbt with `--debug` to see `anomaly engine 'cortex' scored with native (<reason>)`.
+**What happens.** The Cortex engine is merged. It scores with a `SNOWFLAKE.ML.ANOMALY_DETECTION` model that a task trains per table, and when it cannot score, the native engine scores instead. Nothing fails: a test never fails because Cortex could not score. The native engine is pure SQL, with seasonal median and MAD bands, and needs no account feature. The reason is logged at debug level: run dbt with `--debug` to see `anomaly engine 'cortex' scored with native (<reason>)`. For `cortex_unavailable`, a line `icecore: Cortex is unavailable: <reason>` is also printed at the default level.
 
 | Reason | Meaning | Fix |
 | --- | --- | --- |
@@ -306,4 +307,4 @@ The `cost` var is off by default. With it off, nothing is read or written.
 
   or `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <dbt_role>`. Without it the warning above carries the error text and every node stays unattributed.
 
-`NODE_EXECUTIONS.credits` and `INVOCATIONS.credits` are null today whatever the cost state: read the credits from `METRICS`, metric `credits` (see the [views reference](reference/views.md)).
+`NODE_EXECUTIONS.credits` comes from the node's latest `cost` record, so a later backfill replaces an earlier value, and `INVOCATIONS.credits` sums them per run. Both stay null until a cost record lands. `NODE_EXECUTIONS.credits_settled` is `no_attribution` on a node closed with what was attributed, which is 0 when Snowflake wrote no attribution row (see the [views reference](reference/views.md)).

@@ -109,8 +109,8 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
             assert (core_metrics, core_changes) == (2, 3)
 
             created = run_macro("it_create_compat_views", {"schema": obs}, obs_vars)
-            assert sorted(created) == sorted(f'"{DATABASE}"."{compat}"."{n}"' for n in [
-                "ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"])
+            assert {f'"{DATABASE}"."{compat}"."{n}"' for n in [
+                "ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]} <= set(created)  # run and node views too
 
             for view in VIEWS.values():
                 assert described(sf, compat, view) == [(n.upper(), SNOWFLAKE_TYPE[t]) for n, t in table_columns(view)]

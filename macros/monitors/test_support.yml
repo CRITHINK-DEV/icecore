@@ -1,0 +1,76 @@
+version: 2
+
+macros:
+  - name: _icecore_history_event_table
+    description: >
+      The event table the history reads of the generic tests use, mapped by event_table_to_read, or none when none is
+      active or the lookup fails (the lookup is guarded, with a logged warning). Shared by the generic tests.
+
+  - name: _icecore_now_iso
+    description: Now on Snowflake's clock as an ISO 8601 UTC string. Shared by the generic tests.
+
+  - name: _icecore_previous_signature
+    description: Columns of the newest schema signature record of a relation read through base_events, or none. Never raises.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The monitored relation.
+
+  - name: _icecore_window_since
+    description: >
+      Start of the next change window as an ISO 8601 UTC string, from `since`, else the window end (`dbt.window.until`) of the newest metric record of the
+      same kind for the relation (kind column, dimension or all_columns), else `lookback_hours` before now on
+      Snowflake's clock. Never raises on a failed history read.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The monitored relation.
+      - name: kind
+        type: string
+        description: One of column, dimension, all_columns.
+      - name: column_name
+        type: string
+        description: The tested column, for kinds column and dimension.
+      - name: since
+        type: string
+        description: Explicit start, which wins. Optional.
+      - name: lookback_hours
+        type: number
+        description: Window length when there is no previous observation.
+
+  - name: _icecore_validate_bounds
+    description: Compile error unless bounds is none or maps a metric of the metrics list to a mapping with min and or max, which must be numbers.
+    arguments:
+      - name: bounds
+        type: dictionary
+        description: The bounds argument of a test.
+      - name: names
+        type: list
+        description: The metrics the test computes.
+      - name: who
+        type: string
+        description: Test name for the error message.
+
+  - name: _icecore_outside
+    description: True when a value is outside a limit with optional min and max; false for no limit or a null value.
+    arguments:
+      - name: value
+        type: number
+        description: The value.
+      - name: limit
+        type: dictionary
+        description: The limit.
+
+  - name: _icecore_history_lookback_seconds
+    description: >
+      Seconds the history reads of the generic tests look back, from `vars: icecore: baseline_lookback_days`
+      (default 30, a positive number). A baseline older than that is not found and the run counts as the first.
+
+  - name: _icecore_history_bound
+    description: >
+      The WHERE predicate every history read starts with, the relation first and then the time bound, so the scan of
+      the event table is narrowed by relation and does not grow with the age of the table.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The monitored relation.

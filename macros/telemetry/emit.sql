@@ -162,7 +162,8 @@
 {% endmacro %}
 
 
-{#- Records -> lists of at most max_events records and max_bytes of the literal as it is sent: the escaped JSON
+{#- (size per record is its literal's length, quotes included: those two bytes stand for the ", " the array adds between records; the start of 4 is the two quotes and the two brackets.)
+    Records -> lists of at most max_events records and max_bytes of the literal as it is sent: the escaped JSON
     (backslash and quote doubled, `$` as four characters), not the raw JSON, which under-counts it up to four
     times. A record larger than max_bytes alone goes in a chunk of its own and is sent.
     (S2: a CALL keeps only its last 128 events, and lands none at about 1 MB.) -#}
@@ -170,7 +171,7 @@
   {%- set chunks = [] -%}
   {%- set ns = namespace(current=[], size=4) -%}
   {%- for record in records -%}
-    {%- set size = (icecore._icecore_block_literal(tojson(record)) | length) - 1 -%}
+    {%- set size = icecore._icecore_block_literal(tojson(record)) | length -%}
     {%- if ns.current and ((ns.current | length) >= max_events or ns.size + size > max_bytes) -%}
       {%- do chunks.append(ns.current) -%}
       {%- set ns.current = [] -%}

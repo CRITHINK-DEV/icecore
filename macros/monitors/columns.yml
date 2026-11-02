@@ -28,7 +28,9 @@ macros:
       micro-partition, and CHANGES then reads that partition twice (2.7 MB against 3.6 MB for a full scan).
       The timestamp fallback costs whatever the filter prunes, which depends on the table's clustering.
       The time of the previous run is passed in as `since`: reading it from the metric history comes with the
-      monitors that emit metrics (after Gate 1).
+      monitors that emit metrics (after Gate 1). `until`, when given, ends the window: CHANGES gets an `end` timestamp
+      and the timestamp-column fallback an upper bound, so rows committed after `until` are left for the next window
+      and a monitor that records `until` as its window end counts no row twice.
     arguments:
       - name: relation
         type: Relation
@@ -49,6 +51,11 @@ macros:
           its case kept (inner `""` stand for one `"`); a plain name (letters, digits, `_`, `$`, such as `amount` or
           `Mixed`) resolves to upper case like an unquoted identifier; any other name is taken as the exact,
           case-preserved column name.
+      - name: until
+        type: string
+        description: >
+          Optional, default none. ISO 8601 UTC end of the window: CHANGES `end` and an upper bound on the timestamp column.
+          Rows committed after it belong to the next window.
 
   - name: compute_dimension_metrics
     description: >
@@ -114,3 +121,32 @@ macros:
         description: >
           Optional, default `[window_rows, null_rate]`. The metrics to compute and return, any of `window_rows`,
           `null_rate`, `avg`, `min`, `max`; only these keys appear in the result.
+
+  - name: compute_columns_metrics
+    description: >
+      Computes the metrics of several columns of one model in one query, so that a wide table is scanned once
+      instead of once per column (after DML each CHANGES read costs about 1.9 times a full scan, spike S5).
+      Returns a dict with one entry per distinct requested column, keyed as the name was given, each value the
+      dict `compute_column_metrics` returns for that column, or none for a column that is not found (with a
+      warning). Returns none when the window is none or the columns of the relation cannot be read. The column
+      types are read once from INFORMATION_SCHEMA.COLUMNS, then one CHANGES (or timestamp-window) query computes
+      every metric of every column in one select list and the result is split back per column. Numeric metrics
+      (avg, min, max) are skipped with a warning on a column that is not numeric, as in the per-column path.
+      With one distinct column it is the per-column path, unchanged. Window rules are the same as for
+      `compute_column_metrics`; the fallback to `timestamp_column` happens only on SQLCODE 707 or 91930, once
+      per window. Computes and returns values only; it emits nothing.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_change_window`.
+      - name: columns
+        type: list
+        description: The columns to measure; each resolved as `timestamp_column` is in `get_change_window`.
+      - name: window
+        type: dict
+        description: The result of `get_change_window` for the same relation, or none.
+      - name: metrics
+        type: list
+        description: >
+          Optional, default `[window_rows, null_rate]`. Any of `window_rows`, `null_rate`, `avg`, `min`, `max`,
+          as for `compute_column_metrics`.

@@ -13,7 +13,7 @@ import pytest
 
 from helpers.macros import run_macro, run_macro_with_logs
 
-COUNTED_BY_THE_ESTIMATE = {"node_results", "query_events", "lineage"}
+COUNTED_BY_THE_ESTIMATE = {"node_results", "query_events", "lineage", "samples"}
 
 
 def with_vars(settings: dict) -> list[str]:
@@ -69,6 +69,13 @@ def test_node_result_and_query_event_rows_follow_their_vars(settings, expected):
     assert (r["node_results"], r["query_events"]) == expected
 
 
+def test_samples_count_follows_its_var_and_the_failing_tests():
+    off = run_macro("it_end_run_row_counts", {"nodes": 7, "failing_tests": 4})
+    assert off["emitters"]["samples"] == 0  # opt-in
+    on = run_macro("it_end_run_row_counts", {"nodes": 7, "failing_tests": 4}, with_vars({"samples": True}))
+    assert on["emitters"]["samples"] == 4
+
+
 def test_lineage_count_follows_its_var_and_the_payload_cap():
     assert run_macro("it_end_run_row_counts", {"nodes": 7})["emitters"]["lineage"] == 1  # the edges fit one record
     off = run_macro("it_end_run_row_counts", {"nodes": 7}, with_vars({"lineage": False}))
@@ -78,11 +85,12 @@ def test_lineage_count_follows_its_var_and_the_payload_cap():
 
 
 @pytest.mark.parametrize("settings", [{}, {"node_results": False}, {"query_events": False}, {"lineage": False},
-                                      {"node_results": False, "query_events": False, "lineage": False}])
+                                      {"samples": True}, {"node_results": False, "query_events": False, "lineage": False}])
 def test_the_estimate_matches_the_rows_end_run_writes(settings):
     n = 3
+    # samples on with no failing test: the results below have none, so the estimate counts 0 failing tests
     written = run_macro("it_end_run_rows_written", {"results": [result(i) for i in range(n)]}, with_vars(settings))
     r = estimate(settings, nodes=n, runs_per_day=1, failing_tests_per_run=0)["records_per_run"]
     estimated = (r["invocation_span"] + r["node_spans"] + r["node_results"] + r["query_events"] + r["end"]
-                 + r["lineage"])
+                 + r["lineage"] + r["samples"])
     assert estimated == written["rows"], (r, written)

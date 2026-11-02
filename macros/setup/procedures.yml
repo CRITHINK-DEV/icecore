@@ -4,10 +4,10 @@ macros:
   - name: create_emit_procedures
     description: >
       Create (CREATE OR REPLACE ... COPY GRANTS, EXECUTE AS OWNER) the two procedures every icecore record is
-      written through, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
+      written through and `ICECORE_SCORE`, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
       made on them when setup runs again. Called by `setup`; the schema must exist,
       and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
-      dbt needs USAGE on the database, the schema and both procedures.
+      dbt needs USAGE on the database, the schema and the procedures it calls (`ICECORE_SCORE` is the only access it needs to Cortex: no grant on a model).
       `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
       `SYSTEM$ADD_EVENT`; a name without the `icecore.` prefix gets it. Refuses a CALL of more than 100 events
       (returns `icecore-error too_many_events: ...` and writes nothing). Returns `ok <n>`. `SCOPE` is `global`.
@@ -17,7 +17,8 @@ macros:
       attrs, events: [{name, ts_ns, attrs}]}`, written with its explicit times, or a log `{type: 'log', level,
       message, attrs}` (levels `debug`, `info`, `warn`, `error`), written as a LOG record with attributes.
       `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
-      Records land in the event table of the procedures' database, at that database's levels. Returns the two
+      `ICECORE_SCORE(model, series, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)`: LANGUAGE SQL, RETURNS VARIANT. Scores `points` (`{ts, y}`, ts null is now in UTC) of one series with a Cortex anomaly model in the owner's role, the one that trained it (Snowflake documents that models cannot be shared across roles). Returns `{state: missing}`, `{state: stale, age_days}`, `{state: ok, age_days, rows}` (DETECT_ANOMALIES rows, latest first) or `{error}`. Takes no database or schema argument: its own database and obs schema are constants fixed in the body when setup creates it (checked against [A-Za-z0-9_]), so the owner's rights reach only the models of its own schema. Binds its arguments: `model` must match `ICECORE_M_` and 16 upper-case hex digits (checked before any use), the series key is hashed with MD5 (models are trained on that hash), and each point is typed (a timestamp and a finite number) before it is written into the detection input.
+      Records land in the event table of the procedures' database, at that database's levels. Returns the three
       qualified procedure names (empty at parse time).
     arguments:
       - name: schema

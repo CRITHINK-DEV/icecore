@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "The raw tables. In this example they are the two seeds, loaded by dbt seed."
+    schema: "{{ target.schema }}"
+    freshness:
+      warn_after: {count: 3650, period: day}
+      error_after: {count: 7300, period: day}
+    loaded_at_field: ordered_at
+    tables:
+      - name: raw_customers
+        freshness: null
+      - name: raw_orders

@@ -1,22 +1,27 @@
-{#- UC5 telemetry levels (spikes/GATE1.md, "Prerequisites"; spec section 2, "Snowflake edition").
+{#- UC5 telemetry levels (spikes/GATE1.md, "Prerequisites" and open item 7; spec section 2, "Snowflake edition").
 
-    Levels belong to the target database, never to the session or the account: LOG_LEVEL at least INFO and TRACE_LEVEL
-    ON_EVENT or ALWAYS. The ICECORE_EMIT procedures inherit them, and with them their records land whatever the session's
-    levels are (S1.md, proc.levels_off).
+    Levels belong to the schema that holds the ICECORE_EMIT procedures, never to the session or the account, and not to
+    the whole database: ALTER DATABASE ... TRACE_LEVEL = 'ALWAYS' would trace every procedure and UDF the client has
+    there. Measured on 1 Nov 2026 (S12 levels matrix, spikes/results/gate1_followups.json): a level set on the schema
+    (or on the procedures) takes over from the database's, and LOG_LEVEL INFO with TRACE_LEVEL ALWAYS on the schema lands
+    every record of ICECORE_EMIT and ICECORE_EMIT_RUN. TRACE_LEVEL ON_EVENT is not enough: ICECORE_EMIT_RUN writes
+    explicit spans, and under ON_EVENT only a span that carries an event lands. So the needs are LOG_LEVEL at least
+    INFO and TRACE_LEVEL ALWAYS, effective on the schema (set there or inherited from the database).
 
-    The only statement icecore may run is ALTER DATABASE <db> SET LOG_LEVEL / TRACE_LEVEL, and only inside a guard: when
-    the role lacks the privilege, the statement is printed for an admin and the run goes on. Everything else is printed,
-    never run: ALTER ACCOUNT (needs ACCOUNTADMIN), the database's EVENT_TABLE association, CREATE EVENT TABLE (the
-    package creates no tables) and the recommended clustering key. Database-level event tables need Enterprise; on
-    Standard the account's active table is used. -#}
+    The only statement icecore may run is ALTER SCHEMA <db>.<schema> SET LOG_LEVEL / TRACE_LEVEL, and only inside a
+    guard: it needs MODIFY LOG LEVEL and MODIFY TRACE LEVEL on the account, so on most accounts the role lacks the
+    privilege, the statement is printed for an admin and the run goes on. Everything else is printed, never run:
+    ALTER ACCOUNT (needs ACCOUNTADMIN), the database's EVENT_TABLE association, CREATE EVENT TABLE (the package creates no
+    tables) and the recommended clustering key. Database-level event tables need Enterprise; on Standard the account's
+    active table is used. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{#- Check the levels against the detection result and act on the plan. Returns
+{#- Check the levels against the detection result (and `schema_levels`, what icecore.schema_levels read on the obs schema) and act on the plan. Returns
     {database, levels_ok, executed: [...], printed: [...], notes: [...]} and logs every printed statement. -#}
-{% macro set_telemetry_levels(capabilities, database=none, dedicated_event_table=none, apply=true) %}
-  {%- set p = icecore.telemetry_levels_plan(capabilities, database, dedicated_event_table) -%}
+{% macro set_telemetry_levels(capabilities, database=none, dedicated_event_table=none, apply=true, schema=none, schema_levels=none) %}
+  {%- set p = icecore.telemetry_levels_plan(capabilities, database, dedicated_event_table, schema, schema_levels) -%}
   {%- set executed = [] -%}
   {%- set printed = [] -%}
   {%- set notes = [] -%}
@@ -40,7 +45,7 @@
     {% do log('icecore: ran: ' ~ statement, info=True) %}
   {%- endfor -%}
   {%- if p['levels_ok'] -%}
-    {% do log('icecore: telemetry levels of ' ~ p['database'] ~ ' are sufficient (LOG_LEVEL ' ~ p['log_level'] ~ ', TRACE_LEVEL ' ~ p['trace_level'] ~ '): nothing changed', info=True) %}
+    {% do log('icecore: telemetry levels of ' ~ p['database'] ~ '.' ~ p['schema'] ~ ' are sufficient (LOG_LEVEL ' ~ p['log_level'] ~ ', TRACE_LEVEL ' ~ p['trace_level'] ~ '): nothing changed', info=True) %}
   {%- endif -%}
   {%- for note in notes -%}
     {% do log('icecore: ' ~ note, info=True) %}
@@ -54,8 +59,10 @@
 
 {#- Pure: what to do for a detection result, with no query. Returns
     {database, log_level, trace_level, levels_ok, attempt: [...], print: [...], notes: [...]}.
-    `attempt` only ever holds the database's ALTER DATABASE ... SET LOG_LEVEL / TRACE_LEVEL. -#}
-{% macro telemetry_levels_plan(capabilities, database=none, dedicated_event_table=none) %}
+    `attempt` only ever holds the obs schema's ALTER SCHEMA ... SET LOG_LEVEL / TRACE_LEVEL. The levels checked are
+    `schema_levels` ({log_level, trace_level} effective on the schema) when given, else the database's from
+    `capabilities`. -#}
+{% macro telemetry_levels_plan(capabilities, database=none, dedicated_event_table=none, schema=none, schema_levels=none) %}
   {%- if capabilities is none or capabilities is not mapping -%}
     {{ exceptions.raise_compiler_error("icecore: set_telemetry_levels needs the result of icecore.detect_capabilities() as `capabilities`") }}
   {%- endif -%}
@@ -63,8 +70,10 @@
   {%- set db = icecore._icecore_identifier(database) -%}
   {%- set edition = (capabilities.get('edition') or 'UNKNOWN') | upper -%}
   {%- set active = (capabilities.get('event_table') or '') | trim -%}
-  {%- set log_level = (capabilities.get('log_level') or 'OFF') | upper -%}
-  {%- set trace_level = (capabilities.get('trace_level') or 'OFF') | upper -%}
+  {%- set schema_name = icecore.obs_schema_name(schema) -%}
+  {%- set effective = schema_levels if schema_levels is mapping else capabilities -%}
+  {%- set log_level = (effective.get('log_level') or 'OFF') | upper -%}
+  {%- set trace_level = (effective.get('trace_level') or 'OFF') | upper -%}
   {%- set attempt = [] -%}
   {%- set to_print = [] -%}
   {%- set notes = [] -%}
@@ -92,15 +101,34 @@
     {%- do notes.append('recommended: cluster the event table ' ~ active ~ ' on (TO_DATE(TIMESTAMP), RECORD_TYPE) so icecore views prune') -%}
   {%- endif -%}
 
-  {#- Levels of the database -#}
+  {#- Levels of the obs schema: LOG_LEVEL at least INFO, TRACE_LEVEL ALWAYS (ON_EVENT loses spans without events) -#}
   {%- set sets = [] -%}
   {%- if log_level not in ('INFO', 'DEBUG', 'TRACE') -%}{%- do sets.append("LOG_LEVEL = 'INFO'") -%}{%- endif -%}
-  {%- if trace_level not in ('ON_EVENT', 'ALWAYS') -%}{%- do sets.append("TRACE_LEVEL = 'ALWAYS'") -%}{%- endif -%}
+  {%- if trace_level != 'ALWAYS' -%}{%- do sets.append("TRACE_LEVEL = 'ALWAYS'") -%}{%- endif -%}
   {%- if sets -%}
-    {%- do attempt.append('ALTER DATABASE ' ~ db ~ ' SET ' ~ (sets | join(', '))) -%}
+    {%- do attempt.append('ALTER SCHEMA ' ~ db ~ '.' ~ icecore._icecore_identifier(schema_name) ~ ' SET ' ~ (sets | join(', '))) -%}
   {%- endif -%}
-  {{ return({'database': database, 'log_level': log_level, 'trace_level': trace_level, 'levels_ok': not sets,
+  {%- if trace_level == 'ON_EVENT' -%}
+    {%- do notes.append('TRACE_LEVEL ON_EVENT loses the explicit spans that ICECORE_EMIT_RUN writes without an event (measured, spikes/GATE1.md item 7): icecore needs ALWAYS on its schema') -%}
+  {%- endif -%}
+  {{ return({'database': database, 'schema': schema_name, 'log_level': log_level, 'trace_level': trace_level, 'levels_ok': not sets,
              'attempt': attempt, 'print': to_print, 'notes': notes}) }}
+{% endmacro %}
+
+
+{#- {log_level, trace_level} effective on `schema` (its own value or the database's, SHOW PARAMETERS IN SCHEMA), or none when
+    the schema cannot be read (it does not exist yet, or the role has no USAGE). -#}
+{% macro schema_levels(database, schema=none) %}
+  {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- set shown = icecore._icecore_try_show("show parameters like '%LEVEL' in schema " ~ icecore._icecore_identifier(database) ~ '.'
+      ~ icecore._icecore_identifier(icecore.obs_schema_name(schema))) -%}
+  {%- if 'error' in shown -%}{{ return(none) }}{%- endif -%}
+  {%- set params = {} -%}
+  {%- for row in shown.get('rows') or [] -%}
+    {%- do params.update({row['key'] | upper: (row['value'] or '') | upper}) -%}
+  {%- endfor -%}
+  {%- if 'LOG_LEVEL' not in params or 'TRACE_LEVEL' not in params -%}{{ return(none) }}{%- endif -%}
+  {{ return({'log_level': params['LOG_LEVEL'], 'trace_level': params['TRACE_LEVEL']}) }}
 {% endmacro %}
 
 
@@ -117,5 +145,5 @@ exception
   when other then return 'icecore-error ' || sqlcode || ': ' || sqlerrm;
 end;
   {%- endset -%}
-  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).columns[0].values()[0]) }}
+  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) }}
 {% endmacro %}

@@ -69,6 +69,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),
+    "SLA_DECLARED": ("merged", "macros/control/create_sla_declared_view.sql", (
+        "unique_id", "expected_every_minutes", "grace_minutes", "channel", "severity")),
 }
 
 
@@ -377,3 +379,14 @@ def silence_events(unique_id: str | None = None, since=None, limit: int = DEFAUL
                    layer: QueryLayer | None = None) -> list[Row]:
     """SILENCE_EVENTS: silence verdicts written by the silence task (macros/views/silence_events.sql)."""
     return _read(build_silence_events, layer, unique_id, since, limit, view="SILENCE_EVENTS")
+
+
+def build_sla_declared(views_schema, unique_id=None, limit=MAX_LIMIT):
+    w = _Where()
+    w.eq("unique_id", unique_id)
+    return _build(views_schema, "SLA_DECLARED", w, "unique_id", limit)
+
+
+def sla_declared(unique_id: str | None = None, limit: int = MAX_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
+    """SLA_DECLARED: every model with meta.sla (created by setup, macros/control/create_sla_declared_view.sql)."""
+    return _read(build_sla_declared, layer, unique_id, limit, view="SLA_DECLARED")

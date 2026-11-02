@@ -6,6 +6,7 @@
 {% macro create_tasks(schema=none, capabilities=none) %}
   {%- set out = {'tasks': [], 'printed': []} -%}
   {%- if not execute -%}{{ return(out) }}{%- endif -%}
+  {%- do icecore.create_sla_declared_view(schema) -%}
   {%- for entry in icecore._icecore_task_entries() -%}
     {#- explicit dispatch (no macro lookup by name, Fusion-safe) -#}
     {%- if entry['name'] == 'cortex_refresh' -%}

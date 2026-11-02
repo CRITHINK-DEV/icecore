@@ -1,8 +1,8 @@
 """SLAs page logic, pure Python (no Streamlit, no Snowflake): easy to test on small lists of rows.
 
-Inputs are the lower-case row dicts of the SILENCE_EVENTS and NODE_EXECUTIONS views. Declared schedules come
-from the silence verdicts (the only view that carries meta.sla: expected_every_minutes, grace, channel,
-severity); actual schedules are observed from the start times of successful node executions.
+Inputs are the lower-case row dicts of the SLA_DECLARED, SILENCE_EVENTS and NODE_EXECUTIONS views. Declared
+schedules come from SLA_DECLARED (every model with meta.sla, silent or not); silence verdicts say which of them is
+silent now; actual schedules are observed from the start times of successful node executions.
 """
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ models:
     config:
       meta:
         sla:
-          expected_every: 1h   # m, h, d or w; e.g. 15m, 1h30m, 1d
-          grace: 10m           # optional, defaults to 1m (never longer than expected_every)
+          expected_every: 1h   # units m, h, d, w; e.g. 15m, 1h30m, 1d
+          grace: 10m           # optional, defaults to 1m, capped at expected_every
         alerts:
           channel: data-platform
           severity: warn       # warn or error"""
@@ -53,25 +53,25 @@ def format_minutes(minutes) -> str:
     return "".join(parts)
 
 
-def declared_schedules(silence_rows: list[dict]) -> dict[str, dict]:
-    """Latest declared schedule per model: the newest silence verdict of each unique_id."""
+def declared_schedules(declared_rows: list[dict]) -> dict[str, dict]:
+    """Declared schedule per model from the SLA_DECLARED rows."""
+    return {r["unique_id"]: {
+        "unique_id": r["unique_id"],
+        "expected_every_minutes": r.get("expected_every_minutes"),
+        "grace_minutes": r.get("grace_minutes"),
+        "channel": r.get("channel"),
+        "severity": r.get("severity"),
+    } for r in declared_rows if r.get("unique_id") is not None}
+
+
+def _latest_verdicts(silence_rows: list[dict]) -> dict[str, dict]:
     latest: dict[str, dict] = {}
     for row in silence_rows:
         uid = row.get("unique_id")
-        if uid is None:
-            continue
-        at = _as_dt(row.get("detected_at"))
-        seen = latest.get(uid)
-        if seen is None or (at and (seen["_at"] is None or at > seen["_at"])):
-            latest[uid] = {
-                "unique_id": uid,
-                "expected_every_minutes": row.get("expected_every_minutes"),
-                "grace_minutes": row.get("grace"),
-                "channel": row.get("channel"),
-                "severity": row.get("severity"),
-                "_at": at,
-            }
-    return {uid: {k: v for k, v in d.items() if k != "_at"} for uid, d in latest.items()}
+        at = _as_dt(row.get("detected_at")) or datetime.min
+        if uid is not None and (uid not in latest or at > latest[uid]["_at"]):
+            latest[uid] = {**row, "_at": at}
+    return latest
 
 
 def actual_schedules(node_rows: list[dict], unique_ids=None) -> dict[str, dict]:
@@ -98,22 +98,32 @@ def actual_schedules(node_rows: list[dict], unique_ids=None) -> dict[str, dict]:
     return out
 
 
-def sla_schedule_table(silence_rows: list[dict], node_rows: list[dict]) -> list[dict]:
-    """One row per declared model: declared schedule next to the observed one, and whether it is slower."""
-    declared = declared_schedules(silence_rows)
+def sla_schedule_table(declared_rows: list[dict], silence_rows: list[dict], node_rows: list[dict]) -> list[dict]:
+    """One row per declared model: declared schedule next to the observed one.
+
+    silent_now: the newest silence verdict of the model has no success after it (the model has not run since the
+    last success the verdict was written for)."""
+    declared = declared_schedules(declared_rows)
     actual = actual_schedules(node_rows, set(declared))
+    verdicts = _latest_verdicts(silence_rows)
     rows = []
     for uid in sorted(declared):
         d, a = declared[uid], actual.get(uid, {})
-        every, observed = d["expected_every_minutes"], a.get("actual_every_minutes")
+        every, observed, last = d["expected_every_minutes"], a.get("actual_every_minutes"), a.get("last_success_at")
+        v = verdicts.get(uid)
+        silent = False
+        if v is not None:
+            verdict_last = _as_dt(v.get("last_success_at"))
+            silent = last is None or verdict_last is None or last <= verdict_last
         rows.append({
             "unique_id": uid,
             "declared_every": format_minutes(every),
             "grace": format_minutes(d["grace_minutes"]),
             "actual_every": format_minutes(observed) if observed is not None else "",
             "runs_observed": a.get("runs", 0),
-            "last_success_at": a.get("last_success_at"),
+            "last_success_at": last,
             "slower_than_declared": bool(every and observed and observed > every),
+            "silent_now": silent,
             "channel": d["channel"],
             "severity": d["severity"],
         })

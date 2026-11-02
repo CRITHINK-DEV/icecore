@@ -57,7 +57,7 @@ def test_snapshot_leaves_out_removed_columns():
 
 def test_compat_list_holds_all_three_elementary_views():
     names = [v["name"] for v in run_macro("it_compat_views_render", {})]
-    assert names == ["ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]
+    assert names[:3] == ["ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]  # run and node views follow
 
 
 # --- sandbox --------------------------------------------------------------------------------------

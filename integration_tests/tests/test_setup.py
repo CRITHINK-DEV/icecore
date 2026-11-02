@@ -2,10 +2,10 @@
 
 setup runs one ordered list of steps: detect_capabilities, CREATE SCHEMA IF NOT EXISTS for the obs schema,
 create_emit_procedures, set_telemetry_levels, then records the capabilities through the new ICECORE_EMIT. The
-steps that do not exist yet (create_alerts, create_tasks, deploy_app, compat views) keep their place
+steps that do not exist yet (create_alerts, deploy_app, compat views) keep their place
 in the list and are reported as planned. The `schema` argument overrides the obs_schema var.
 
-doctor re-detects, checks the database's levels (LOG_LEVEL at least INFO, TRACE_LEVEL ON_EVENT or ALWAYS), makes
+doctor re-detects, checks the obs schema's levels (LOG_LEVEL at least INFO, TRACE_LEVEL ALWAYS), makes
 one guarded test CALL of each procedure tagged icecore.doctor.probe, and counts icecore records of the last 24 hours
 through base_events() on Snowflake's clock, its own probes and capabilities records excluded. It reports and never
 fails the run.
@@ -57,14 +57,14 @@ def test_setup_steps_keep_one_ordered_list():
         "record_capabilities", "estimate_telemetry_cost", "create_views", "create_alerts", "create_tasks"]
     assert [s["name"] for s in steps if s["ready"]] == [
         "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels", "record_capabilities",
-        "estimate_telemetry_cost", "create_views"]
+        "estimate_telemetry_cost", "create_views", "create_tasks"]
 
 
 def test_setup_steps_add_compat_views_and_the_app_on_request():
     steps = call_macro("_icecore_setup_steps", compat="elementary", app=True)
     names = [s["name"] for s in steps]
     assert names.index("create_views") < names.index("create_compat_views") < names.index("deploy_app")
-    assert not any(s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app"))
+    assert [s["ready"] for s in steps if s["name"] in ("create_compat_views", "deploy_app")] == [True, False]
 
 
 def test_schema_argument_overrides_the_obs_schema_var():
@@ -78,7 +78,7 @@ def test_schema_argument_overrides_the_obs_schema_var():
 
 def test_procedures_keep_their_grants_when_replaced():
     for ddl in run_macro("it_procedure_ddl", {}):
-        assert re.search(r"\(\w+ (?:ARRAY|STRING)\)\s+COPY GRANTS\s+RETURNS STRING", ddl), ddl
+        assert re.search(r"\([^)]*\)\s+COPY GRANTS\s+RETURNS (STRING|VARIANT)", ddl), ddl
 
 
 def test_one_plain_identifier_helper():
@@ -134,6 +134,17 @@ def test_doctor_with_records_and_a_failed_check_warns():
     assert [c["name"] for c in r["checks"] if not c["ok"]] == ["levels"]
 
 
+def test_doctor_checks_the_levels_effective_on_the_schema():
+    narrow = {"log_level": "INFO", "trace_level": "ALWAYS"}
+    r = call_macro("_icecore_doctor_report", capabilities=caps(log_level="OFF", trace_level="OFF"), probes=OK_PROBES,
+                   count=3, schema_levels=narrow)
+    assert r["status"] == "ok", r
+    r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=OK_PROBES, count=3,
+                   schema_levels={"log_level": "INFO", "trace_level": "ON_EVENT"})
+    levels = next(c for c in r["checks"] if c["name"] == "levels")
+    assert not levels["ok"] and "ALTER SCHEMA" in levels["detail"] and "ALWAYS" in levels["detail"], levels
+
+
 def test_doctor_reports_a_count_it_could_not_read():
     r = call_macro("_icecore_doctor_report", capabilities=caps(), probes=OK_PROBES, count=None,
                    count_error="Insufficient privileges")
@@ -145,7 +156,7 @@ def test_doctor_reports_a_count_it_could_not_read():
 
 def _levels_are_sufficient(sf) -> bool:
     rows = {r[0]: r[1] for r in sf.cursor().execute(f"show parameters in database {DATABASE}").fetchall()}
-    return rows.get("LOG_LEVEL") in ("INFO", "DEBUG", "TRACE") and rows.get("TRACE_LEVEL") in ("ON_EVENT", "ALWAYS")
+    return rows.get("LOG_LEVEL") in ("INFO", "DEBUG", "TRACE") and rows.get("TRACE_LEVEL") == "ALWAYS"
 
 
 @pytest.fixture
@@ -153,7 +164,7 @@ def fresh_schema(sf, run_id):
     """A run_id-named obs schema that does not exist yet; dropped afterwards. Skips rather than let setup try to
     ALTER the shared database's levels."""
     if not _levels_are_sufficient(sf):
-        pytest.skip(f"{DATABASE} levels are not sufficient; setup would try to ALTER the shared database")
+        pytest.skip(f"{DATABASE} levels are not sufficient; setup would try to ALTER the new schema's levels")
     schema = f"ICECORE_OBS_{run_id}".upper()
     try:
         yield schema
@@ -210,8 +221,12 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
         assert out["levels"]["executed"] == [] and out["levels"]["levels_ok"] is True, out["levels"]
         assert [s["name"] for s in out["steps"] if s["status"] == "done"] == [
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
-            "record_capabilities", "estimate_telemetry_cost", "create_views"], out["steps"]
+            "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks"], out["steps"]
         assert out["recorded"] == "ok 1"
+        # Cortex is available in the sandbox: the refresh task exists, created suspended (never resumed here)
+        assert [(t["name"], t["status"], t["resumed"]) for t in out["tasks"]["tasks"]] == [("cortex_refresh", "ok", False)], out["tasks"]
+    tasks = sf.cursor().execute(f"show tasks in schema {DATABASE}.{schema}").fetchall()
+    assert tasks and all("suspended" in [str(c).lower() for c in t] for t in tasks), tasks
     assert first["levels"] == second["levels"]
     assert first["steps"] == second["steps"]
 

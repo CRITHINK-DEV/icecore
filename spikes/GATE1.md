@@ -126,9 +126,11 @@ role (whether a view owned by another role can pass that access through is unmea
 
 - The organization has accepted the Anaconda terms for Snowflake's third-party Python packages, which the Python procedure's
   `PACKAGES` need.
-- The target database has `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ON_EVENT` or `ALWAYS`. S1 measured `INFO` and
-  `ALWAYS` (S1.md, header); `ON_EVENT` and levels set below the database are unmeasured (open item 7). `doctor` checks the effective levels. `setup` prints the `ALTER
-  DATABASE` statement for an admin when its role cannot set them.
+- The icecore schema has `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ALWAYS`, set on the schema or inherited from the
+  database (open item 7: measured, a level set on the schema or the procedures overrides the database's; `ON_EVENT` loses spans
+  written without an event). `doctor` checks the levels effective on the schema. `setup` runs `ALTER SCHEMA ... SET LOG_LEVEL /
+  TRACE_LEVEL` when its role may (it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account), else prints it for an
+  admin; it never proposes a database-wide `TRACE_LEVEL`.
 
 | Role | Needs | Why |
 |---|---|---|
@@ -193,20 +195,42 @@ role (whether a view owned by another role can pass that access through is unmea
 5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later
    `ICECORE_EMIT_RUN` `CALL` can name the invocation span as their parent was not tested.
-7. **`TRACE_LEVEL = ON_EVENT`, and levels below the database (schema, procedure), are unmeasured.** S1 ran with `ALWAYS` set on
-   the database. `TRACE_LEVEL = 'ALWAYS'` on a database traces every procedure and UDF the client has there, so a narrower setting
-   (the schema that holds the icecore procedures, or the procedures) would be better if it lands records. Attempted on
-   31 Oct 2026 in the sandbox (`tests/spikes/test_s12_schema_levels.py`, `results/gate1_followups.json`): **not measurable**.
-   The CI role cannot run `ALTER SCHEMA ... SET LOG_LEVEL / TRACE_LEVEL` or `ALTER PROCEDURE ... SET LOG_LEVEL / TRACE_LEVEL`,
-   although it owns the schema: error 003001, "must have MODIFY LOG LEVEL / MODIFY TRACE LEVEL granted on ACCOUNT". The
-   bootstrap grants only the `MODIFY SESSION ...` privileges, and a database cannot be created to lower the effective level.
-   Two consequences hold without further measurement: setting levels on any object needs these two account privileges, so on
-   most accounts `set_telemetry_levels` will print its `ALTER DATABASE` statement for an admin rather than run it; and the
-   statement it proposes stays the database one until a narrower one is measured. To measure: an administrator grants
-   `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account to `ICECORE_CI` (sandbox only), then
-   `pytest -m sandbox tests/spikes/test_s12_schema_levels.py` runs six cases (schema OFF, schema INFO with ON_EVENT, ALWAYS and
-   WARN, schema OFF with the procedure at INFO / ALWAYS) against the database's untouched INFO / ALWAYS and records which land.
-   Only if schema or procedure level lands records does `set_telemetry_levels` change.
+7. **Levels below the database: measured (1 Nov 2026, story "narrowest telemetry levels").** The owner granted `MODIFY LOG LEVEL`
+   and `MODIFY TRACE LEVEL` on the account to `ICECORE_CI`, so `tests/spikes/test_s12_schema_levels.py` ran (results:
+   `results/gate1_followups.json`, key `levels_matrix`). Each of nine cases is a run_id schema `ICECORE_SANDBOX.GATE1_LV_<run_id>_<n>`
+   holding the real `ICECORE_EMIT` and `ICECORE_EMIT_RUN` and a probe procedure that adds no event; one `CALL` of each writes one
+   span event, two explicit spans (one with an event, one without), one INFO log. Landed records per case (with all
+   levels open, one `CALL` of each lands the counts in the first row):
+
+   | Levels set | `ICECORE_EMIT` span event | `ICECORE_EMIT_RUN` explicit spans | `ICECORE_EMIT_RUN` log | probe span (no event) |
+   |---|---|---|---|---|
+   | none (database INFO / ALWAYS) | 1 | 2 of 2 | 1 | 1 |
+   | schema INFO / ALWAYS | 1 | 2 of 2 | 1 | 1 |
+   | schema INFO / ON_EVENT | 1 | 1 of 2 (only the span with an event) | 1 | 0 |
+   | schema INFO / OFF | 0 | 0 of 2 | 1 | 0 |
+   | schema OFF / ON_EVENT | 1 | 1 of 2 | 0 | 0 |
+   | schema WARN / ON_EVENT | 1 | 1 of 2 | 0 | 0 |
+   | schema OFF / OFF | 0 | 0 | 0 | 0 |
+   | schema OFF / OFF, procedures INFO / ALWAYS | 1 | 2 of 2 | 1 | 1 |
+   | schema OFF / OFF, procedures INFO / ON_EVENT | 1 | 1 of 2 | 1 | 0 |
+
+   **How the database's levels were controlled for.** `ICECORE_SANDBOX` stays at LOG_LEVEL INFO and TRACE_LEVEL ALWAYS, which are
+   already sufficient and could mask a narrower setting. The CI role cannot create a database to lower them and the shared one is
+   never altered, so the test proves instead that the lower level is the effective one: a schema at OFF lands nothing under a
+   database at INFO / ALWAYS (the schema overrides the database), a procedure's own level overrides the schema's, and the probe,
+   which adds no event, lands a span only under ALWAYS (so its absence under ON_EVENT shows the schema's ON_EVENT replaced the
+   database's ALWAYS). Not measured: a database whose own levels are low with a schema set above them; by the same inheritance
+   (account > database > schema > object, nearest wins) it lands, but it was not run.
+
+   **Result.** (a) A schema level, and a procedure level, takes over from the database's in both directions, so the narrowest
+   setting that lands every icecore record is `ALTER SCHEMA <db>.<obs schema> SET LOG_LEVEL = 'INFO', TRACE_LEVEL = 'ALWAYS'`:
+   only the icecore procedures are traced, not the client's other procedures and UDFs. (b) `TRACE_LEVEL = ON_EVENT` is **not
+   enough**: it lands `ICECORE_EMIT` span events and the `ICECORE_EMIT_RUN` spans that carry an event, but drops explicit spans
+   written without one, so `ALWAYS` is required unless every span written through `ICECORE_EMIT_RUN` carries an event (a design
+   constraint the package does not hold). (c) `LOG_LEVEL` WARN or OFF drops the INFO log records. (d) With logs open, the
+   Python runtime of `ICECORE_EMIT_RUN` adds 3 log lines of its own per `CALL` (`python_runtime_logs` in the results file). (e) Setting any level on a schema or procedure needs the two account privileges, so on
+   most accounts `setup` will print the statement for an admin. `set_telemetry_levels` now proposes the `ALTER SCHEMA` statement,
+   and `doctor` checks the levels effective on the schema (`SHOW PARAMETERS ... IN SCHEMA`).
 8. **The identity of native dbt Projects records** (their own view predicate) is to be defined and measured.
 9. **Reading `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` through an icecore view owned by another role is unmeasured.** No spike read
    `EVENTS_VIEW` through a view; the readers' table in "What setup creates" assumes `EVENTS_VIEWER` is needed. Granting it gives

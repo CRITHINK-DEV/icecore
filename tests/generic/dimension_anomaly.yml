@@ -1,0 +1,41 @@
+version: 2
+
+macros:
+  - name: test_dimension_anomaly
+    description: >
+      Incremental dimension test, applied to the column that holds the dimension (for example country). Reads only
+      the rows that changed since the previous observation (CHANGES, or `timestamp_column` when change tracking does
+      not cover the window), counts them per value of the column, and writes one `window_rows` metric per value
+      through `icecore.emit_metric` with the dimension `<column>=<value>`. At most `max_values` values are written
+      (default `vars: icecore: dimension_max_values`, 20, the most frequent ones); the rest are grouped in one
+      `<column>=<other>` metric, and a null value is written as `<column>=<null>`. It fails when a count is outside the
+      static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are the only verdict, and the
+      scoring hook is marked in the test body and not called. The previous observation is the newest dimension metric
+      record of the column, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago,
+      and `since` overrides both. When no window can be read the readers log why, no metric is written and the test
+      passes. A failed telemetry CALL is a logged warning and never changes the verdict. CHANGES is cheap for
+      insert-only windows and can cost more than a full scan after deletes, updates or merges (spike S5). Example,
+      `columns: [{name: country, data_tests: [icecore.dimension_anomaly: {bounds: {min: 1}}]}]`.
+    arguments:
+      - name: model
+        type: relation
+        description: The relation under test, filled in by dbt.
+      - name: column_name
+        type: string
+        description: The dimension column, filled in by dbt.
+      - name: bounds
+        type: dictionary
+        description: >
+          Static limits for the count of changed rows of each value, a mapping with min and or max numbers. Optional.
+      - name: max_values
+        type: integer
+        description: Number of distinct values written before the rest are grouped as other. Optional.
+      - name: since
+        type: string
+        description: ISO 8601 start of the window, for example `2026-10-31T08:00:00.000000Z`. Optional; overrides the previous observation.
+      - name: timestamp_column
+        type: string
+        description: Date or timestamp column used when CHANGES is unavailable. Optional.
+      - name: lookback_hours
+        type: number
+        description: Window length when there is no previous observation and no `since`. Default 24.

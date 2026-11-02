@@ -1,0 +1,134 @@
+{
+  "cutoff": {
+    "call_statuses": {
+      "5": "ok spans=3 logs=0",
+      "30": "ok spans=3 logs=0",
+      "60": "ok spans=3 logs=0",
+      "120": "ok spans=3 logs=0",
+      "180": "ok spans=3 logs=0",
+      "240": "ok spans=3 logs=0",
+      "360": "ok spans=3 logs=0",
+      "480": "ok spans=3 logs=0",
+      "720": "ok spans=3 logs=0",
+      "1080": "ok spans=3 logs=0",
+      "1440": "ok spans=3 logs=0",
+      "2880": "ok spans=3 logs=0",
+      "4320": "ok spans=3 logs=0",
+      "10080": "ok spans=3 logs=0",
+      "43200": "ok spans=3 logs=0"
+    },
+    "expected_per_case": 1,
+    "landed_per_age_min": {
+      "10080": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "1080": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "120": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "1440": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "180": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "240": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "2880": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "30": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "360": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "4320": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "43200": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "480": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "5": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "60": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      },
+      "720": {
+        "now_span_old_event": 1,
+        "old_event": 1,
+        "old_span": 1,
+        "old_start_end_now": 1
+      }
+    },
+    "log_rows": [
+      "LOG"
+    ],
+    "rows_seen_with_a_10_minute_TIMESTAMP_window_per_age_min": {
+      "10080": 2,
+      "1080": 2,
+      "120": 2,
+      "1440": 2,
+      "180": 2,
+      "240": 2,
+      "2880": 2,
+      "30": 2,
+      "360": 2,
+      "4320": 2,
+      "43200": 2,
+      "480": 2,
+      "5": 4,
+      "60": 2,
+      "720": 2
+    }
+  }
+}

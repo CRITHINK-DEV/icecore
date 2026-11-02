@@ -1,0 +1,17 @@
+version: 2
+
+macros:
+  - name: create_tasks
+    description: >
+      Setup's `create_tasks` step: creates every task of the package, from one list (`_icecore_task_entries`), in order. Today
+      that is the Cortex refresh task (`create_refresh_cortex_task`); with Cortex off its entry is skipped and no task or query
+      is made. Each task is created suspended unless its own var resumes it, and a task an admin had resumed stays resumed.
+      Returns `{tasks, printed}`: `tasks` has one `{name, task, status, resumed}` per entry, `printed` the statements an admin
+      must run. At parse time it returns the empty result.
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+      - name: capabilities
+        type: dict
+        description: A `detect_capabilities` result passed on to each task. Default none, which detects.

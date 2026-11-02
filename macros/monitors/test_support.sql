@@ -79,8 +79,10 @@ end;
     dbt.window.until, the event time for records without it) of the newest metric record of the same kind for the relation, else `lookback_hours` before now (Snowflake's clock).
     kind 'column' (column_anomaly, one column), 'dimension' (dimension_anomaly, one column) or 'all_columns'
     (all_columns_anomaly): the records are told apart by the tag dbt.window.monitor each monitor writes with its
-    metrics, so one test's window end never moves another's. Records without the tag are not read. -#}
-{% macro _icecore_window_since(relation, kind, column_name, since, lookback_hours) %}
+    metrics, so one test's window end never moves another's. Records without the tag are not read. `window_tag` (column_anomaly only)
+    narrows it further to the records of one named test (attribute dbt.window.tag), so two column_anomaly tests on the
+    same column keep separate windows. -#}
+{% macro _icecore_window_since(relation, kind, column_name, since, lookback_hours, window_tag=none) %}
   {%- if since is not none and (since | string | trim) != '' -%}{{ return(since) }}{%- endif -%}
   {%- set iso = 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"' -%}
   {%- set event_table = icecore._icecore_history_event_table() -%}
@@ -94,7 +96,8 @@ end;
       select to_varchar(max(coalesce(convert_timezone('UTC', try_to_timestamp_tz(attributes:"dbt.window.until"::string))::timestamp_ntz, event_at)), '{{ iso }}')
       from ({{ icecore.base_events(event_table=event_table) }})
       where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.metric'
-        and {{ filters }}
+        and {{ filters }}{% if window_tag is not none %}
+        and attributes:"dbt.window.tag"::string = {{ icecore._icecore_sql_literal(window_tag) }}{% endif %}
     {%- endset -%}
     {%- set previous = icecore._icecore_safe_scalar(sql, 'previous observation', relation) -%}
   {%- endif -%}
@@ -129,4 +132,14 @@ end;
 {% macro _icecore_outside(value, limit) %}
   {%- if limit is none or value is none -%}{{ return(false) }}{%- endif -%}
   {{ return((limit.get('min') is not none and value < limit['min']) or (limit.get('max') is not none and value > limit['max'])) }}
+{% endmacro %}
+
+
+{#- window_tag is project config and reaches SQL as a literal: only 1 to 64 letters, digits or underscores (SQL safety
+    rule, review of #48). none is allowed. -#}
+{% macro _icecore_validate_window_tag(window_tag) %}
+  {%- if window_tag is not none and not modules.re.match('^[A-Za-z0-9_]{1,64}\\Z', window_tag | string) -%}
+    {{ exceptions.raise_compiler_error("icecore.column_anomaly: window_tag must be 1 to 64 letters, digits or underscores, got " ~ (window_tag | string | tojson)) }}
+  {%- endif -%}
+  {{ return(true) }}
 {% endmacro %}

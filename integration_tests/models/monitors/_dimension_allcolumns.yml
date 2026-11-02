@@ -1,0 +1,46 @@
+version: 2
+
+# Fixtures for icecore.dimension_anomaly and icecore.all_columns_anomaly (tests/test_dimension_allcolumns.py). The
+# tables are created by the sandbox test under names that carry its run_id and passed as vars; the defaults only let
+# the project parse. Sources only, nothing is built.
+sources:
+  - name: it_uc2_dimensions
+    schema: spikes
+    tables:
+      - name: dim
+        identifier: "{{ var('it_uc2_dim_table', 'it_uc2_unset') }}"
+        columns:
+          - name: country
+            data_tests:
+              - icecore.dimension_anomaly:
+                  name: it_dimension_country
+                  since: "{{ var('it_since', '') }}"
+              - icecore.dimension_anomaly:
+                  name: it_dimension_bad_bounds
+                  bounds: "{{ var('it_bad_dim_bounds', {'min': 1}) }}"
+                  since: "{{ var('it_since', '') }}"
+      - name: cap
+        identifier: "{{ var('it_uc2_cap_table', 'it_uc2_unset') }}"
+        columns:
+          - name: country
+            data_tests:
+              - icecore.dimension_anomaly:
+                  name: it_dimension_capped
+                  max_values: 1
+                  bounds: {min: 20}
+                  since: "{{ var('it_since', '') }}"
+      - name: all_cols
+        identifier: "{{ var('it_uc2_all_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.all_columns_anomaly:
+              name: it_all_columns
+              since: "{{ var('it_since', '') }}"
+      - name: excl
+        identifier: "{{ var('it_uc2_excl_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.all_columns_anomaly:
+              name: it_all_columns_excluded
+              exclude_columns: [note, loaded_at]
+              metrics: [window_rows, null_rate]
+              bounds: {null_rate: {max: 0.5}}
+              since: "{{ var('it_since', '') }}"

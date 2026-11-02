@@ -133,3 +133,13 @@ end;
   {%- if limit is none or value is none -%}{{ return(false) }}{%- endif -%}
   {{ return((limit.get('min') is not none and value < limit['min']) or (limit.get('max') is not none and value > limit['max'])) }}
 {% endmacro %}
+
+
+{#- window_tag is project config and reaches SQL as a literal: only 1 to 64 letters, digits or underscores (SQL safety
+    rule, review of #48). none is allowed. -#}
+{% macro _icecore_validate_window_tag(window_tag) %}
+  {%- if window_tag is not none and not modules.re.match('^[A-Za-z0-9_]{1,64}\\Z', window_tag | string) -%}
+    {{ exceptions.raise_compiler_error("icecore.column_anomaly: window_tag must be 1 to 64 letters, digits or underscores, got " ~ (window_tag | string | tojson)) }}
+  {%- endif -%}
+  {{ return(true) }}
+{% endmacro %}

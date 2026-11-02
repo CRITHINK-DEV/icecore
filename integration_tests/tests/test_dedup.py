@@ -10,6 +10,7 @@ named with the run_id, dropped at the end).
 """
 import json
 import os
+import time
 import uuid
 
 import pytest
@@ -208,7 +209,13 @@ def test_08_new_incident_key_after_an_acknowledgement_is_notified(sf, seeded):
     wait_for_events(sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
                         " and record:name::string = 'icecore.schema_change'", {"schema": seeded["schema"]},
                     min_rows=3, since=seeded["since"], settle_s=5)
-    rows = _pending(sf, seeded["schema"], "email", seeded["table"])
+    # the ack of B and the notification of A (earlier tests) may still be landing under load: wait until only C is left
+    deadline = time.monotonic() + 120
+    while True:
+        rows = _pending(sf, seeded["schema"], "email", seeded["table"])
+        if len(rows) <= 1 or time.monotonic() > deadline:
+            break
+        time.sleep(5)
     assert len(rows) == 1 and rows[0]["node_key"].endswith("|C")
     assert rows[0]["incident_key"] not in seeded["keys"].values()
 

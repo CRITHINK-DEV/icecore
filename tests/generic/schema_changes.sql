@@ -24,8 +24,18 @@
       {%- for c in diff['type_changed'] -%}
         {%- do changes.append({'kind': 'type_changed', 'column': c['name'], 'from_type': c['from_type'], 'to_type': c['to_type']}) -%}
       {%- endfor -%}
-      {%- set events = [{'kind': 'schema_signature', 'level': 'info',
-          'attributes': {'dbt.node.relation': name, 'dbt.schema.columns': tojson(current)}}] -%}
+      {#- The full column state, every run: one `schema_signature` record per chunk of columns (a wide table is split
+          so no record reaches the payload cap and no column is lost). The chunk index and count let the baseline read
+          and the schema_columns view put the chunks back together. -#}
+      {%- set overhead = (tojson(icecore.base_attributes()) | length) + (tojson({'dbt.node.relation': name, 'dbt.schema.columns': '',
+          'dbt.schema.chunk_index': 99999, 'dbt.schema.chunk_count': 99999, 'icecore.level': 'info', 'icecore.message': ''}) | length) + 128 -%}
+      {%- set chunks = icecore._icecore_signature_chunks(current, none, overhead) -%}
+      {%- set events = [] -%}
+      {%- for chunk in chunks -%}
+        {%- do events.append({'kind': 'schema_signature', 'level': 'info',
+            'attributes': {'dbt.node.relation': name, 'dbt.schema.columns': tojson(chunk),
+                           'dbt.schema.chunk_index': loop.index0, 'dbt.schema.chunk_count': chunks | length}}) -%}
+      {%- endfor -%}
       {%- for ch in changes -%}
         {%- set attrs = {'dbt.node.relation': name, 'dbt.schema.change_kind': ch['kind'], 'dbt.schema.column': ch['column']} -%}
         {%- if ch['from_type'] is not none -%}{%- do attrs.update({'dbt.schema.from_type': ch['from_type']}) -%}{%- endif -%}

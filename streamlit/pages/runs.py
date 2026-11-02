@@ -7,7 +7,12 @@ from lib.ui import empty_state, page_header
 page_header("Runs", "Is the platform healthy today, what got slower.", ["invocations", "node_executions"])
 
 range_label = st.sidebar.selectbox("Date range", list(logic.RANGES), index=1, key="runs_range")
-runs = queries.invocations(since=logic.since_for(range_label))
+try:
+    runs = queries.invocations(since=logic.since_for(range_label))
+except Exception as exc:  # no session or views not created yet: show the empty state, not a crash
+    empty_state(logic.ENABLE_TELEMETRY_HELP)
+    st.caption(f"Could not read the runs: {exc}")
+    st.stop()
 
 if not runs:
     empty_state(logic.ENABLE_TELEMETRY_HELP)
@@ -35,7 +40,12 @@ st.dataframe(logic.run_table(runs), use_container_width=True, hide_index=True)
 st.subheader("Run detail")
 by_label = {logic.run_label(r): r for r in runs}
 chosen = by_label[st.selectbox("Run", list(by_label))]
-nodes = queries.node_executions(invocation_id=chosen["invocation_id"])
+try:
+    nodes = queries.node_executions(invocation_id=chosen["invocation_id"], limit=queries.MAX_LIMIT)
+except Exception as exc:
+    empty_state("Could not read the node timings for this run.")
+    st.caption(f"{exc}")
+    st.stop()
 bars = charts.timeline_bars(nodes)
 if bars:
     st.altair_chart(charts.timeline_chart(bars), use_container_width=True)

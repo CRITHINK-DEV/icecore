@@ -59,7 +59,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "duration_s", "status", "nodes_total", "nodes_success", "nodes_failed", "nodes_warned", "nodes_skipped",
         "credits")),
     "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
-        "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "rows_affected",
+        "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "message", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
         "recorded_at")),

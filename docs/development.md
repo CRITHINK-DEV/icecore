@@ -137,14 +137,16 @@ The test builds a small probe project (`integration_tests/elementary_probe/`) in
 
 ## CI
 
-Workflow `.github/workflows/ci.yml`.
+GitHub Actions is currently off, so the workflow below does not run. Until it is back, the check is local: run the offline suite on both environments, each from a clean `target/`, `dbt_packages/` and `package-lock.yml`, and paste both results in the pull request (see [CONTRIBUTING](../CONTRIBUTING.md)).
+
+Workflow `.github/workflows/ci.yml`, kept for when Actions is back.
 
 | Trigger | Job | What runs |
 |---|---|---|
 | every pull request, and every push to `main` or `develop` | `offline` (two runs: `floor` and `latest`) | `pip install -r requirements-<floor or latest>.txt`, then `pytest -m "not sandbox"` on Python 3.12 |
 | manual dispatch only (Actions tab, workflow `ci`, "Run workflow"; or `gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch>`) | `sandbox` | the whole `pytest -m sandbox` suite on the floor environment, then spike S4 in its own Elementary environment |
 
-The sandbox job never runs on a pull request: it spends warehouse credits and needs repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when `gh pr checks <number>` shows both offline runs green; say in the pull request which sandbox tests you ran locally and paste their summary.
+The sandbox job never runs on a pull request: it spends warehouse credits and needs repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when both local offline runs are green and their results are in the description; say in the pull request which sandbox tests you ran locally and paste their summary.
 
 ## Branches and pull requests
 

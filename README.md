@@ -201,6 +201,8 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
+- [Public roadmap](docs/roadmap.md): what is built, what comes next and what is only considered.
+- [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
 - [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
 - [Troubleshooting](docs/troubleshooting.md): by symptom, with how to confirm and the fix.
@@ -219,7 +221,7 @@ The full guide is [docs/development.md](docs/development.md): the two dbt enviro
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
+Issues and pull requests are welcome. Read [CONTRIBUTING](CONTRIBUTING.md) first. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
 
 <!-- enable at public release (Gate 3) -->
 <!--

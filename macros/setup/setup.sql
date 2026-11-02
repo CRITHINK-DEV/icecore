@@ -6,11 +6,15 @@
       1. detect_capabilities      reads only; recorded in step 5, once the procedures exist;
       2. create_schema            CREATE SCHEMA IF NOT EXISTS <target db>.<obs schema> (create_emit_procedures needs it);
       3. create_emit_procedures   ICECORE_EMIT and ICECORE_EMIT_RUN (CREATE OR REPLACE ... COPY GRANTS);
-      4. set_telemetry_levels     the database's levels; prints what the role cannot run;
+      4. set_telemetry_levels     the obs schema's levels; prints what the role cannot run;
       5. record_capabilities      the icecore.capabilities span event, through the new ICECORE_EMIT;
       6. estimate_telemetry_cost  rows and credits per month from the graph and runs_per_day (reads nothing);
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
-      8. create_compat_views (compat), create_alerts, create_tasks, deploy_app (app): planned. They keep
+      8. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
+         views of step 7 (macros/compat/create_compat_views.sql);
+      9. create_tasks            every task of icecore._icecore_task_entries (one list: the silence task and, when Cortex
+         is available, the Cortex refresh task), created suspended;
+         create_alerts, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
 
@@ -24,12 +28,16 @@
     status, detail}]}; status is done or planned. Nothing at parse time. -#}
 {% macro setup(schema=none, compat='none', app=false, runs_per_day=none) %}
   {%- if not execute -%}{{ return(none) }}{%- endif -%}
+  {%- if (compat or 'none') | string | lower not in ['none', 'elementary'] -%}
+    {{ exceptions.raise_compiler_error("icecore: setup compat must be 'none' or 'elementary', got " ~ compat ~ "; no step was run") }}
+  {%- endif -%}
   {%- set state = {
       'database': target.database | string | upper,
       'schema': icecore.obs_schema_name(schema),
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
+      'tasks': none,
       'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
@@ -60,16 +68,16 @@
       {'name': 'detect_capabilities', 'ready': true, 'detail': 'edition, event table, levels, Cortex'},
       {'name': 'create_schema', 'ready': true, 'detail': 'the obs schema'},
       {'name': 'create_emit_procedures', 'ready': true, 'detail': 'ICECORE_EMIT and ICECORE_EMIT_RUN'},
-      {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the database's LOG_LEVEL and TRACE_LEVEL"},
+      {'name': 'set_telemetry_levels', 'ready': true, 'detail': "the obs schema's LOG_LEVEL and TRACE_LEVEL"},
       {'name': 'record_capabilities', 'ready': true, 'detail': 'the icecore.capabilities span event'},
       {'name': 'estimate_telemetry_cost', 'ready': true, 'detail': 'rows and credits per month'},
       {'name': 'create_views', 'ready': true, 'detail': 'the core views over base_events'},
   ] -%}
   {%- if (compat or 'none') | string | lower != 'none' -%}
-    {%- do steps.append({'name': 'create_compat_views', 'ready': false, 'detail': 'compat views for ' ~ compat}) -%}
+    {%- do steps.append({'name': 'create_compat_views', 'ready': true, 'detail': 'the ' ~ compat ~ ' compat views'}) -%}
   {%- endif -%}
   {%- do steps.append({'name': 'create_alerts', 'ready': false, 'detail': 'Snowflake alerts'}) -%}
-  {%- do steps.append({'name': 'create_tasks', 'ready': false, 'detail': 'Snowflake tasks'}) -%}
+  {%- do steps.append({'name': 'create_tasks', 'ready': true, 'detail': 'Snowflake tasks'}) -%}
   {%- if app is sameas true -%}
     {%- do steps.append({'name': 'deploy_app', 'ready': false, 'detail': 'the Streamlit app'}) -%}
   {%- endif -%}
@@ -95,7 +103,8 @@
     {%- do state.update({'procedures': icecore.create_emit_procedures(state['schema'])}) -%}
     {{ return('CREATE OR REPLACE ... COPY GRANTS ' ~ (state['procedures'] | join(', '))) }}
   {%- elif name == 'set_telemetry_levels' -%}
-    {%- set levels = icecore.set_telemetry_levels(state['capabilities'], database=state['database']) -%}
+    {%- set levels = icecore.set_telemetry_levels(state['capabilities'], database=state['database'], schema=state['schema'],
+        schema_levels=icecore.schema_levels(state['database'], state['schema'])) -%}
     {%- do state.update({'levels': levels}) -%}
     {{ return(('levels sufficient' if levels['levels_ok'] else 'levels insufficient') ~ ', ran ' ~ (levels['executed'] | length)
         ~ ', printed ' ~ (levels['printed'] | length) ~ ' for an admin') }}
@@ -114,6 +123,22 @@
     {{ return('{:,}'.format(e['rows_per_run']) ~ ' rows per run; give runs_per_day for the monthly estimate') }}
   {%- elif name == 'create_views' -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_views(state['schema']) | join(', '))) }}
+  {%- elif name == 'create_compat_views' -%}
+    {%- set compat_schema = icecore._icecore_compat_schema(state['schema']) -%}
+    {%- do state.update({'compat_schema': compat_schema}) -%}
+    {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
+  {%- elif name == 'create_tasks' -%}
+    {%- set t = icecore.create_tasks(state['schema'], state['capabilities']) -%}
+    {%- do state.update({'tasks': t}) -%}
+    {%- set parts = [] -%}
+    {%- for task in t['tasks'] -%}
+      {%- do parts.append(task['name'] ~ ': ' ~ ((task['task'] ~ (' (resumed)' if task['resumed'] else ' (suspended)')) if task['status'] == 'ok'
+          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else 'not created, no model declares meta.sla')) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
+    {%- endfor -%}
+    {%- for statement in t['printed'] -%}
+      {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
+    {%- endfor -%}
+    {{ return(parts | join('; ')) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

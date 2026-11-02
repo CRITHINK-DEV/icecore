@@ -1,0 +1,41 @@
+version: 2
+
+macros:
+  - name: test_all_columns_anomaly
+    description: >
+      Applies the column metrics to every column of the relation in one test, so one line of YAML covers a model.
+      The columns are read with SHOW COLUMNS and `exclude_columns` are skipped. One change window is opened (CHANGES, or
+      `timestamp_column` when change tracking does not cover it) and each column's metrics are computed over the
+      changed rows only (one query per column), written through `icecore.emit_metric` one per metric with the column,
+      and checked against the static `bounds`, which apply to every column that has that metric. The default metrics
+      are `window_rows` and `null_rate`; avg, min and max are skipped, with a logged warning, on columns that are not
+      numeric. Until the anomaly engines are wired in (UC3) the bounds are the only verdict, and the scoring hook is
+      marked in the test body and not called. The previous observation is the newest column metric record of the
+      relation, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago, and `since`
+      overrides both. When no window or no column list can be read the readers log why, no metric is written and the
+      test passes. A failed telemetry CALL is a logged warning and never changes the verdict. Example,
+      `data_tests: [icecore.all_columns_anomaly: {exclude_columns: [loaded_at]}]`.
+    arguments:
+      - name: model
+        type: relation
+        description: The relation under test, filled in by dbt.
+      - name: exclude_columns
+        type: list
+        description: Columns to skip, matched like column names in SQL (a plain name is upper case, a double-quoted one is exact). Optional.
+      - name: metrics
+        type: list
+        description: Metrics per column, from window_rows, null_rate, avg, min and max. Default `[window_rows, null_rate]`.
+      - name: bounds
+        type: dictionary
+        description: >
+          Static limits per metric, a mapping of metric to min and max numbers; every metric named must be in `metrics`.
+          Optional.
+      - name: since
+        type: string
+        description: ISO 8601 start of the window. Optional; overrides the previous observation.
+      - name: timestamp_column
+        type: string
+        description: Date or timestamp column used when CHANGES is unavailable. Optional.
+      - name: lookback_hours
+        type: number
+        description: Window length when there is no previous observation and no `since`. Default 24.

@@ -3,7 +3,7 @@
 
   Baseline: when the series spans more than four weeks and the current observation's
   (day-of-week, hour-of-day) bucket holds at least 4 points, the band is computed within that
-  bucket (seasonal); otherwise over the whole series (flat). Fewer than 7 points never flags.
+  bucket (seasonal); otherwise over the whole series (flat). Fewer than min_points (default 7) points never flags.
   Band: median ± k × MAD, k = 4 (low), 3 (medium), 2 (high); raw MAD, not scaled to a standard deviation,
   floored at greatest(anomaly_mad_floor_pct × |median|, anomaly_mad_floor_abs) so a constant series
   does not get a zero-width band. A median of exactly 0 (a null rate that was always 0) keeps a zero
@@ -14,9 +14,9 @@
   Timestamps are UTC (as in the event table); observed_at defaults to the current UTC time.
 -#}
 
-{% macro native__score(series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
+{% macro native__score(series_sql, current_value, sensitivity, min_consecutive, observed_at=none, min_points=7) %}
   {% if not execute %}{{ return(none) }}{% endif %}
-  {% set table = run_query(icecore.native__score_sql(series_sql, current_value, sensitivity, min_consecutive, observed_at)) %}
+  {% set table = run_query(icecore.native__score_sql(series_sql, current_value, sensitivity, min_consecutive, observed_at, min_points)) %}
   {% set row = {} %}
   {% for name in table.column_names %}
     {% do row.update({name | lower: table.rows[0][loop.index0]}) %}
@@ -42,10 +42,12 @@
 {% endmacro %}
 
 
-{% macro native__score_sql(series_sql, current_value, sensitivity, min_consecutive, observed_at=none) %}
+{% macro native__score_sql(series_sql, current_value, sensitivity, min_consecutive, observed_at=none, min_points=7) %}
   {% set k = icecore._native_mad_multiplier(sensitivity) %}
   {% set previous = (min_consecutive | int) - 1 %}
-  {% set min_points = 7 %}
+  {% if min_points is not integer or min_points < 1 %}
+    {{ exceptions.raise_compiler_error("icecore: min_points must be an integer of at least 1, got '" ~ min_points ~ "'") }}
+  {% endif %}
   {% set seasonal_min_days = 28 %}
   {% set bucket_min_points = 4 %}
   {% set cfg = var('icecore', {}) %}

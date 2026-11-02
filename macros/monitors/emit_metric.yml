@@ -43,3 +43,27 @@ macros:
         description: >
           The anomaly result for this value, as `icecore.score` returns it (`engine`, `expected`, `lower`, `upper`,
           `score`, `is_anomaly`; other keys are ignored). Default none: no `dbt.anomaly.*` key is written.
+      - name: attributes
+        type: dict
+        description: >
+          Extra attributes written on the metric record (and on the anomaly record). Only keys that start with
+          `dbt.window.` are accepted, for example `dbt.window.until`, the end of the window a column monitor measured;
+          any other key is ignored with a logged warning, so a caller cannot set or replace a metric key, an anomaly
+          key, `dbt.invocation_id` or an `icecore.*` key. Default none.
+
+  - name: emit_metrics
+    description: >
+      Several metrics of one relation in one `icecore.emit_events` call, so in one guarded CALL of `ICECORE_EMIT` (up to
+      100 events per CALL, more are chunked), for a monitor that computes many values in a run (one CALL for a test,
+      not one per metric). Each entry is written exactly as `icecore.emit_metric` writes it, including the `anomaly`
+      record and the `dbt.window.*` attribute rule. An entry whose value is not a number is skipped with a logged
+      warning. Returns what `emit_events` returns, `{events, calls, statuses}`. A no-op at parse time.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The monitored relation, as for `emit_metric`.
+      - name: metrics
+        type: list
+        description: >
+          One entry per metric, a mapping with `metric` and `value` and optionally `column`, `dimension`, `anomaly`
+          and `attributes`, as the arguments of `emit_metric`.

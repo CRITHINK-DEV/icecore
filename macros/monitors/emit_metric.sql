@@ -17,8 +17,20 @@
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
 
-{% macro emit_metric(relation, metric, value, column=none, dimension=none, anomaly=none) %}
-  {{ return(icecore.emit_events(icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly))) }}
+{% macro emit_metric(relation, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
+  {{ return(icecore.emit_events(icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly, attributes))) }}
+{% endmacro %}
+
+
+{#- Several metrics of one relation in one emit_events call, so in one CALL (up to 100 events), for a monitor that
+    computes many values in one run. metrics: [{metric, value, column, dimension, anomaly, attributes}], the keys as
+    emit_metric's arguments (only metric and value are required). Same rules as emit_metric for each entry. -#}
+{% macro emit_metrics(relation, metrics) %}
+  {%- set events = [] -%}
+  {%- for m in metrics -%}
+    {%- do events.extend(icecore._icecore_metric_events(relation, m['metric'], m['value'], m.get('column'), m.get('dimension'), m.get('anomaly'), m.get('attributes'))) -%}
+  {%- endfor -%}
+  {{ return(icecore.emit_events(events)) }}
 {% endmacro %}
 
 
@@ -26,7 +38,7 @@
 
 {#- The events emit_metric sends, as emit_events takes them ({kind, message, attributes, level}); [] when value is
     not a number. -#}
-{% macro _icecore_metric_events(relation, metric, value, column=none, dimension=none, anomaly=none) %}
+{% macro _icecore_metric_events(relation, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set number = icecore._icecore_metric_number(value) -%}
   {%- if number is none -%}
@@ -37,6 +49,13 @@
   {%- set attrs = {'dbt.metric.name': metric | string, 'dbt.metric.value': number, 'dbt.node.relation': name} -%}
   {%- do icecore._icecore_put(attrs, 'dbt.metric.column', none if column is none else column | string) -%}
   {%- do icecore._icecore_put(attrs, 'dbt.metric.dimension', none if dimension is none else dimension | string) -%}
+  {%- for key, extra in (attributes or {}).items() -%}
+    {%- if (key | string)[:11] == 'dbt.window.' -%}
+      {%- do icecore._icecore_put(attrs, key, extra) -%}
+    {%- else -%}
+      {%- do log('icecore: warning: emit_metric: attribute ' ~ key ~ ' is ignored: only dbt.window.* keys are accepted', info=True) -%}
+    {%- endif -%}
+  {%- endfor -%}
   {%- set get = icecore._icecore_get -%}
   {%- if anomaly is not none -%}
     {%- do icecore._icecore_put(attrs, 'dbt.anomaly.engine', none if get(anomaly, 'engine') is none else get(anomaly, 'engine') | string) -%}

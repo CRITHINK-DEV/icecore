@@ -1,0 +1,22 @@
+version: 2
+
+macros:
+  - name: create_compat_views
+    description: "Creates the Elementary-compatible views in the compat schema (setup step create_compat_views, run when setup
+      gets compat elementary). The compat schema is var icecore.compat_schema, default the obs schema name followed
+      by _ELEMENTARY; it is created if missing. Every view is CREATE OR REPLACE ... COPY GRANTS over a core view of
+      the obs schema (TEST_RESULTS, METRICS, SCHEMA_CHANGES, LINEAGE_LATEST), so grants made on them survive a second
+      run and the core views must exist first. The views come from one list, _icecore_compat_views(), that later
+      UC8 stories append to. They match the relation names, column names, column order and types of the Elementary
+      package pinned in macros/compat/ELEMENTARY_VERSION; a column icecore cannot fill is a typed NULL. Creates no
+      table. Returns the qualified view names, none at parse time."
+    arguments:
+      - name: schema
+        type: string
+        description: "The obs schema the core views are in. Default the obs_schema var."
+      - name: compat
+        type: string
+        description: "What the views imitate: only elementary. Any other value is refused."
+      - name: compat_schema
+        type: string
+        description: "The schema to create the views in. Default var icecore.compat_schema, else the obs schema name followed by _ELEMENTARY. Only letters, digits and underscores are accepted; anything else is a compile error."

@@ -1,0 +1,48 @@
+version: 2
+
+macros:
+  - name: attach_cost
+    description: >
+      The end-of-run emitter `cost` of end_run (var `icecore.cost`, default false; one entry in
+      `_icecore_end_run_emitters()`), called as `attach_cost(results, batch)`. It joins the run's `snow.query.id`
+      values (the ones the query events carry) to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and, for each
+      node whose queries are all attributed, adds to the batch a LOG `icecore.kind = cost` with the node keys,
+      `dbt.cost.credits` (compute plus query acceleration credits, summed over the node's queries) and
+      `dbt.cost.warehouse` (warehouse names, sorted, comma separated), and sends one METRIC `credits` per node
+      (`icecore.metric` span events keyed by `dbt.node.relation`, or the unique id for a node without relation,
+      with `dbt.node.unique_id`; built by the builder of `emit_metric`, all in one guarded CALL of ICECORE_EMIT).
+      QUERY_ATTRIBUTION_HISTORY lags by hours, so at on-run-end the usual outcome is not available yet: the run
+      logs one `icecore: warning: cost: ...` line and writes nothing for those nodes, and `backfill_cost` fills
+      them on a later run. The attribution query runs inside a Snowflake Scripting block that catches every error,
+      so a missing privilege (grant `SNOWFLAKE.USAGE_VIEWER` to the role, or IMPORTED PRIVILEGES on the SNOWFLAKE
+      database) or an empty result is a warning, never a failed run. With var `cost` false nothing is read or
+      written. Settling: Snowflake never writes attribution rows for many statements (views, plain table creation, about half of short SELECTs, measured in the sandbox), so after var `cost_settle_hours` (default 24) a node whose queries have no attribution row is closed at the credits that were attributed (0 when none) with `dbt.cost.settled = no_attribution`, and gets no metric. A node always gets its cost record once its queries are attributed or settled. Cost regressions: before a node's `credits` point is written it is scored with `icecore.score` against the node's earlier `credits` points (the metrics view of the obs schema, with `get_metric_history`'s window and delay); the metric then carries the `dbt.anomaly.*` keys and, when `is_anomaly`, an `icecore.anomaly` warn event follows it (the record alerts_feed reads). One query counts the history points of all the run's nodes and only nodes with at least 7 points are scored; at most var `cost_score_max_nodes` (default 50) nodes are scored per run, newest first, the backfill sharing that budget. A history that cannot be read scores nothing (a warning); var `cost_score` (default true) turns scoring off. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
+    arguments:
+      - name: results
+        type: list
+        description: The node results of the run, as end_run passes them (hook operations already left out).
+      - name: batch
+        type: dict
+        description: end_run's batch; the cost logs are appended to its items.
+
+  - name: backfill_cost
+    description: >
+      Fills the costs that were not available at the end of earlier runs. Called by `attach_cost` at the end of
+      a run (so behind var `cost`), as `backfill_cost(batch)`. It reads `icecore.base_events()` for nodes of earlier
+      invocations (the last `cost_lookback_days`, default 7; at most `cost_backfill_limit` nodes per run, default
+      500) that have `snow.query.id` values (node results and `icecore.query` events) and no row with
+      `dbt.cost.credits`, reads their attribution in QUERY_ATTRIBUTION_HISTORY, and, for each node whose queries
+      are all attributed now, adds to the end_run batch (sent with ICECORE_EMIT_RUN) a LOG `icecore.kind = cost`
+      with `dbt.cost.credits` and `dbt.cost.warehouse`, and a span `icecore.cost_backfill` carrying the METRIC
+      `credits` as an `icecore.metric` span event. Both carry explicit `dbt.invocation_id` of the ORIGINAL
+      invocation (overriding the current run's), `dbt.node.unique_id`, `icecore.backfill = true` and
+      `icecore.backfilled_by` (the invocation that backfilled it). A view joins a cost back to its node on
+      (`invocation_id`, `node_unique_id`), never on `command` or `target`, which describe the run that backfilled
+      it; `node_executions.credits` is the maximum of `cost_credits` over that pair. Nodes that already have a cost
+      record (from `attach_cost` or an earlier backfill) are skipped, so nothing is duplicated; records younger than
+      the ingestion lag (about 20 seconds) are not seen yet. Guarded: no event table, an unreadable event table or
+      attribution view, or nothing pending is a warning or silence, never a failed run.
+    arguments:
+      - name: batch
+        type: dict
+        description: end_run's batch; the backfilled items are appended to it, timed with `batch.timing.completed_ns`.

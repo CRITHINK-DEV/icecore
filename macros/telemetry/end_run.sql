@@ -30,6 +30,7 @@
       {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
       {'name': 'samples', 'var': 'samples', 'default': false, 'macro': icecore.emit_samples},
       {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
+      {'name': 'cost', 'var': 'cost', 'default': false, 'macro': icecore.attach_cost},
   ]) }}
 {% endmacro %}
 
@@ -138,6 +139,7 @@
       'node_results': nodes,
       'query_events': nodes * (query_events_per_node | int),
       'root_cause': 0 if icecore._icecore_flag('node_results', true) else nodes,
+      'cost': nodes * 3,
   } -%}
   {%- set out = {'fixed': {'invocation_span': 1, 'node_spans': nodes, 'end': 1}, 'emitters': {}, 'uncounted': []} -%}
   {%- for emitter in icecore._icecore_end_run_emitters() -%}

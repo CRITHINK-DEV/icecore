@@ -1,0 +1,92 @@
+version: 2
+
+macros:
+  - name: cortex_model_name
+    description: >
+      Name of a table's Cortex anomaly model: `ICECORE_M_` and the first 16 hex digits (upper case) of the MD5 of the
+      relation, never the relation text. It is the bare name `ICECORE_SCORE` accepts and the `model` argument of `score`.
+      The refresh task computes the same name in SQL and records the relation to model mapping in an `icecore.cortex_model`
+      event. Runs no query.
+    arguments:
+      - name: relation
+        type: string | relation
+        description: The quoted `"DB"."SCHEMA"."NAME"` the METRICS view carries, or a dbt relation.
+      - name: schema
+        type: string
+        description: Unused by the name itself (a model always lives in the obs schema); kept for call symmetry. Default none.
+
+  - name: cortex_series_key
+    description: >
+      The series key `score` takes as `series`: `metric|column|dimension`, with `~` for a missing column or dimension. The
+      model is trained on its MD5, which the refresh task and `ICECORE_SCORE` both compute in SQL, so the key never reaches
+      SQL as text. Runs no query.
+    arguments:
+      - name: metric
+        type: string
+        description: The metric name, for example `row_count`.
+      - name: column
+        type: string
+        description: The column the metric is about. Default none, written `~`.
+      - name: dimension
+        type: string
+        description: The dimension value of the series. Default none, written `~`.
+
+  - name: render_refresh_cortex_models_sql
+    description: >
+      The body of the refresh task, one Snowflake Scripting block, as text (no query is run). It reads the obs schema's
+      `METRICS` view over the history window of `get_metric_history` (observed_at after now minus `lookback_days`, up to now
+      minus `history_delay_minutes`, UTC), keeps the series with at least `min_points` points, and creates one
+      `SNOWFLAKE.ML.ANOMALY_DETECTION` model per table, named by `cortex_model_name`, trained on all its series. A failure on
+      one table is reported and does not stop the others. The block ends by setting its result, `ok <n> models, <k> skipped`
+      or `icecore-error ...`, as the task's return value with `SYSTEM$SET_RETURN_VALUE` (a task keeps no RETURN), and writes
+      one `icecore.cortex_model` event per model (relation, model, `icecore.version`) through `ICECORE_EMIT`. The body is
+      constant text: the database and the obs schema must be plain identifiers (letters, digits, underscore) or the macro stops
+      with a compile error, and no value from a record is ever written into it (a relation is checked against the strict
+      `"DB"."SCHEMA"."NAME"` shape, hashed, and passed as a bound value). There is no argument to point it at another view.
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+      - name: lookback_days
+        type: integer
+        description: Days of history to train on, 1 or more. Default 30.
+      - name: delay_minutes
+        type: integer
+        description: Minutes of the newest history left out, 0 or more. Default the `history_delay_minutes` var.
+      - name: min_points
+        type: integer
+        description: Points a series needs in the window, 12 or more (Cortex needs 12). Default 14, the engine's own rule.
+
+  - name: create_refresh_cortex_task
+    description: >
+      Creates the task `ICECORE_REFRESH_CORTEX` in the obs schema, in setup's `create_tasks` step, only when Cortex is available.
+      Returns `{task, status, resumed, printed}`: status `ok`, `skipped` (Cortex off, nothing created, no query) or the error
+      of the guarded statement. A new task is created suspended; `cortex_refresh_task_resume: true` resumes it. A task an admin
+      had resumed stays resumed: `SHOW TASKS` runs first, and since `CREATE OR REPLACE` suspends it, it is resumed again when it
+      was started. The schedule is `var('icecore').cortex_refresh_days` (default 7) in whole days from 1 to 8, because Snowflake
+      refuses a schedule above 11520 minutes; any other value stops with a compile error. The warehouse is
+      `cortex_refresh_task_warehouse`, else the target's. `printed` lists what an admin must run: the `GRANT USAGE` on
+      `ICECORE_SCORE` for the role that runs dbt (named by `dbt_role`, else `var('icecore').dbt_role`, else a placeholder; models
+      are never granted), and `CREATE TASK` or `EXECUTE TASK` grants for setup's role when they are missing.
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+      - name: capabilities
+        type: dict
+        description: A `detect_capabilities` result. Default none, which detects (without recording).
+      - name: warehouse
+        type: string
+        description: Warehouse of the task. Default the `cortex_refresh_task_warehouse` var, else the target's.
+      - name: resume
+        type: boolean
+        description: Resume a new task. Default the `cortex_refresh_task_resume` var, false.
+      - name: days
+        type: integer
+        description: Refresh period in days, 1 to 8. Default the `cortex_refresh_days` var, 7.
+      - name: min_points
+        type: integer
+        description: As for `render_refresh_cortex_models_sql`. Default 14.
+      - name: dbt_role
+        type: string
+        description: The role that runs dbt, named in the printed `GRANT USAGE`. Default the `dbt_role` var.

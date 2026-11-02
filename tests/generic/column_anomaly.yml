@@ -45,3 +45,9 @@ macros:
       - name: lookback_hours
         type: number
         description: Window length when there is no previous observation and no `since`. Default 24.
+      - name: window_tag
+        type: string
+        description: >
+          Name of this test's window. Two column_anomaly tests on the same column and relation should each have their
+          own, so one test's window end does not move the other's. Optional; without it the tests of a column share
+          one window.

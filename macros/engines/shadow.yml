@@ -1,0 +1,83 @@
+version: 2
+
+macros:
+  - name: shadow_score
+    description: >
+      Shadow scoring: scores the series with the engine named by `var('icecore').shadow_engine` (none,
+      native or cortex; default none) next to the primary one and returns its fields `engine`, `expected`,
+      `lower`, `upper`, `score`, `is_anomaly` and `fallback_reason`. The primary result is only read, never
+      changed: is_anomaly always comes from the configured engine. Returns none, running no query, when shadow
+      is none or when the shadow engine is the engine that scored. Returns none with one logged warning when
+      Cortex is not available: with `capabilities` saying so no query runs; without it, a call that has a model, a
+      series and 14 days of history runs the history count and the guarded `ICECORE_SCORE` call (which fails), then
+      `detect_capabilities` once to confirm. A call with no model or series, or too little history, stops earlier and
+      returns the cortex row with its reason. A Cortex
+      shadow that cannot score (no or stale model, history under 14 days, error) returns engine cortex with
+      null bands and the reason, never a native result. At parse time it returns none.
+    arguments:
+      - name: series_sql
+        type: string
+        description: As for `score`.
+      - name: current_value
+        type: number
+        description: As for `score`.
+      - name: primary
+        type: dict
+        description: The dispatcher's result; only its `engine` and `is_anomaly` are read.
+      - name: sensitivity
+        type: string
+        description: As for `score`.
+      - name: min_consecutive
+        type: integer
+        description: As for `score`.
+      - name: observed_at
+        type: string
+        description: As for `score`.
+      - name: model
+        type: string
+        description: The table's Cortex model, as for `score`.
+      - name: series
+        type: string
+        description: The series key the model was trained with, as for `score`.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`. Default: `var('icecore').shadow_engine`."
+      - name: min_points
+        type: integer
+        description: Passed to a native shadow, as for `score`. The Cortex path ignores it. Default 7.
+      - name: schema
+        type: string
+        description: The obs schema whose `ICECORE_SCORE` scores a Cortex shadow. Default the `obs_schema` var.
+      - name: capabilities
+        type: dict
+        description: "A `detect_capabilities` result to reuse, so a monitor scoring many series detects once. Default none: nothing is detected up front, and detection runs once only when a guarded Cortex call fails."
+
+  - name: emit_shadow
+    description: >
+      Writes a shadow result as one span event `icecore.shadow` through `icecore.emit` (no emitter of its own):
+      `dbt.metric.name`, `dbt.metric.value`, `dbt.node.relation`, optional column and dimension, and
+      `dbt.anomaly.shadow.*` (engine, expected, lower, upper, score, is_anomaly, fallback_reason,
+      primary_engine and agrees, whether both verdicts match). Writes nothing and returns none when
+      `shadow` is none, so a disabled shadow emits no shadow field. Never changes the primary record.
+    arguments:
+      - name: relation
+        type: string
+        description: A dbt relation, or an already quoted name.
+      - name: metric
+        type: string
+        description: Metric name, as given to `emit_metric`.
+      - name: value
+        type: number
+        description: The observed value.
+      - name: shadow
+        type: dict
+        description: What `shadow_score` returned.
+      - name: primary
+        type: dict
+        description: The dispatcher's result, for the comparison keys.
+      - name: column
+        type: string
+        description: Column name, when the metric is per column.
+      - name: dimension
+        type: string
+        description: Dimension value, when the metric is per dimension.

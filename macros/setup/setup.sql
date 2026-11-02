@@ -12,7 +12,8 @@
       7. create_views            CREATE OR REPLACE VIEW ... COPY GRANTS for every view of icecore.create_views;
       8. create_compat_views (compat: elementary): the Elementary-compatible views in the compat schema, over the core
          views of step 7 (macros/compat/create_compat_views.sql);
-      9. create_tasks            the silence task (created suspended; resumed by var), see create_silence_task;
+      9. create_tasks            every task of icecore._icecore_task_entries (one list: the silence task and, when Cortex
+         is available, the Cortex refresh task), created suspended;
          create_alerts, deploy_app (app): planned. They keep
          their place here and are reported as planned until their macros exist; a story that adds one marks it
          ready and adds its branch to _icecore_setup_run_step.
@@ -36,7 +37,8 @@
       'compat': (compat or 'none') | string | lower,
       'app': app is sameas true,
       'runs_per_day': runs_per_day,
-      'tasks': none, 'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
+      'tasks': none,
+      'capabilities': none, 'procedures': [], 'levels': none, 'recorded': none, 'estimate': none, 'steps': [],
   } -%}
   {%- set steps = icecore._icecore_setup_steps(state['compat'], state['app']) -%}
   {% do log('icecore: setup in ' ~ icecore.obs_schema(state['schema']) ~ ' (' ~ steps | length ~ ' steps)', info=True) %}
@@ -126,11 +128,17 @@
     {%- do state.update({'compat_schema': compat_schema}) -%}
     {{ return('CREATE OR REPLACE VIEW ... COPY GRANTS ' ~ (icecore.create_compat_views(state['schema'], state['compat']) | join(', '))) }}
   {%- elif name == 'create_tasks' -%}
-    {%- set t = icecore.create_silence_task(state['schema']) -%}
+    {%- set t = icecore.create_tasks(state['schema'], state['capabilities']) -%}
     {%- do state.update({'tasks': t}) -%}
-    {{ return(('no model declares meta.sla: silence task not created' if t['status'] == 'skipped'
-        else (t['task'] ~ (' (resumed)' if t['resumed'] else ' (suspended)') if t['status'] == 'ok'
-        else 'could not create ' ~ t['task'] ~ ': ' ~ t['status']))) }}
+    {%- set parts = [] -%}
+    {%- for task in t['tasks'] -%}
+      {%- do parts.append(task['name'] ~ ': ' ~ ((task['task'] ~ (' (resumed)' if task['resumed'] else ' (suspended)')) if task['status'] == 'ok'
+          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else 'not created, no model declares meta.sla')) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
+    {%- endfor -%}
+    {%- for statement in t['printed'] -%}
+      {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
+    {%- endfor -%}
+    {{ return(parts | join('; ')) }}
   {%- endif -%}
   {{ exceptions.raise_compiler_error('icecore: setup step ' ~ name ~ ' is not ready') }}
 {% endmacro %}

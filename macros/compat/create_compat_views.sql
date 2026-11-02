@@ -48,6 +48,8 @@
   {%- set views = [] -%}
   {%- do views.extend(icecore._icecore_elementary_test_views(obs)) -%}
   {%- do views.extend(icecore._icecore_elementary_metric_views(obs)) -%}
+  {%- do views.extend(icecore._icecore_elementary_run_views(obs)) -%}
+  {%- do views.extend(icecore._icecore_elementary_node_views(obs)) -%}
   {{ return(views) }}
 {% endmacro %}
 

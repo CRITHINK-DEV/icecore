@@ -28,6 +28,19 @@ def message(logs) -> str:
 
 # --- offline: the estimate reads only the graph -----------------------------------------------------
 
+def test_cost_true_raises_the_total_by_its_rows_and_its_live_calls():
+    base, _ = estimate(nodes=100, runs_per_day=24)
+    out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"nodes": 100, "runs_per_day": 24}},
+                                    ["--vars", '{"icecore": {"cost": true}}'])
+    # 100 nodes x (cost LOG + metric event + the backfill's span) = 300 more end_run records: 609 x 1,500 B needs a
+    # second ICECORE_EMIT_RUN CALL (+4 rows), plus one live ICECORE_EMIT CALL for the 100 metric events (+1 SPAN)
+    assert out["records_per_run"]["cost"] == 300
+    assert out["emit_run_calls"] == 2 and out["records_per_run"]["call_overhead"] == 1 + 2 * 4 + 1
+    assert out["rows_per_run"] == base["rows_per_run"] + 300 + 5 == 614
+    assert out["rows_per_month"] > base["rows_per_month"]
+    assert "300 cost" in message(logs)
+
+
 def test_100_nodes_24_runs_prints_a_monthly_record_count_and_a_credit_range():
     out, logs = estimate(nodes=100, runs_per_day=24)
     # 1 start + 1 invocation span + 1 end + 100 node spans + 100 node results + 100 query events + 1 lineage = 304
@@ -35,7 +48,7 @@ def test_100_nodes_24_runs_prints_a_monthly_record_count_and_a_credit_range():
     # CALL = 309 rows
     assert out["records_per_run"] == {"start": 1, "invocation_span": 1, "end": 1, "node_spans": 100,
                                       "node_results": 100, "query_events": 100, "lineage": 1, "samples": 0,
-                                      "call_overhead": 5}
+                                      "root_cause": 0, "cost": 0, "call_overhead": 5}
     assert out["rows_per_run"] == 309
     assert out["rows_per_month"] == 309 * 24 * 30 == 222_480
     low, high = out["credits_per_month"]

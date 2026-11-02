@@ -57,7 +57,7 @@ def test_snapshot_leaves_out_removed_columns():
 
 def test_compat_list_holds_all_three_elementary_views():
     names = [v["name"] for v in run_macro("it_compat_views_render", {})]
-    assert names == ["ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]
+    assert names[:3] == ["ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]  # run and node views follow
 
 
 # --- sandbox --------------------------------------------------------------------------------------
@@ -109,8 +109,8 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
             assert (core_metrics, core_changes) == (2, 3)
 
             created = run_macro("it_create_compat_views", {"schema": obs}, obs_vars)
-            assert sorted(created) == sorted(f'"{DATABASE}"."{compat}"."{n}"' for n in [
-                "ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"])
+            assert {f'"{DATABASE}"."{compat}"."{n}"' for n in [
+                "ELEMENTARY_TEST_RESULTS", "DATA_MONITORING_METRICS", "SCHEMA_COLUMNS_SNAPSHOT"]} <= set(created)  # run and node views too
 
             for view in VIEWS.values():
                 assert described(sf, compat, view) == [(n.upper(), SNOWFLAKE_TYPE[t]) for n, t in table_columns(view)]

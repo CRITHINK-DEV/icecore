@@ -145,5 +145,5 @@ exception
   when other then return 'icecore-error ' || sqlcode || ': ' || sqlerrm;
 end;
   {%- endset -%}
-  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).columns[0].values()[0]) }}
+  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) }}
 {% endmacro %}

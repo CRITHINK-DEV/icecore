@@ -32,10 +32,13 @@ t = logic.totals(runs)
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Runs", t["runs"])
 m2.metric("Failed", t["failed"])
-m3.metric("Credits", f"{t['credits']:.4f}")
+m3.metric("Credits", logic.credits_metric(t),
+          help="Credits come from Snowflake's QUERY_ATTRIBUTION_HISTORY, which lags by hours: a run shows "
+               "'pending' until its credits land. The total counts only runs that have them.")
 m4.metric("Total duration (s)", f"{t['total_duration_s']:.0f}")
+st.caption("Credits arrive hours after a run (Snowflake's QUERY_ATTRIBUTION_HISTORY lag); until then they show as pending.")
 
-st.dataframe(logic.run_table(runs), use_container_width=True, hide_index=True)
+st.dataframe(logic.pending_credits(logic.run_table(runs)), use_container_width=True, hide_index=True)
 
 st.subheader("Run detail")
 by_label = {logic.run_label(r): r for r in runs}
@@ -50,6 +53,6 @@ bars = charts.timeline_bars(nodes)
 if bars:
     st.altair_chart(charts.timeline_chart(bars), use_container_width=True)
     st.caption("Slowest nodes")
-    st.dataframe(logic.slowest_nodes(nodes), use_container_width=True, hide_index=True)
+    st.dataframe(logic.pending_credits(logic.slowest_nodes(nodes)), use_container_width=True, hide_index=True)
 else:
     empty_state("This run has no node timing records yet. Node timings arrive shortly after the run ends.")

@@ -60,6 +60,7 @@ def test_empty_state_has_the_meta_sla_example():
 
 def test_format_minutes():
     assert [slas.format_minutes(m) for m in (None, 1, 90, 1440)] == ["", "1m", "1h30m", "1d"]
+    assert [slas.format_minutes(m) for m in (0, 0.2, 0.4)] == ["<1m", "<1m", "<1m"]  # runs seconds apart
 
 
 def test_page_wires_empty_state_and_example():

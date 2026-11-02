@@ -53,7 +53,7 @@ def test_filters_and_totals():
     assert [r["invocation_id"] for r in logic.filter_runs(RUNS, target="dev")] == ["b2"]
     assert [r["invocation_id"] for r in logic.filter_runs(RUNS, statuses=["success"])] == ["a1"]
     assert logic.distinct(RUNS, "project") == ["p"]
-    assert logic.totals(RUNS) == {"runs": 2, "failed": 1, "credits": 0.5, "total_duration_s": 90.0}
+    assert logic.totals(RUNS) == {"runs": 2, "failed": 1, "credits": 0.5, "credits_known": 1, "total_duration_s": 90.0}
 
 
 def test_timeline_bars_offsets_and_durations():
@@ -89,3 +89,10 @@ def test_page_render_with_and_without_runs(monkeypatch):
         assert bool(at.info) is expect_info
         if not expect_info:
             assert len(at.dataframe) >= 1
+
+
+def test_credits_not_yet_attributed_show_as_pending_not_zero():
+    assert [r["credits"] for r in logic.pending_credits(logic.run_table(RUNS))] == ["0.5000", "pending"]
+    none_yet = [{**RUNS[1]}]
+    assert logic.credits_metric(logic.totals(none_yet)) == "pending"
+    assert logic.credits_metric(logic.totals(RUNS)) == "0.5000"

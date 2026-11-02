@@ -357,7 +357,7 @@ def test_hostile_sla_text_is_data_end_to_end(silence):
     objects = silence["sf"].cursor().execute(f"show objects in schema {silence['qs']}").fetchall()
     assert not [o for o in objects if o[1] not in ("ICECORE_SILENCE", "STANDIN_NODES")
                 and o[1] not in {"METRICS", "SCHEMA_CHANGES", "INVOCATIONS", "NODE_EXECUTIONS", "SILENCE_EVENTS", "TEST_RESULTS",
-                                 "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES"}]
+                                 "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "SCHEMA_COLUMNS"}]
 
 
 @pytest.mark.sandbox

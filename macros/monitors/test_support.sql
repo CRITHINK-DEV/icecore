@@ -58,17 +58,28 @@ end;
 {% endmacro %}
 
 
-{#- The columns of the newest `icecore.schema_signature` record of the relation, as get_columns_signature returns
-    them, or none (no record, no event table, unreadable). -#}
+{#- The columns of the newest complete `icecore.schema_signature` snapshot of the relation, as get_columns_signature
+    returns them, or none (no record, no event table, unreadable, or the newest snapshot's chunks are not all there
+    yet: a partial baseline would read as removed columns, so it counts as no baseline). A snapshot is the chunks
+    (dbt.schema.chunk_index of chunk_count) of one invocation; a record without them is a whole snapshot (older
+    records). -#}
 {% macro _icecore_previous_signature(relation) %}
   {%- set event_table = icecore._icecore_history_event_table() -%}
   {%- if event_table is none -%}{{ return(none) }}{%- endif -%}
   {%- set sql -%}
-    select attributes:"dbt.schema.columns"::string
-    from ({{ icecore.base_events(event_table=event_table) }})
-    where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.schema_signature'
-    order by event_at desc
-    limit 1
+    with s as (
+      select invocation_id, event_at,
+             coalesce(attributes:"dbt.schema.chunk_index"::int, 0) as idx,
+             coalesce(attributes:"dbt.schema.chunk_count"::int, 1) as cnt,
+             parse_json(attributes:"dbt.schema.columns"::string) as cols
+      from ({{ icecore.base_events(event_table=event_table) }})
+      where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.schema_signature'
+      qualify row_number() over (partition by invocation_id, idx order by event_at desc) = 1
+    ), newest as (
+      select invocation_id from s order by event_at desc limit 1
+    )
+    select iff(count(*) = max(cnt), array_flatten(array_agg(cols) within group (order by idx))::string, null)
+    from s where invocation_id = (select invocation_id from newest)
   {%- endset -%}
   {%- set raw = icecore._icecore_safe_scalar(sql, 'schema_changes baseline', relation) -%}
   {{ return(fromjson(raw) if raw is string else none) }}

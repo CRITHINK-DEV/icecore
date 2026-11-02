@@ -58,6 +58,29 @@ end;
 
 {#- Private --------------------------------------------------------------------------------------- -#}
 
+{#- Columns -> lists of columns whose JSON, as an attribute string (quotes escaped, as the payload cap measures it),
+    stays within half the payload cap, so a record never reaches the cap and no column is ever cut. A table that fits
+    gives one chunk. No columns gives one empty chunk (the snapshot of an empty table is still a record). -#}
+{% macro _icecore_signature_chunks(columns, cap_bytes=none) %}
+  {%- set cap = cap_bytes if cap_bytes is not none else icecore._icecore_payload_cap_bytes() -%}
+  {%- set budget = [cap // 2, 256] | max -%}
+  {%- set chunks = [] -%}
+  {%- set ns = namespace(current=[], size=4) -%}
+  {%- for c in columns -%}
+    {%- set size = (tojson(tojson(c)) | length) + 1 -%}
+    {%- if ns.current and ns.size + size > budget -%}
+      {%- do chunks.append(ns.current) -%}
+      {%- set ns.current = [] -%}
+      {%- set ns.size = 4 -%}
+    {%- endif -%}
+    {%- do ns.current.append(c) -%}
+    {%- set ns.size = ns.size + size -%}
+  {%- endfor -%}
+  {%- if ns.current or not chunks -%}{%- do chunks.append(ns.current) -%}{%- endif -%}
+  {{ return(chunks) }}
+{% endmacro %}
+
+
 {#- SQL expression turning SHOW COLUMNS' data_type JSON into a type string, e.g. NUMBER(38,0), VARCHAR(16777216). -#}
 {% macro _icecore_schema_type_sql(t) %}
   {%- set sql -%}

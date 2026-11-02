@@ -30,3 +30,15 @@ macros:
       - name: current
         type: list
         description: The current signature, or none.
+
+  - name: _icecore_signature_chunks
+    description: >
+      Splits a column list into chunks whose JSON, as an attribute string, stays within half the payload cap, so
+      schema_changes writes one `schema_signature` record per chunk and no column is cut. One chunk for a table that fits.
+    arguments:
+      - name: columns
+        type: list
+        description: The `{name, data_type}` list from get_columns_signature.
+      - name: cap_bytes
+        type: integer
+        description: The payload cap in bytes. Default the `payload_cap_kb` var.

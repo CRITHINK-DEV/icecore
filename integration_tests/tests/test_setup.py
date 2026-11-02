@@ -210,6 +210,8 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
     assert before["schema_created_on"] and ("USAGE", "ROLE", "PUBLIC") in before["ICECORE_EMIT_grants"]
     assert ("SELECT", "ROLE", "PUBLIC") in before["METRICS_grants"]
     assert {"METRICS_ddl", "SCHEMA_CHANGES_ddl"} <= set(before)  # the views exist, with their DDL compared too
+    # dbt's query comment (it names the connection) must not end up in the stored view text
+    assert not any(next(iter(v.values())).lstrip().startswith("/*") for k, v in before.items() if k.endswith("_ddl") and k.startswith(("METRICS", "SCHEMA_CHANGES"))), before["METRICS_ddl"]
 
     first, _ = call("setup", {"schema": schema})
     second, _ = call("setup", {"schema": schema})
@@ -223,8 +225,9 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
             "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"], out["steps"]
         assert out["recorded"] == "ok 1"
-        # Cortex is available in the sandbox: the silence task (a model declares meta.sla) and the refresh task exist, created suspended (never resumed here)
-        assert [(t["name"], t["status"], t["resumed"]) for t in out["tasks"]["tasks"]] == [("silence", "ok", False), ("cortex_refresh", "ok", False)], out["tasks"]
+        # the silence task and, Cortex being available in the sandbox, the refresh task: created suspended, never resumed here
+        assert sorted((t["name"], t["status"], t["resumed"]) for t in out["tasks"]["tasks"]) == [
+            ("cortex_refresh", "ok", False), ("silence", "ok", False)], out["tasks"]
     tasks = sf.cursor().execute(f"show tasks in schema {DATABASE}.{schema}").fetchall()
     assert tasks and all("suspended" in [str(c).lower() for c in t] for t in tasks), tasks
     assert first["levels"] == second["levels"]

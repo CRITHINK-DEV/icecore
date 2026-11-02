@@ -16,8 +16,13 @@
     has a span and no result: the span's TIMESTAMP is dbt's clock and is not used). The silence
     task compares it with Snowflake's now, which keeps that comparison on one clock.
 
-    credits (dbt.cost.credits) and root_cause_unique_id (dbt.root_cause.unique_id) are read from the node-result LOG
-    and are null until cost attribution and root cause (UC4) write them. -#}
+    credits and credits_settled come from the node's cost record (macros/cost/attach_cost.sql, backfill_cost.sql): the
+    LOG `icecore.kind = cost`, latest per (dbt.invocation_id, dbt.node.unique_id). attach_cost writes its own LOG at
+    on-run-end; backfill_cost writes one on a later run keyed to the ORIGINAL invocation and node, so the join is on
+    those two keys, never on the writing run. dbt.cost.credits is the credits; a settled record (Snowflake never
+    attributed the node's queries) has 0 credits and dbt.cost.settled = 'no_attribution', exposed as credits_settled
+    (null for a real cost). Both are null until a cost record exists. root_cause_unique_id (dbt.root_cause.unique_id)
+    is read from the node-result LOG and is null until root cause (UC4) writes it. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -46,6 +51,12 @@ node_queries as (
       and invocation_id is not null and node_unique_id is not null and node_query_id is not null
     group by invocation_id, node_unique_id
 ),
+cost_latest as (
+    select * from events
+    where record_type = 'LOG' and attributes:"icecore.kind"::string = 'cost'
+      and invocation_id is not null and node_unique_id is not null
+    qualify row_number() over (partition by invocation_id, node_unique_id order by event_at desc) = 1
+),
 keys as (
     select invocation_id, node_unique_id from node_span
     union select invocation_id, node_unique_id from node_result
@@ -71,12 +82,14 @@ select
     ) as completed_at,
     coalesce(node_result.node_query_id, node_queries.query_ids[0]::string) as query_id,
     node_queries.query_ids as query_ids,
-    node_result.cost_credits as credits,
+    coalesce(cost_latest.cost_credits, node_result.cost_credits) as credits,
+    cost_latest.attributes:"dbt.cost.settled"::string as credits_settled,
     node_result.root_cause_unique_id as root_cause_unique_id,
     node_result.event_at as recorded_at
 from keys
 left join node_span on node_span.invocation_id = keys.invocation_id and node_span.node_unique_id = keys.node_unique_id
 left join node_result on node_result.invocation_id = keys.invocation_id and node_result.node_unique_id = keys.node_unique_id
+left join cost_latest on cost_latest.invocation_id = keys.invocation_id and cost_latest.node_unique_id = keys.node_unique_id
 left join node_queries on node_queries.invocation_id = keys.invocation_id and node_queries.node_unique_id = keys.node_unique_id
   {%- endset -%}
   {{ return(sql) }}

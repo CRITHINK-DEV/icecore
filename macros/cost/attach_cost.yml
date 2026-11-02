@@ -38,7 +38,7 @@ macros:
       invocation (overriding the current run's), `dbt.node.unique_id`, `icecore.backfill = true` and
       `icecore.backfilled_by` (the invocation that backfilled it). A view joins a cost back to its node on
       (`invocation_id`, `node_unique_id`), never on `command` or `target`, which describe the run that backfilled
-      it; `node_executions.credits` is the maximum of `cost_credits` over that pair. Nodes that already have a cost
+      it; `node_executions.credits` is the latest cost record's `cost_credits` over that pair. Nodes that already have a cost
       record (from `attach_cost` or an earlier backfill) are skipped, so nothing is duplicated; records younger than
       the ingestion lag (about 20 seconds) are not seen yet. Guarded: no event table, an unreadable event table or
       attribution view, or nothing pending is a warning or silence, never a failed run.

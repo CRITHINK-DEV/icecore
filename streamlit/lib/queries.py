@@ -60,7 +60,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "credits")),
     "NODE_EXECUTIONS": ("merged", "macros/views/node_executions.sql", (
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "rows_affected",
-        "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "root_cause_unique_id",
+        "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
+        "root_cause_unique_id",
         "recorded_at")),
     "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",

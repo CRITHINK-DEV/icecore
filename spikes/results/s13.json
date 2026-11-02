@@ -1,0 +1,217 @@
+{
+  "deploy": {
+    "command": "snow dbt deploy PILOT_DATAOPS --source . --install-local-deps (schema ICECORE_SANDBOX.PILOT, created by ICECORE_CI, which has CREATE SCHEMA on the database)",
+    "describe": {
+      "auto_compile": true,
+      "dbt_snowflake_version": "1.9.2",
+      "dbt_version": "1.9.4",
+      "default_target": null
+    },
+    "each_deploy_also_runs": "an auto-compile, query text 'execute dbt project from @...STAGE', 37.5 to 42.3 s, executable type DBT; it fires the icecore hooks (command compile, 11.5 to 12.4 s)",
+    "extra_privilege": "none",
+    "files_copied": 361,
+    "hub_packages": "not usable without an external access integration: describe shows external_access_integrations [] and --install-local-deps says Hub or Git packages still need network access; the copy vendors dbt_utils 1.1.1, dbt_expectations 0.10.3, dbt_date and icecore as local packages",
+    "source": "snow dbt deploy; DESCRIBE DBT PROJECT; INFORMATION_SCHEMA.QUERY_HISTORY"
+  },
+  "execute_build_1": {
+    "dbt_invocation_id": "1bcda61d-0b25-474a-9b1f-642cb0bd8bf6",
+    "dbt_run_s": 75.89,
+    "elapsed_s": 90.946,
+    "local_result_line": "Done. PASS=176 WARN=0 ERROR=1 SKIP=9 TOTAL=186 (dbt 1.12.5, invocation db9c31fb-34f8-4520-84d4-1db1aacf480c, 20 s)",
+    "query_id": "01c826c3-0000-b699-0001-19a20125e706",
+    "result_line": "Done. PASS=176 WARN=0 ERROR=1 SKIP=9 TOTAL=186",
+    "source": "stdout of snow sql; SYSTEM$GET_DBT_LOG(query_id, 1000000) (without the line limit only the last 1000 of 9031 lines are returned)",
+    "statement": "EXECUTE DBT PROJECT ICECORE_SANDBOX.PILOT.PILOT_DATAOPS ARGS='build'",
+    "status": "FAILED_WITH_ERROR (one test fails: dbt_expectations regex on dim_customers.email, 7 rows)"
+  },
+  "hooks": {
+    "emit_call": "CALL PILOT_OBS.ICECORE_EMIT: SUCCESS in 0.597 s; CALL PILOT_OBS.ICECORE_EMIT_RUN: SUCCESS in 3.068 s",
+    "hook_fires_on_deploy_compile": true,
+    "hook_lines": "2 of 2 OK hook on-run-start.0 (0.59 s) and on-run-start.1 (0.90 s, icecore.start_run); on-run-end.0 (0.62 s) and on-run-end.1 (10.03 s, icecore.end_run)",
+    "hooks_not_fired_by": "run-operation (as in dbt core)",
+    "icecore_error_strings_in_log": 0,
+    "on_run_end_ran": true,
+    "on_run_start_ran": true,
+    "python_procedure_and_anaconda_terms": "ICECORE_EMIT_RUN ran from inside the job: 174 SPAN, 184 LOG and 169 SPAN_EVENT rows landed",
+    "source": "SYSTEM$GET_DBT_LOG; ICECORE_SANDBOX.TELEMETRY.EVENTS where dbt.invocation_id = the id above"
+  },
+  "icecore_records_of_run_1": {
+    "LOG/icecore/ICECORE_EMIT_RUN": 184,
+    "SPAN/icecore/ICECORE_EMIT_RUN": 174,
+    "SPAN_EVENT/global/ICECORE_EMIT": 1,
+    "SPAN_EVENT/icecore/ICECORE_EMIT_RUN": 169,
+    "dbt.runtime_before_fix": "core",
+    "dbt_version_attribute": "1.9.4",
+    "identity": {
+      "snow.database.name": "ICECORE_SANDBOX",
+      "snow.executable.type": "PROCEDURE",
+      "snow.schema.name": "PILOT_OBS"
+    },
+    "source": "event table query on RECORD_ATTRIBUTES:dbt.invocation_id",
+    "total_under_base_events_identity": 528
+  },
+  "native_records_of_run_1": {
+    "by_scope_and_type": {
+      "com.dbt.runner SPAN": 1,
+      "dbt.runner SPAN": 214,
+      "global SPAN": 1,
+      "global SPAN_EVENT": 1,
+      "root LOG": 1,
+      "snow.dbt.logger LOG": 384,
+      "snow.snowpark.dataframe SPAN": 4,
+      "snowflake.connector.connection LOG": 190,
+      "snowflake.connector.cursor LOG": 2228,
+      "snowflake.snowpark.session LOG": 190
+    },
+    "command_span": {
+      "record_attributes": [
+        "dbt.project.name (= the object name)",
+        "dbt.project.version (live)",
+        "dbt.runner.args"
+      ],
+      "record_name": "build",
+      "scope": "com.dbt.runner"
+    },
+    "dbt_invocation_id_in_any_native_record": 0,
+    "deploy_compile_records": {
+      "note": "written by the auto-compile of a deploy, 369 rows in the 30 min before the run",
+      "snow.executable.name": "DBT_PROJECT_PILOT_DATAOPS_<epoch>_STAGE",
+      "snow.executable.type": "DBT"
+    },
+    "filter": "RESOURCE_ATTRIBUTES:snow.query.id = the EXECUTE DBT PROJECT query id and snow.executable.type = DBT_PROJECT",
+    "node_span": {
+      "distinct_names": 190,
+      "links": "upstream.name (the parent node's unique_id)",
+      "record_attributes": [
+        "node.database",
+        "node.schema",
+        "node.materialization",
+        "node.status"
+      ],
+      "record_name": "the node unique_id (model., test., seed. ...) or on-run-start, on-run-end, hook_span, metadata.setup",
+      "scope": "dbt.runner",
+      "spans": 214,
+      "with_node.status": 188
+    },
+    "resource_attributes": {
+      "db.user": "ICECORE_CI_USER",
+      "snow.database.name": "ICECORE_SANDBOX",
+      "snow.executable.id": 18457092,
+      "snow.executable.name": "PILOT_DATAOPS",
+      "snow.executable.runtime.version": "3.11",
+      "snow.executable.type": "DBT_PROJECT",
+      "snow.owner.name": "ICECORE_CI",
+      "snow.query.id": "01c826c3-0000-b699-0001-19a20125e706",
+      "snow.schema.name": "PILOT",
+      "snow.session.role.primary.name": "ICECORE_CI",
+      "snow.warehouse.name": "ICECORE_CI_WH"
+    },
+    "source": "ICECORE_SANDBOX.TELEMETRY.EVENTS",
+    "total": 3214
+  },
+  "run": {
+    "account_role": "ICECORE_CI",
+    "database": "ICECORE_SANDBOX",
+    "date": "2026-11-02",
+    "dbt_in_snowflake": "1.9.4 (dbt-snowflake 1.9.2)",
+    "dbt_project_object": "ICECORE_SANDBOX.PILOT.PILOT_DATAOPS",
+    "grants_needed": [],
+    "icecore_commit": "5c95f26 (origin/develop)",
+    "local_dbt": "1.12.5 (dbt-core, pipx)",
+    "pilot": "copy of dataops-modernstack-blueprint, 30 models, 4 seeds, 1 snapshot, 151 data tests; 186 nodes in a build (182 in the graph run)",
+    "snow_cli": "3.27.0",
+    "snowflake_version": "10.40.100",
+    "source": "spikes/S13-dbt-projects.md"
+  },
+  "runtime_signals": {
+    "after_fix": {
+      "build": "snowflake_native (invocation 31e5cb3a-706f-4476-b2c3-0378b57c0af4, build, 182 / 172 / 1 / 9)",
+      "deploy_compile": "snowflake_native (invocation c09a434c-e8e0-4ce4-ab65-dcd2eab33adb, compile)"
+    },
+    "dbt_version": "1.9.4",
+    "env": {
+      "DBT_CLOUD_*": "unset",
+      "HOME": "/home/udf",
+      "SNOWFLAKE_*": "unset",
+      "USER": "udf"
+    },
+    "invocation_args_dict": {
+      "log_path": "/tmp/dbt/logs",
+      "profiles_dir": "/tmp/dbt_effective_profiles_tlp_g3gd",
+      "project_dir": "/tmp/dbt",
+      "source_freshness_run_project_hooks": false
+    },
+    "session": {
+      "LOG_LEVEL": "OFF",
+      "QUERY_TAG": "empty at the start of the job",
+      "TRACE_LEVEL": "OFF",
+      "client": "PythonConnector 4.7.3"
+    },
+    "source": "integration_tests/macros/spikes/s13_probe.sql run as EXECUTE DBT PROJECT ... ARGS='run-operation s13_probe'; INVOCATIONS view",
+    "target_keys_include": [
+      "account",
+      "user",
+      "role",
+      "warehouse",
+      "database",
+      "schema"
+    ],
+    "which": "run-operation"
+  },
+  "view_counts": {
+    "INVOCATIONS": {
+      "local": 1,
+      "native": 1,
+      "nodes_failed": 1,
+      "nodes_skipped": 9,
+      "nodes_success": 172,
+      "nodes_total": 182,
+      "nodes_warned": 0
+    },
+    "LINEAGE": {
+      "local": 34,
+      "native": 34
+    },
+    "NODE_EXECUTIONS": {
+      "by_status": {
+        "fail": 1,
+        "pass": 142,
+        "skipped": 9,
+        "success": 30
+      },
+      "local": 182,
+      "native": 182,
+      "with_query_id": 169,
+      "with_rows_affected": 173
+    },
+    "TEST_RESULTS": {
+      "by_status": {
+        "fail": 1,
+        "pass": 142,
+        "skipped": 8
+      },
+      "local": 151,
+      "native": 151
+    },
+    "local_build": {
+      "dbt_version": "1.12.5",
+      "invocation_id": "db9c31fb-34f8-4520-84d4-1db1aacf480c",
+      "runtime": "core"
+    },
+    "native_build": {
+      "dbt_version": "1.9.4",
+      "invocation_id": "1bcda61d-0b25-474a-9b1f-642cb0bd8bf6",
+      "runtime": "core (before the fix)"
+    },
+    "same_counts": true,
+    "source": "ICECORE_SANDBOX.PILOT_OBS views, grouped by invocation_id"
+  },
+  "view_predicate_native": "RESOURCE_ATTRIBUTES:\"snow.executable.type\"::string = 'DBT_PROJECT' and RESOURCE_ATTRIBUTES:\"snow.database.name\"::string = '<DB>' and RESOURCE_ATTRIBUTES:\"snow.schema.name\"::string = '<schema of the project object>' and RESOURCE_ATTRIBUTES:\"snow.executable.name\"::string = '<project object name>'",
+  "window_partition_run_1": {
+    "icecore base_events identity": 528,
+    "native predicate": 3214,
+    "other": 53,
+    "source": "one query, three CASE branches, over the same window",
+    "window_utc": "2026-11-02 22:59:30 to 23:01:40 in database ICECORE_SANDBOX"
+  }
+}

@@ -61,7 +61,7 @@ All data is in `RECORD_ATTRIBUTES`. Keys with the `dbt.` prefix are facts about 
 | Key | Type | Value |
 | --- | --- | --- |
 | `dbt.invocation_id` | string | dbt's invocation id. It groups a run (see [Traces](#traces)) |
-| `dbt.runtime` | string | `fusion` for dbt 2.x, `cloud` when a `DBT_CLOUD_*` variable is set, else `core`. `snowflake_native` is not detected yet |
+| `dbt.runtime` | string | `fusion` for dbt 2.x, `cloud` when a `DBT_CLOUD_*` variable is set, `snowflake_native` inside `EXECUTE DBT PROJECT`, else `core` |
 | `dbt.command` | string | `build`, `run`, `test`, `freshness` for `dbt source freshness`, ... (S3.md, finding 2) |
 | `dbt.target`, `dbt.project` | string | Target name, root project name |
 | `icecore.version` | string | Installed package version, or `unknown` |

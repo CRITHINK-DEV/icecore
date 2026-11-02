@@ -8,8 +8,9 @@ macros:
       `dbt.invocation_id`, never on `TRACE`. Keys:
       `dbt.invocation_id` (string, dbt's `invocation_id`);
       `dbt.runtime` (string: `fusion` when dbt is 2.x, `cloud` when `DBT_CLOUD_RUN_ID`, `DBT_CLOUD_PROJECT_ID`,
-      `DBT_CLOUD_JOB_ID` or `DBT_CLOUD_ENVIRONMENT_ID` is set, else `core`; `snowflake_native` is not detected
-      yet, because no spike measured what `EXECUTE DBT PROJECT` exposes, GATE1.md open item 5);
+      `DBT_CLOUD_JOB_ID` or `DBT_CLOUD_ENVIRONMENT_ID` is set, `snowflake_native` inside `EXECUTE DBT PROJECT`
+      (invocation `project_dir` is `/tmp/dbt` and `profiles_dir` starts with `/tmp/dbt_effective_profiles`, measured in
+      spike S13), else `core`);
       `dbt.command` (string, `flags.WHICH`: `build`, `run`, `test`, `run-operation`, ...);
       `dbt.target` (string, `target.name`);
       `dbt.project` (string, the root project's name);

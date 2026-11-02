@@ -127,7 +127,16 @@ root_causes as (
     group by test_unique_id
 )
 select
-    incidents.*,
+    incidents.incident_key,
+    incidents.kind,
+    incidents.node_key,
+    incidents.window_start,
+    incidents.severity,
+    incidents.title,
+    incidents.first_detected_at,
+    incidents.last_detected_at,
+    incidents.occurrences,
+    incidents.last_invocation_id,
     acknowledged.acknowledged_at,
     acknowledged.acknowledged_by,
     root_causes.root_cause_unique_id,

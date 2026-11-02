@@ -10,7 +10,7 @@ Every time column is the event's `TIMESTAMP`, because `OBSERVED_TIMESTAMP` is NU
 
 Re-running `icecore.setup` replaces the views with `COPY GRANTS`, so grants you made on them stay.
 
-One view is not merged yet and is **coming**: `ALERTS_FEED`. The Elementary-compatible views are a separate set, in [their own section](#elementary-compatible-views).
+The Elementary-compatible views are a separate set, in [their own section](#elementary-compatible-views).
 
 ## Who can read
 
@@ -63,6 +63,7 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `materialization` | text | `table`, `view`, ... | `dbt.node.materialization` |
 | `relation` | text | The quoted `"DB"."SCHEMA"."NAME"`. Null for tests | `dbt.node.relation` |
 | `status` | text | dbt's result status | `dbt.result.status` |
+| `message` | text | dbt's result message, redacted by default ([`result_message`](../configuration.md#result_message)) and capped with its record at `payload_cap_kb` | `dbt.result.message` |
 | `rows_affected` | number | Rows affected | `dbt.result.rows_affected` |
 | `execution_time_s` | float | Seconds | `dbt.result.execution_time_s` |
 | `started_at`, `completed_at` | time | The node's times, dbt's clock | `dbt.node.started_at`, `dbt.node.completed_at` |
@@ -94,6 +95,8 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `expected`, `lower`, `upper`, `score` | float | The anomaly band and score. Null unless a scored test wrote them | `dbt.anomaly.expected`, `.lower`, `.upper`, `.score` |
 | `executed_at` | time | When the record was written | event `TIMESTAMP` |
 | `query_id` | text | The test's Snowflake query | `snow.query.id` |
+| `root_cause_unique_id` | text | The upstream node that explains the failure, when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
+| `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source` | `dbt.root_cause.kind` |
 
 There is no `model_unique_id` column: no emitter writes the tested model's id on the node result.
 
@@ -148,6 +151,39 @@ One row per missed run, from the `icecore.silence` span events that the silence 
 | `detected_at` | time | When the task wrote the verdict | event `TIMESTAMP` |
 | `channel` | text | Alert channel from the node's `meta.alerts` | `icecore.silence.channel` |
 | `severity` | text | Severity from the node's `meta.alerts`, `warn` by default | `icecore.silence.severity` |
+
+## `ALERTS_FEED`
+
+One row per incident: every alertable signal in one place. The Snowflake alerts and the app read it, and an acknowledged incident stops notifying. Signals are test failures (`TEST_RESULTS` rows with status `fail`, `error` or `warn`), anomalies (`METRICS` rows with `anomaly_is_anomaly`) and schema changes (`SCHEMA_CHANGES` rows). Missed runs and cost regressions have their place in the view but write no rows yet.
+
+An incident groups the same signal on the same node inside one window: `incident_key` is the md5 of the node key, the kind and the window start. The window is the `alert_window_hours` var, 24 hours by default, aligned to the epoch, so the next window is a new incident and alerts again. Acknowledgements are `icecore.ack` span events written by the `ICECORE_ACK` procedure (`icecore.acknowledge` calls it); only those written by that procedure, at or after the incident's first detection, count.
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `incident_key` | text | md5 of `node_key`, `kind` and the window start | computed |
+| `kind` | text | `test_failure`, `anomaly` or `schema_change` | computed |
+| `node_key` | text | The test's unique id; `relation\|metric\|column\|dimension` for an anomaly; `relation\|column` for a schema change | computed |
+| `window_start` | time | Start of the incident's window | computed |
+| `severity` | text | `error` or `warn`, from the latest signal | computed |
+| `title` | text | One line describing the latest signal | computed |
+| `first_detected_at`, `last_detected_at` | time | First and latest signal in the window | event `TIMESTAMP` |
+| `occurrences` | number | Signals in the window | computed |
+| `last_invocation_id` | text | The dbt run of the latest signal | `dbt.invocation_id` |
+| `acknowledged_at` | time | The earliest acknowledgement, null when none | event `TIMESTAMP` of the `icecore.ack` event |
+| `acknowledged_by` | text | Who acknowledged it: the caller's `CURRENT_USER`, recorded by the procedure | `icecore.ack.by` |
+| `root_cause_unique_id`, `root_cause_kind` | text | For a test failure, the test's latest root cause; null for other kinds | `dbt.root_cause.unique_id`, `dbt.root_cause.kind` |
+
+## `SLA_DECLARED`
+
+One row per node that declares `meta.sla`, whether or not it ever missed a run. `icecore.setup` writes the list into the view when it runs (the `create_tasks` step, with the silence task), so after changing `meta.sla`, run setup again. With no `meta.sla` in the project the view exists with zero rows. It reads no event: the values are the ones `collect_sla_config` read from the project.
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `unique_id` | text | The node | `meta.sla` of the node |
+| `expected_every_minutes` | number | Expected interval in minutes | `meta.sla.expected_every` |
+| `grace_minutes` | number | Grace in minutes, 1 by default and never more than the interval | `meta.sla.grace` |
+| `channel` | text | Alert channel | `meta.alerts.channel` |
+| `severity` | text | `warn` (default) or `error` | `meta.alerts.severity` |
 
 ## `LINEAGE`
 

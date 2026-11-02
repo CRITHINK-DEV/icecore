@@ -207,7 +207,7 @@ dbt build --vars '{icecore: {telemetry: false}}'
 
 ## If no records appear
 
-Run `dbt run-operation icecore.doctor` first. A failed check names the missing procedure, grant or level. A troubleshooting guide is coming.
+Run `dbt run-operation icecore.doctor` first. A failed check names the missing procedure, grant or level. See [Troubleshooting](troubleshooting.md).
 
 ## Next
 

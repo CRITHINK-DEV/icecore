@@ -9,7 +9,6 @@
     {% for n in ['DBT_CLOUD_RUN_ID','SNOWFLAKE_ACCOUNT','SNOWFLAKE_HOST','SNOWFLAKE_USER','SNOWFLAKE_ROLE','HOME','PWD','USER','SNOWFLAKE_DBT_PROJECT','DBT_PROJECT_NAME','DBT_PROFILES_DIR','DBT_PROJECT_DIR','SNOWFLAKE_QUERY_ID','SNOWFLAKE_WAREHOUSE','SNOWFLAKE_DATABASE','SNOWFLAKE_SCHEMA','SNOWFLAKE_SESSION_TOKEN','SNOWFLAKE_CONNECTION_NAME','HOSTNAME','DBT_ENV_CUSTOM_ENV_X','SNOWPARK','SNOWFLAKE_ENVIRONMENT','SNOWFLAKE_EXECUTABLE_TYPE','SNOWFLAKE_EXECUTABLE_NAME','SNOWFLAKE_RUNTIME'] %}
       {% do log('S13 env ' ~ n ~ '=' ~ (env_var(n, '<unset>') if n not in ['SNOWFLAKE_SESSION_TOKEN'] else (('<set>' if env_var(n,'') else '<unset>'))), info=true) %}
     {% endfor %}
-    {% set r = run_query("select current_query_id_placeholder") if false else none %}
     {% set rows = run_query("select current_session() s, current_role() r, current_client() c, current_statement() st") %}
     {% do log('S13 session=' ~ rows.rows[0] | string, info=true) %}
     {% set qt = run_query("show parameters like 'QUERY_TAG' in session") %}

@@ -94,7 +94,7 @@
       "with_node.status": 188
     },
     "resource_attributes": {
-      "db.user": "ICECORE_CI_USER",
+      "db.user": "<service user>",
       "snow.database.name": "ICECORE_SANDBOX",
       "snow.executable.id": 18457092,
       "snow.executable.name": "PILOT_DATAOPS",

@@ -112,6 +112,7 @@
     local run uses neither. `signals` (a dict with project_dir and profiles_dir) is for tests; the default reads
     invocation_args_dict. -#}
 {% macro _icecore_runtime(signals=none) %}
+  {#- Fusion first: it is decided by the dbt major version alone, whatever environment it runs in. -#}
   {%- if (dbt_version | string).split('.')[0] | int >= 2 -%}
     {{ return('fusion') }}
   {%- endif -%}

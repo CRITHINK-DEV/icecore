@@ -196,6 +196,8 @@ role (whether a view owned by another role can pass that access through is unmea
    **`EXECUTE DBT PROJECT` is measured (2 Nov 2026, `S13-dbt-projects.md`, `results/s13.json`).** Both hooks run, both `CALL`s
    succeed with no extra grant, and the views fill with the same counts as a local build (1 / 182 / 151 / 34 rows). Hub packages
    cannot install without an external access integration. `dbt.runtime` is now `snowflake_native` there.
+   **Limits:** one build of one pilot project, dbt 1.9.4, and the job's role also owns the procedures. A second role, a TASK
+   schedule and commands other than build and compile were not measured.
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later
    `ICECORE_EMIT_RUN` `CALL` can name the invocation span as their parent was not tested.
 7. **Levels below the database: measured (1 Nov 2026, story "narrowest telemetry levels").** The owner granted `MODIFY LOG LEVEL`

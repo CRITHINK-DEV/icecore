@@ -32,8 +32,7 @@ Raw results: `spikes/results/s13.json` (every number below is a key there; sourc
 
 ## Method
 
-- **Copy.** `/Users/anouarzbaida/Documents/CRITHINK/projects/icecore-review/pilot-dataops` is a copy of the owner's
-  `dataops-modernstack-blueprint` project (30 models, 4 seeds, 1 snapshot, 151 data tests). The original folder and its git
+- **Copy.** A local copy of the public crithink-io/dataops-modernstack-blueprint project (30 models, 4 seeds, 1 snapshot, 151 data tests). The original folder and its git
   repository were not touched. The copy has no `.git`.
 - **Changes to the copy.**
   - icecore (a copy of `origin/develop` at 5c95f26) as a local package in `vendor/icecore`, with
@@ -98,7 +97,7 @@ Two sets of records exist for one run. They do not share an id: **no native reco
 | `snow.executable.name` | `ICECORE_EMIT(EVENTS ARRAY):VARCHAR` or `ICECORE_EMIT_RUN(SPANS ARRAY):VARCHAR` | the project object: `PILOT_DATAOPS` |
 | `snow.database.name` / `snow.schema.name` | `ICECORE_SANDBOX` / `PILOT_OBS` | `ICECORE_SANDBOX` / `PILOT` (where the object lives) |
 | `snow.query.id` | the `CALL` | the `EXECUTE DBT PROJECT` query |
-| Scope | `icecore`, or `global` for `ICECORE_EMIT` | `dbt.runner`, `com.dbt.runner`, `snow.dbt.logger`, `snowflake.connector.*`, `snowflake.snowpark.*`, `root`, `global` |
+| Scope | `icecore`, or `global` for `ICECORE_EMIT` | `dbt.runner`, `com.dbt.runner`, `snow.dbt.logger`, `snowflake.connector.*`, `snowflake.snowpark.*`, `snow.snowpark.dataframe`, `root`, `global` |
 | Rows in the run | 528 | 3,214 |
 
 Other resource attributes of native records: `snow.owner.name`, `snow.session.role.primary.name`, `snow.warehouse.name`,
@@ -155,8 +154,8 @@ Counts per invocation, from the views in `ICECORE_SANDBOX.PILOT_OBS` (`view_coun
 `icecore._icecore_runtime()` now returns `snowflake_native` when the invocation's `project_dir` is `/tmp/dbt` and its
 `profiles_dir` starts with `/tmp/dbt_effective_profiles`. Those are the values measured inside the job
 (`runtime_signals.invocation_args_dict`). Both must match; either alone leaves `core`. They are an observed property of the
-runtime, **not documented by Snowflake**, so they can change; the test pins the rule, and a failure of the sandbox check
-below would show a change. The probe also found `HOME=/home/udf` and `USER=udf`, `SNOWFLAKE_*` and `DBT_CLOUD_*` unset, and
+runtime, **not documented by Snowflake**, so they can change. The test pins the rule offline; nothing reruns the sandbox
+check below (it ran once), so a Snowflake change would go unnoticed and the value would fall back to `core`. The probe also found `HOME=/home/udf` and `USER=udf`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_HOST`, `SNOWFLAKE_USER`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `DBT_CLOUD_RUN_ID` unset (the names checked), and
 no `SNOWFLAKE_QUERY_ID` variable (the only name tried for a query id).
 
 - Test: `test_runtime_is_snowflake_native_only_inside_execute_dbt_project` (4 cases, offline) in

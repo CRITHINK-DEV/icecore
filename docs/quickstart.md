@@ -205,6 +205,10 @@ dbt build --vars '{icecore: {telemetry: false}}'
 
 `--vars` replaces the whole `icecore` var. If you set `obs_schema` in `dbt_project.yml`, repeat it here.
 
+## dbt Projects on Snowflake
+
+icecore runs inside `EXECUTE DBT PROJECT` (measured once, see `spikes/S13-dbt-projects.md`). A `DBT PROJECT` object has no network access by default, so Hub packages in `packages.yml` need an external access integration, or you vendor them as local packages. Each `snow dbt deploy` also runs a compile that fires the hooks once, so every deploy writes a `compile` invocation; skipping it is a follow-up story.
+
 ## If no records appear
 
 Run `dbt run-operation icecore.doctor` first. A failed check names the missing procedure, grant or level. A troubleshooting guide is coming.

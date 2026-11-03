@@ -72,9 +72,8 @@ if sources:
         "status": st.column_config.TextColumn("Status"),
         "data_age": st.column_config.TextColumn("Data age"),
         "limit": st.column_config.TextColumn("Limit"),
-        "relation": st.column_config.TextColumn("Relation"),
-        "observed_at": st.column_config.DatetimeColumn("Measured at"),
-        "unique_id": None, "lag_minutes": None, "threshold_minutes": None, "over_limit": None,
+                "observed_at": st.column_config.DatetimeColumn("Measured at"),
+        "unique_id": None, "relation": None, "lag_minutes": None, "threshold_minutes": None, "over_limit": None,
     }, key="schedules_sources")
 else:
     st.caption("No source freshness recorded in this window.")

@@ -103,8 +103,8 @@ def test_score_caption():
     from lib.pages import tests as t
 
     pts = [_metric(0, 1, "native", score=0.2), _metric(1, 9, "native", score=0.95, anomaly=True)]
-    assert t.score_caption(pts, "native") == "native: latest score 0.95, 1 anomalous point(s)."
-    assert "not scored" in t.score_caption([_metric(0, 1, None)], "cortex")
+    assert t.score_caption(pts, "native") == "Scored by native: 1 anomaly."
+    assert "Not scored yet" in t.score_caption([_metric(0, 1, None)], "cortex")
 
 
 def test_filter_status_and_unknown_engines():
@@ -178,7 +178,7 @@ def test_page_renders_with_data(monkeypatch):
     assert labels == ["Failing", "Warning", "Anomalies", "Monitors scored by Cortex"]
     assert [m.value for m in at.metric] == ["1", "1", "0", "1"]
     # both engines scored the series: two captions with scores
-    assert sum("latest score" in c.value for c in at.caption) == 2
+    assert sum("Scored by" in c.value for c in at.caption) == 2
 
 
 def test_default_series_is_the_anomalous_one_else_the_longest():

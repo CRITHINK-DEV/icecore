@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lib.console import Tile, md
+from lib.console import Tile, md, short_name
 from lib.status import normalise, sort_key
 
 Row = dict[str, Any]
@@ -98,7 +98,7 @@ def series_key(m: Row) -> tuple:
 
 def series_label(key: tuple) -> str:
     relation, metric, column, dimension = key
-    parts = [f"{metric} of {relation}"]
+    parts = [f"{metric} of {short_name(relation)}"]
     if column:
         parts.append(f"column {column}")
     if dimension:
@@ -173,8 +173,8 @@ def score_caption(points: list[Row], engine: str) -> str:
     name = md(ENGINE_LABELS.get(engine, engine))
     flagged = sum(1 for p in points if p.get("anomaly_is_anomaly"))
     if not scored:
-        return f"{name}: not scored yet ({flagged} anomalies)."
-    return f"{name}: latest score {float(scored[-1]['anomaly_score']):.2f}, {flagged} anomalous point(s)."
+        return f"Not scored yet: {len(points)} point{'s' if len(points) != 1 else ''}, scoring starts at 7."
+    return f"Scored by {name}: {flagged} anomal{'y' if flagged == 1 else 'ies'}."
 
 
 def tiles(test_results: list[Row], metrics: list[Row]) -> list[Tile]:

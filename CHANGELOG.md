@@ -4,6 +4,9 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Fixed
+- Console Overview: the layer health strip follows the number of model layers. With 4 or more, the cards keep their width and wrap three per row instead of shrinking ("4 models, 19 tests" no longer wraps); 1 to 3 layers look as before.
+
 ## [0.1.0] - 2026-11-03
 
 First public release.

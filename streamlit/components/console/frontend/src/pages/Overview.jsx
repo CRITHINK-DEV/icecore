@@ -2,13 +2,14 @@ import React, { useState, useMemo, Fragment } from 'react';
 import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median } from '../lib/format.js';
 import { D, RUNS, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, MODEL_KEYS, KIND_LABEL, incNode, incAsset, incTarget } from '../lib/model.js';
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
+import { stripClass, stripJoin } from '../lib/strip.js';
 import { Ic, ICON, Pill, StatusPill, SevPill, Layer, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Overview ---------------- */
 export function HealthStrip({ health }) {
   const p = pal();
-  return <div className="health">{health.map((h, i) => <Fragment key={h.layer}>
-    {i > 0 && <div className="hjoin"><Ic d={ICON.chev} s={18} /></div>}
+  return <div className={stripClass(health.length)}>{health.map((h, i) => <Fragment key={h.layer}>
+    {stripJoin(i, health.length) && <div className="hjoin"><Ic d={ICON.chev} s={18} /></div>}
     <div className="htile" tabIndex={0} style={{ '--lc': `var(--${h.layer})` }} aria-label={`${LAYER_LABEL[h.layer]} health ${h.score == null ? 'not available' : Math.round(h.score)} out of 100`}>
       <div className="htop"><div className="hname">{LAYER_LABEL[h.layer]}<small>{h.models} models, {h.tests} tests</small></div>
         <div className={'hscore ' + (h.score == null ? '' : h.score >= 95 ? 't-ok' : h.score >= 80 ? 't-warn' : 't-fail')}>{h.score == null ? 'n/a' : Math.round(h.score)}<span>/100</span></div></div>

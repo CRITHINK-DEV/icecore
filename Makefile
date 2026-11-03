@@ -1,8 +1,12 @@
-.PHONY: app demo-data rich-demo
+.PHONY: app deploy-app demo-data rich-demo
 
 # Run the app on your laptop (docs/app.md). Set ICECORE_VIEWS_SCHEMA and a Snowflake login first.
 app:
 	scripts/run_app_locally.sh
+
+# Deploy the app to Streamlit in Snowflake (docs/app.md). Set ICECORE_APP_DATABASE and ICECORE_APP_WAREHOUSE first.
+deploy-app:
+	scripts/deploy_app.sh
 
 # Fill a persistent demo schema so every page has content (docs/app.md).
 demo-data:

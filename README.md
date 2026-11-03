@@ -142,17 +142,14 @@ make app                                                          # then open ht
 
 The role needs USAGE on the database and the views schema and SELECT on the views (and USAGE on `ICECORE_ACK` to acknowledge).
 
-**Then deploy it to Streamlit in Snowflake** if your team wants one shared URL. Upload the files of the `streamlit/` folder, including `components/console/build/`, to a stage and create the app from it:
+**Then deploy it to Streamlit in Snowflake** if your team wants one shared URL. Create the app in the schema that holds the views and it finds them with no setting:
 
-```sql
-CREATE STREAMLIT <db>.<views_schema>.ICECORE_APP
-  FROM @<db>.<schema>.<stage>/icecore_app
-  MAIN_FILE = 'streamlit_app.py'
-  QUERY_WAREHOUSE = <warehouse>;
-GRANT USAGE ON STREAMLIT <db>.<views_schema>.ICECORE_APP TO ROLE <viewer_role>;
+```bash
+export ICECORE_APP_DATABASE=<db> ICECORE_APP_SCHEMA=<views_schema> ICECORE_APP_WAREHOUSE=<warehouse>   # plus your SNOWFLAKE_* login
+make deploy-app
 ```
 
-The exact steps (the PUT commands, the layout and the `snow streamlit deploy` option) are in [docs/app.md](docs/app.md#deploy-it-to-streamlit-in-snowflake). Create the app in the schema that holds the views and it finds them with no setting (other options: [Where the app reads from](docs/app.md#where-the-app-reads-from)). A deployed app needs a warehouse while someone has it open.
+It uploads the app files (including the Console's `components/console/build/`) and creates the app, then prints the Snowsight path and the statement that gives a viewer role access: `GRANT USAGE ON STREAMLIT <db>.<views_schema>.ICECORE_APP TO ROLE <viewer_role>;`. The manual SQL, the other ways to set the views schema and the `snow streamlit deploy` option are in [docs/app.md](docs/app.md#deploy-it-to-streamlit-in-snowflake). A deployed app needs a warehouse while someone has it open.
 
 ## Known limits
 

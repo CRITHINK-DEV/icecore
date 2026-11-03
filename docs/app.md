@@ -99,33 +99,33 @@ The files, relative to `streamlit/`:
 
 The packages are in `environment.yml` (Streamlit 1.50.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
 
-### Option 1: upload to a stage and create the object
+### Option 1: `make deploy-app` (recommended)
 
-This is the path that worked in our sandbox. `PUT` keeps no folder structure, so upload each folder to its own path of the stage. With the Snowflake CLI (`snow sql`) or any client that supports `PUT`, from the repository root:
+The script reads the file list from `streamlit/snowflake.yml` (including the build folder), creates a stage, uploads each file to its own folder and creates the app. It never runs a grant.
 
-```sql
-CREATE STAGE IF NOT EXISTS <db>.<schema>.<stage>;
-
-PUT file://streamlit/streamlit_app.py            @<db>.<schema>.<stage>/icecore_app                          AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
-PUT file://streamlit/environment.yml             @<db>.<schema>.<stage>/icecore_app                          AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
-PUT file://streamlit/.streamlit/config.toml      @<db>.<schema>.<stage>/icecore_app/.streamlit               AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
-PUT file://streamlit/lib/*.py                    @<db>.<schema>.<stage>/icecore_app/lib                      AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
-PUT file://streamlit/components/console/build/index.html   @<db>.<schema>.<stage>/icecore_app/components/console/build         AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
-PUT file://streamlit/components/console/build/assets/*     @<db>.<schema>.<stage>/icecore_app/components/console/build/assets  AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
+```bash
+export SNOWFLAKE_CONNECTION_NAME=<name>      # or SNOWFLAKE_ACCOUNT + SNOWFLAKE_USER (+ SNOWFLAKE_PRIVATE_KEY_PATH, SNOWFLAKE_ROLE)
+export ICECORE_APP_DATABASE=<db>
+export ICECORE_APP_SCHEMA=<views_schema>     # default ICECORE_OBS: the views schema, so the app finds the views with no setting
+export ICECORE_APP_WAREHOUSE=<warehouse>
+make deploy-app                              # scripts/deploy_app.sh --dry-run prints the statements only
 ```
 
-Then create the app from the stage:
+Names must be plain identifiers (letters, digits, underscore). It puts `streamlit/icecore_app.toml` only when that file exists. At the end it prints where to find the app in Snowsight and the `GRANT USAGE` statements a viewer role needs. Run the same command again to update.
+
+### Option 2: the same steps by hand
+
+These are the statements the script runs (they deployed the app in our sandbox). `PUT` keeps no folder structure, so run one `put` per file, to the stage folder of its path under `streamlit/`:
 
 ```sql
-CREATE OR REPLACE STREAMLIT <db>.<views_schema>.ICECORE_APP
-  FROM '@<db>.<schema>.<stage>/icecore_app'
-  MAIN_FILE = 'streamlit_app.py'
-  QUERY_WAREHOUSE = <warehouse>;
+create or replace stage <DB>.<SCHEMA>.ICECORE_APP_STAGE directory=(enable=true) encryption=(type='SNOWFLAKE_SSE');
+put 'file://<path>/streamlit/<relative file>' @<DB>.<SCHEMA>.ICECORE_APP_STAGE/<relative folder> auto_compress=false overwrite=true;   -- once per file
+create or replace streamlit <DB>.<SCHEMA>.ICECORE_APP from @<DB>.<SCHEMA>.ICECORE_APP_STAGE main_file='streamlit_app.py' query_warehouse=<WH> runtime_name='SYSTEM$WAREHOUSE_RUNTIME';
 ```
 
-`lib/*.py` also uploads `health.py`, which the app does not import; it does no harm. To update, run the `PUT`s again (`OVERWRITE=TRUE`) and reopen the app.
+For example `streamlit/lib/queries.py` goes to `@<stage>/lib`, and `streamlit/components/console/build/assets/console.js` to `@<stage>/components/console/build/assets`. `runtime_name='SYSTEM$WAREHOUSE_RUNTIME'` is required: without it the account's default runtime ignores `environment.yml`.
 
-### Option 2: `snow streamlit deploy`
+### Option 3: `snow streamlit deploy`
 
 `streamlit/snowflake.yml` is a Snowflake CLI project definition that lists the same files, with the build folder, for a manual deployment:
 
@@ -134,7 +134,7 @@ cd streamlit
 snow streamlit deploy --replace
 ```
 
-It is a sandbox-style definition: its `identifier`, `query_warehouse` and database values are the project's test ones, so change them to yours first. In our sandbox this command failed at the upload step, which is why Option 1 is the documented path. Try it if your CLI version works for you.
+It is a sandbox-style definition: its `identifier`, `query_warehouse` and database values are the project's test ones, so change them to yours first. In our sandbox this command failed at the upload step, which is why Options 1 and 2 are the documented paths. Try it if your CLI version works for you.
 
 ### Who can open it
 

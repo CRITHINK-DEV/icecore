@@ -9,6 +9,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 First public release.
 
 ### Added
+- `make deploy-app` (`scripts/deploy_app.sh`): deploys the app to Streamlit in Snowflake from the file list of `streamlit/snowflake.yml`.
 - Streamlit app: the Console (prototype D), one full-page component with Overview, Incidents, Tests and anomalies, Runs, Schedules and freshness, Schema changes, Cost, Lineage, Models and sources, and Settings. It runs locally (recommended) or as a Streamlit in Snowflake object, and its build folder ships with the app.
 - `scripts/demo/build_rich_demo.sh` (`make rich-demo`): a sandbox-only demo built by 15 real dbt runs of `examples/shop` plus a few models, with scored metrics, row-count anomalies, a freshness breach, schema changes, four declared SLAs (one missed), failed and skipped models, and open, acknowledged and resolved incidents.
 - The console data object (`streamlit/lib/console_data.py`) builds the prototype console's data from the views; the app's ALERTS_FEED read now includes `root_cause_unique_id` and `root_cause_kind`.

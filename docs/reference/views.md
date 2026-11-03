@@ -84,7 +84,6 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `invocation_id` | text | The dbt run | `dbt.invocation_id` |
 | `project` | text | Root dbt project | `dbt.project` |
 | `test_unique_id` | text | The test's dbt unique id | `dbt.node.unique_id` |
-| `tested_unique_id` | text | The model or source the test is attached to (dbt's `attached_node`, else the single model, seed, snapshot or source the test depends on). Null for a singular test over several nodes, and for records written before this key existed | `dbt.test.attached_node` |
 | `test_name` | text | Test name, such as `not_null` | `dbt.test.name` |
 | `test_type` | text | `generic` or `singular` | `dbt.test.type` |
 | `COLUMN` | text | Tested column | `dbt.test.column` |
@@ -99,6 +98,7 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `query_id` | text | The test's Snowflake query | `snow.query.id` |
 | `root_cause_unique_id` | text | The upstream node that explains the failure, when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source` | `dbt.root_cause.kind` |
+| `tested_unique_id` | text | The model or source the test is attached to (dbt's `attached_node`, else the single model, seed, snapshot or source the test depends on). Null for a singular test over several nodes, for a relationships test from a source (two parents, no `attached_node`), and for records written before this key existed | `dbt.test.attached_node` |
 
 
 ## `METRICS`

@@ -23,7 +23,6 @@ select
     invocation_id,
     project,
     node_unique_id as test_unique_id,
-    test_attached_node as tested_unique_id,
     test_name,
     test_type,
     test_column as "COLUMN",
@@ -40,7 +39,8 @@ select
     anomaly_upper as upper,
     anomaly_score as score,
     event_at as executed_at,
-    node_query_id as query_id
+    node_query_id as query_id,
+    test_attached_node as tested_unique_id
 from events
 where record_type = 'LOG'
   and attributes:"icecore.kind"::string = 'node_result'

@@ -44,9 +44,9 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "relation", "change_kind", "column", "from_type", "to_type", "detected_at", "invocation_id",
         "node_unique_id", "emit_query_id")),
     "TEST_RESULTS": ("merged", "macros/views/test_results.sql", (
-        "invocation_id", "project", "test_unique_id", "tested_unique_id", "test_name", "test_type", "column", "severity", "status",
+        "invocation_id", "project", "test_unique_id", "test_name", "test_type", "column", "severity", "status",
         "failures", "message", "execution_time_s", "root_cause_unique_id", "root_cause_kind", "engine", "expected", "lower", "upper", "score", "executed_at",
-        "query_id")),
+        "query_id", "tested_unique_id")),
     "LINEAGE": ("merged", "macros/views/lineage.sql", (
         "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
     "LINEAGE_LATEST": ("merged", "macros/views/lineage.sql", (

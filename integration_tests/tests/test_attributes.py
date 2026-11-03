@@ -134,7 +134,7 @@ def test_attached_node_wins_over_depends_on():
 
 
 def test_source_test_names_the_source():
-    node = _test_node(attached_node="source.p.raw.orders", depends_on={"nodes": ["source.p.raw.orders"]})
+    node = _test_node(attached_node=None, depends_on={"nodes": ["source.p.raw.orders"]})
     assert _attached(node) == "source.p.raw.orders"
 
 

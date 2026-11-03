@@ -34,7 +34,9 @@ macros:
       their case, and embedded double quotes are doubled. Absent for tests and other node types.
       For tests: `dbt.test.name` (the generic test's name, or the node name for a singular test),
       `dbt.test.type` (`generic` or `singular`), `dbt.test.column` (`column_name`, when set),
-      `dbt.test.severity` (`config.severity`).
+      `dbt.test.severity` (`config.severity`),
+      `dbt.test.attached_node` (the model or source the test tests: dbt's `attached_node`, else the single
+      model, seed, snapshot or source in `depends_on.nodes`; left out when there is none or more than one).
       With a result: `dbt.result.status` (string), `dbt.result.rows_affected` (number, from the adapter
       response), `dbt.result.execution_time_s` (number, seconds), `dbt.result.message` (string, as
       `var('icecore').result_message` says: `redacted` by default, where every single-quoted literal becomes

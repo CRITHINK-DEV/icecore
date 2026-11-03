@@ -39,7 +39,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "METRICS": ("merged", "macros/views/metrics.sql", (
         "relation", "column", "dimension", "metric", "observed_at", "value", "anomaly_engine", "anomaly_expected",
         "anomaly_lower", "anomaly_upper", "anomaly_score", "anomaly_is_anomaly", "invocation_id", "node_unique_id",
-        "emit_query_id")),
+        "emit_query_id", "threshold")),
     "SCHEMA_CHANGES": ("merged", "macros/views/schema_changes.sql", (
         "relation", "change_kind", "column", "from_type", "to_type", "detected_at", "invocation_id",
         "node_unique_id", "emit_query_id")),
@@ -48,9 +48,9 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "failures", "message", "execution_time_s", "root_cause_unique_id", "root_cause_kind", "engine", "expected", "lower", "upper", "score", "executed_at",
         "query_id")),
     "LINEAGE": ("merged", "macros/views/lineage.sql", (
-        "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
+        "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at", "parent_layer", "child_layer")),
     "LINEAGE_LATEST": ("merged", "macros/views/lineage.sql", (
-        "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at")),
+        "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at", "parent_layer", "child_layer")),
     "CAPABILITIES": ("merged", "macros/views/capabilities.sql", (
         "database_name", "detected_at", "edition", "edition_source", "event_table", "event_table_level",
         "cortex_available", "cortex_reason", "log_level", "trace_level", "icecore_version", "invocation_id")),
@@ -62,7 +62,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "message", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
-        "recorded_at")),
+        "recorded_at", "layer")),
     "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
         "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),

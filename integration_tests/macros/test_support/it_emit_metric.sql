@@ -3,9 +3,9 @@
     quoted}, turned into a Relation with it_relation (it_metadata.sql). -#}
 
 {#- Renders without running: the events emit_metric builds, the records and chunks emit_events would send. -#}
-{% macro it_emit_metric_render(rel, metric, value, column=none, dimension=none, anomaly=none, attributes=none) %}
+{% macro it_emit_metric_render(rel, metric, value, column=none, dimension=none, anomaly=none, attributes=none, threshold=none) %}
   {% set relation = it_relation(rel['database'], rel['schema'], rel['identifier'], rel.get('quoted', false)) %}
-  {% set events = icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly, attributes) %}
+  {% set events = icecore._icecore_metric_events(relation, metric, value, column, dimension, anomaly, attributes, threshold) %}
   {% set records = icecore._icecore_emit_records(events) %}
   {% set sizes = [] %}
   {% for chunk in icecore._icecore_emit_chunks(records) %}

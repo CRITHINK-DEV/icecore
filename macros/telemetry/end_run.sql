@@ -12,6 +12,10 @@
 
 {% macro end_run(results=none) %}
   {%- if execute and icecore._icecore_telemetry_enabled() -%}
+    {%- set layers_problem = icecore._icecore_layers_problem() -%}
+    {%- if layers_problem is not none -%}
+      {%- do log('icecore: warning: ' ~ layers_problem, info=True) -%}
+    {%- endif -%}
     {%- do icecore.emit_run(icecore._icecore_end_run_items(results)) -%}
   {%- endif -%}
   {{ return('') }}

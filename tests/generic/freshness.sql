@@ -39,7 +39,7 @@
       {%- set lag_seconds = ((ms | float) / 1000) | round(3) -%}
       {%- set breach = max_lag_seconds is not none and lag_seconds > max_lag_seconds -%}
       {%- set verdict = icecore.score_monitor_metrics(model, [{'metric': 'freshness_lag_seconds', 'value': lag_seconds}], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine)[0] -%}
-      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict)) -%}
+      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict), threshold=max_lag_seconds) -%}
     {%- endif -%}
   {%- endif -%}
 

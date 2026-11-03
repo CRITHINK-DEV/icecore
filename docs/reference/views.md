@@ -73,6 +73,7 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `credits_settled` | text | `no_attribution` when the latest `cost` record closed the node with what was attributed (0 when Snowflake never wrote an attribution row). Null otherwise: the credits are attributed, or may still change | `dbt.cost.settled` |
 | `root_cause_unique_id` | text | The upstream node that explains a failed test. Set on the test's row only, and only when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |
+| `layer` | text | The node's layer: for a model the first folder under `models/` (renamed by the [`layers`](../configuration.md#run-telemetry) var), for a seed, snapshot or source its type. Null for a model with no folder, for tests and for records written before the key existed | `dbt.node.layer` |
 
 ## `TEST_RESULTS`
 
@@ -118,6 +119,7 @@ One row per metric a monitor computed, from the `icecore.metric` span events tha
 | `invocation_id` | text | The dbt run | `dbt.invocation_id` |
 | `node_unique_id` | text | The node, when the record has one | `dbt.node.unique_id` |
 | `emit_query_id` | text | Query id of the `CALL` that wrote the record | `snow.query.id` in `RESOURCE_ATTRIBUTES` |
+| `threshold` | float | The limit the test judges the metric by, in the metric's unit. Set by `icecore.freshness` with `max_lag`, in seconds, on its `freshness_lag_seconds` rows. Null for other metrics, for a bare freshness test and for records written before the key existed | `icecore.metric.threshold` |
 
 ## `SCHEMA_CHANGES`
 
@@ -209,6 +211,7 @@ One row per dependency edge per invocation, from the `lineage` log records. Edge
 | `parent_unique_id` | text | Upstream node | element 0 of a pair in `dbt.lineage.edges` |
 | `child_unique_id` | text | Downstream node | element 1 of a pair in `dbt.lineage.edges` |
 | `recorded_at` | time | Time of the edge's latest record | event `TIMESTAMP` |
+| `parent_layer`, `child_layer` | text | The layer of each node of the edge, as `layer` in `NODE_EXECUTIONS`. Null for records written before the key existed | key of the node in `dbt.lineage.node_layer` |
 
 ## `LINEAGE_LATEST`
 

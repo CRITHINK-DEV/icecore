@@ -37,6 +37,9 @@
     {%- do icecore._icecore_put(out, 'dbt.node.name', get(node, 'name')) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.materialization', get(config, 'materialized')) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.relation', icecore._icecore_node_relation(node)) -%}
+    {%- set fqn = icecore._icecore_node_fqn(get(node, 'fqn'), get(node, 'version')) -%}
+    {%- do icecore._icecore_put(out, 'dbt.node.fqn', fqn) -%}
+    {%- do icecore._icecore_put(out, 'dbt.node.layer', icecore._icecore_layer(resource_type, fqn)) -%}
     {%- if resource_type == 'test' -%}
       {%- set test_metadata = get(node, 'test_metadata') -%}
       {%- do icecore._icecore_put(out, 'dbt.test.name', get(test_metadata, 'name') if test_metadata is not none else get(node, 'name')) -%}
@@ -149,6 +152,55 @@
       'identifier': get(quoting, 'identifier') or false,
   }) -%}
   {{ return(icecore._icecore_quoted_name(relation)) }}
+{% endmacro %}
+
+
+{#- dbt's fqn (a list: project, folders, name) as one dotted string, `shop.bronze.stripe.orders`: the compact form
+    written as `dbt.node.fqn`. None when there is no fqn. A versioned model (`version` set) has the version appended
+    to its fqn by dbt (`shop.orders.v2`): that last part is dropped, so the layer and the fqn do not depend on it. -#}
+{% macro _icecore_node_fqn(fqn, version=none) %}
+  {%- if fqn is none or fqn is string or fqn | length == 0 -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set parts = fqn | map('string') | list -%}
+  {%- if version is not none and (version | string) != '' and parts | length > 1 -%}
+    {%- set parts = parts[:-1] -%}
+  {%- endif -%}
+  {{ return(parts | join('.')) }}
+{% endmacro %}
+
+
+{#- The node's layer, written as `dbt.node.layer` (the views read it, so they stay simple).
+    Models: the first folder under models/, which is fqn[1] when the fqn has more than 2 parts (project, folder, ...,
+    name), else none; var icecore.layers ({folder: layer}) renames a folder, any other folder is its own layer.
+    Seeds, snapshots and sources: the resource type. Anything else (tests, ...): none.
+    fqn is the dotted string of _icecore_node_fqn. A folder name that holds a dot is not supported (it cannot be
+    told from two folders). -#}
+{% macro _icecore_layer(resource_type, fqn) %}
+  {%- if resource_type in ['seed', 'snapshot', 'source'] -%}
+    {{ return(resource_type) }}
+  {%- endif -%}
+  {%- if resource_type != 'model' or fqn is none -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set parts = fqn.split('.') -%}
+  {%- if parts | length <= 2 -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set folder = parts[1] -%}
+  {%- set layers = icecore._icecore_setting('layers', {}) -%}
+  {%- set mapped = layers.get(folder) if layers is mapping else none -%}
+  {{ return(folder if mapped is none or (mapped | string | trim) == '' else mapped | string | trim) }}
+{% endmacro %}
+
+
+{#- A message when var icecore.layers is set and is not a mapping (then it is ignored), else none. -#}
+{% macro _icecore_layers_problem() %}
+  {%- set layers = icecore._icecore_setting('layers', {}) -%}
+  {%- if layers is none or layers is mapping -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return('var icecore.layers must be a mapping {folder: layer}; got ' ~ (layers | string)[:80] ~ ', so it is ignored and each model keeps its folder name as layer') }}
 {% endmacro %}
 
 

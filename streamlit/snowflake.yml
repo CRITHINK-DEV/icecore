@@ -20,29 +20,11 @@ entities:
       - .streamlit/config.toml
       - lib/__init__.py
       - lib/ack.py
-      - lib/charts.py
-      - lib/console.py
-      - lib/cost.py
-      - lib/dag.py
-      - lib/lineage_component.py
-      - lib/navigation.py
+      - lib/console_component.py
+      - lib/console_data.py
+      - lib/incidents.py
       - lib/queries.py
-      - lib/runs_logic.py
       - lib/settings.py
-      - lib/slas.py
       - lib/status.py
-      - lib/ui.py
-      - lib/pages/__init__.py
-      - lib/pages/lineage.py
-      - src: components/lineage/build/**
-        dest: components/lineage/build
-      - pages/cost.py
-      - pages/incidents.py
-      - pages/lineage.py
-      - pages/node.py
-      - pages/overview.py
-      - pages/runs.py
-      - pages/schedules.py
-      - pages/schema_changes.py
-      - pages/settings.py
-      - pages/tests_and_anomalies.py
+      - src: components/console/build/**
+        dest: components/console/build

@@ -7,7 +7,7 @@ export const useApp = () => useContext(Ctx);
 export const pal = () => {
   const cs = getComputedStyle(document.documentElement); const g = n => cs.getPropertyValue('--' + n).trim();
   return { bg: g('bg'), panel: g('panel'), ink: g('ink'), ink2: g('ink-2'), ink3: g('ink-3'), line: g('line'), line2: g('line-2'), accent: g('accent'), accentSoft: g('accent-soft'), band: g('band'), bar: g('bar'),
-    fail: g('fail'), warn: g('warn'), ok: g('ok'), stale: g('stale'), muted: g('muted'), bronze: g('bronze'), silver: g('silver'), gold: g('gold'), transient: g('transient'), sources: g('sources'), snapshot: g('snapshot') };
+    fail: g('fail'), warn: g('warn'), ok: g('ok'), stale: g('stale'), muted: g('muted'), bronze: g('bronze'), silver: g('silver'), gold: g('gold'), transient: g('transient'), sources: g('sources'), snapshot: g('snapshot'), l4: g('l4'), l5: g('l5'), l6: g('l6'), l7: g('l7'), l8: g('l8') };
 };
 export const statusColor = (p, s) => ({ failed: p.fail, warn: p.warn, stale: p.stale, ok: p.ok, notrun: p.muted }[s] || p.muted);
 export const layerColor = (p, g) => p[g] || p.muted;

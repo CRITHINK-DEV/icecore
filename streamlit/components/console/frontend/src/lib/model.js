@@ -55,6 +55,42 @@ export const latestTest = tid => { const i = latestIdx(tid); return i < 0 ? null
 export const seriesLatest = s => { let best = null; Object.values(s.pts).forEach(a => { const p = a[a.length - 1]; if (p && (!best || p.t > best.t)) best = p; }); return best; };
 export const seriesAnomalous = s => Object.values(s.pts).some(a => a.length && a[a.length - 1].anomaly);
 
+/* Layers. The prototype hardcoded bronze/silver/gold; real projects name their own. The model layers are the distinct
+   `layer` values of the model nodes (not seed, source, snapshot, test, transient or null), ordered upstream first by DAG
+   depth. Each takes a position key (bronze, silver, gold, then l4...): the key carries the accent colour (--bronze...)
+   and the label is the project's own name. With no model layer the prototype's three are used. */
+export const POS_KEYS = ['bronze', 'silver', 'gold', 'l4', 'l5', 'l6', 'l7', 'l8'];
+const FIXED_GROUP = { transient: 'transient', seed: 'sources', source: 'sources', snapshot: 'snapshot' };
+const canonLayer = l => (l === 'gold_analytics' ? 'gold' : l);
+const titleCase = l => String(l).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+let POS_OF = {};
+export let MODEL_KEYS = ['bronze', 'silver', 'gold'];
+export let LAYER_LABEL = { sources: 'Sources & seeds', transient: 'Transient', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', snapshot: 'Snapshots' };
+export let LAYER_ORDER = ['sources', 'transient', 'bronze', 'silver', 'gold', 'snapshot'];
+export const LAYER_GROUP = l => FIXED_GROUP[l] || POS_OF[canonLayer(l)] || canonLayer(l);
+
+function setLayers(nodes) {
+  const byId = {}; nodes.forEach(n => { byId[n.unique_id] = n; });
+  const depth = {};
+  const dep = (id, seen = new Set()) => {
+    if (depth[id] != null) return depth[id];
+    if (seen.has(id)) return 0; seen.add(id);
+    const n = byId[id]; if (!n) return 0;
+    const ps = (n.depends_on || []).filter(p => byId[p] && byId[p].type !== 'test');
+    return (depth[id] = ps.length ? 1 + Math.max(...ps.map(p => dep(p, seen))) : 0);
+  };
+  const acc = {};
+  nodes.filter(n => n.type === 'model' && n.layer != null && !FIXED_GROUP[n.layer] && n.layer !== 'test').forEach(n => {
+    const l = canonLayer(n.layer); const a = acc[l] || (acc[l] = { sum: 0, n: 0 }); a.sum += dep(n.unique_id); a.n += 1; });
+  const layers = Object.keys(acc).sort((a, b) => acc[a].sum / acc[a].n - acc[b].sum / acc[b].n || a.localeCompare(b)).slice(0, POS_KEYS.length);
+  POS_OF = {}; layers.forEach((l, i) => { POS_OF[l] = POS_KEYS[i]; });
+  MODEL_KEYS = layers.length ? layers.map((_, i) => POS_KEYS[i]) : ['bronze', 'silver', 'gold'];
+  const label = { sources: 'Sources & seeds', transient: 'Transient', snapshot: 'Snapshots' };
+  if (layers.length) layers.forEach(l => { label[POS_OF[l]] = titleCase(l); }); else Object.assign(label, { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' });
+  LAYER_LABEL = label;
+  LAYER_ORDER = ['sources', 'transient', ...MODEL_KEYS, 'snapshot'];
+}
+
 export function loadData(raw) {
   D = normalise(raw);
   /* ---------------- data model (derived only from window.ICECORE_DATA) ---------------- */
@@ -69,6 +105,7 @@ export function loadData(raw) {
   PARENTS = {}, CHILDREN = {};
   ASSETS.forEach(n => { PARENTS[n.unique_id] = n.depends_on.filter(p => NODE[p] && NODE[p].type !== 'test'); CHILDREN[n.unique_id] = []; });
   ASSETS.forEach(n => PARENTS[n.unique_id].forEach(p => CHILDREN[p].push(n.unique_id)));
+  setLayers(D.nodes);
   TESTS_OF = {}; TESTS.forEach(t => { const m = testTarget(t); if (m) { (TESTS_OF[m] = TESTS_OF[m] || []).push(t.unique_id); } });
   TR = {}, TRF = {};
   D.test_results.forEach(r => {
@@ -106,9 +143,6 @@ export function loadData(raw) {
 }
 loadData({});
 
-export const LAYER_GROUP = l => ({ gold_analytics: 'gold', gold: 'gold', silver: 'silver', bronze: 'bronze', transient: 'transient', seed: 'sources', source: 'sources', snapshot: 'snapshot' }[l] || l);
-export const LAYER_LABEL = { sources: 'Sources & seeds', transient: 'Transient', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', snapshot: 'Snapshots' };
-export const LAYER_ORDER = ['sources', 'transient', 'bronze', 'silver', 'gold', 'snapshot'];
 export const KIND_LABEL = { test_failure: 'Test failure', anomaly: 'Anomaly', schema_change: 'Schema change', silence: 'Missed schedule', cost: 'Cost' };
 export const STATUS_LABEL = { failed: 'Failed', warn: 'Warning', stale: 'Late', ok: 'OK', notrun: 'Not run' };
 export const STATUS_TONE = { failed: 'fail', warn: 'warn', stale: 'stale', ok: 'ok', notrun: 'muted' };
@@ -144,7 +178,7 @@ export function computeStatus(incidents) {
 
 export const WEIGHTS = { tests: 0.5, fresh: 0.2, sched: 0.15, anom: 0.15 };
 export function computeHealth(incidents) {
-  return ['bronze', 'silver', 'gold'].map(L => {
+  return MODEL_KEYS.map(L => {
     const models = ASSETS.filter(n => LAYER_GROUP(n.layer) === L);
     const ids = new Set(models.map(m => m.unique_id));
     let pass = 0, warn = 0, fail = 0;

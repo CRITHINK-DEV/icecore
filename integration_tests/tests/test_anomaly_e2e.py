@@ -6,8 +6,7 @@ the emitter), so the obs schema ICECORE_OBS_<run_id> gets the real views and the
 UNION ALL a SEEDED view of 30 daily points per series. A series belongs to ONE test (node_unique_id): the tests read
 only their own points. The verdicts are real event-table records read back through the view.
 Cases (fixtures in models/monitors/_anomaly_e2e.yml): spike (100 rows of history, 1000 now; avg(amount) 10 -> 500; freshness
-lag 1 h -> seconds), calm (in the band), young (3 history points). Severity: an anomaly warns by default (the test passes and
-logs a warning), fails with var anomaly_severity error or a test severity error; a hard threshold fails whatever the var says.
+lag 1 h -> seconds), calm (in the band), young (3 history points). Severity: an anomaly alone is one failing row and WARNS by default (error_if >=2); a hard threshold is 2 rows and fails; var anomaly_severity error makes error_if >=1.
 The schema is dropped at the end. Offline tests: test_score_monitor.py.
 """
 import json
@@ -90,7 +89,7 @@ def e2e(dbt, sf):
             return statuses(res), lines
 
         # run 1: defaults (anomaly_severity warn, engine auto: no Cortex model, so native)
-        first, first_lines = build(["it_anom_volume_spike", "it_anom_volume_error", "it_anom_volume_threshold", "it_anom_volume_warn",
+        first, first_lines = build(["it_anom_volume_spike", "it_anom_volume_error", "it_anom_volume_threshold", "it_anom_volume_threshold_warn", "it_anom_volume_warn",
                                     "it_anom_volume_calm", "it_anom_volume_young", "it_anom_column_spike", "it_anom_freshness_spike"])
         # run 2: the var says cortex; the test volume_override scores with native outright
         _, second_lines = build(["it_anom_volume_spike", "it_anom_volume_override"], {"anomaly_engine": "cortex"})
@@ -124,27 +123,27 @@ def rows(e2e, table, metric, test, **where):
 
 
 @pytest.mark.sandbox
-def test_a_10x_spike_after_30_days_of_history_is_scored_an_anomaly_and_warns_by_default(e2e):
+def test_a_10x_spike_after_30_days_of_history_is_scored_an_anomaly_and_the_test_warns_by_default(e2e):
     spike = rows(e2e, "spike", "row_count", "it_anom_volume_spike")
     assert spike and all(m["anomaly_is_anomaly"] is True and m["anomaly_engine"] == "native" and m["value"] == 1000 for m in spike)
     m = spike[0]
     assert m["anomaly_lower"] <= m["anomaly_expected"] <= m["anomaly_upper"] < 1000 and m["anomaly_score"] > 0
-    assert e2e["first"]["it_anom_volume_spike"] == "pass"  # warn by default: the test is not failed
-    assert any("icecore: warning: anomaly in row_count of" in line and e2e["spike"] in line for line in e2e["first_lines"])
+    assert e2e["first"]["it_anom_volume_spike"] == "warn"  # one failing row, error_if >=2: WARN, not fail
+    assert e2e["first"]["it_anom_column_spike"] == "warn" and e2e["first"]["it_anom_freshness_spike"] == "warn"
 
 
 @pytest.mark.sandbox
-def test_the_anomaly_fails_the_volume_test_with_var_anomaly_severity_error_or_the_tests_own_severity_error(e2e):
-    assert e2e["third"]["it_anom_volume_spike"] == "fail"  # var error
-    assert e2e["first"]["it_anom_volume_error"] == "fail"  # config severity error on the test, var left at warn
-    assert e2e["third"]["it_anom_volume_warn"] == "warn"  # the test's own severity warn still wins
+def test_the_anomaly_fails_the_test_with_var_anomaly_severity_error_or_the_projects_error_if(e2e):
+    assert e2e["third"]["it_anom_volume_spike"] == "fail"  # var error: error_if >=1
+    assert e2e["first"]["it_anom_volume_error"] == "fail"  # the project's error_if >=1 wins over the macro's, var left at warn
+    assert e2e["third"]["it_anom_volume_warn"] == "warn"  # the project's severity warn wins: everything warns
     assert e2e["third"]["it_anom_column_spike"] == "fail" and e2e["third"]["it_anom_freshness_spike"] == "fail"
-    # the freshness max_lag rule of the same test is not breached: it fails on the anomaly alone
 
 
 @pytest.mark.sandbox
-def test_a_hard_threshold_still_fails_whatever_anomaly_severity_says(e2e):
-    assert e2e["first"]["it_anom_volume_threshold"] == "fail"  # min_rows 5000, anomaly severity warn
+def test_a_hard_threshold_still_fails_whatever_anomaly_severity_says_and_warns_with_severity_warn(e2e):
+    assert e2e["first"]["it_anom_volume_threshold"] == "fail"  # min_rows 5000: 2 rows, error_if >=2
+    assert e2e["first"]["it_anom_volume_threshold_warn"] == "warn"  # project severity warn on the test
 
 
 @pytest.mark.sandbox
@@ -156,7 +155,7 @@ def test_a_test_reads_only_its_own_history_not_that_of_another_test_on_the_same_
 
 @pytest.mark.sandbox
 def test_severity_warn_and_a_value_in_the_band_pass_scored_not_anomalous(e2e):
-    assert e2e["first"]["it_anom_volume_warn"] == "pass" and e2e["first"]["it_anom_volume_calm"] == "pass"
+    assert e2e["first"]["it_anom_volume_warn"] == "warn" and e2e["first"]["it_anom_volume_calm"] == "pass"
     calm = rows(e2e, "calm", "row_count", "it_anom_volume_calm")
     assert calm and all(m["anomaly_is_anomaly"] is False and m["anomaly_engine"] == "native" for m in calm)
 

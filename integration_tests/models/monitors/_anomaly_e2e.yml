@@ -44,9 +44,15 @@ sources:
               name: it_anom_volume_error
               config:
                 severity: error
+                error_if: ">=1"
           - icecore.volume:
               name: it_anom_volume_threshold
               min_rows: 5000
+          - icecore.volume:
+              name: it_anom_volume_threshold_warn
+              min_rows: 5000
+              config:
+                severity: warn
           - icecore.all_columns_anomaly:
               name: it_anom_all_columns_spike
               timestamp_column: loaded_at

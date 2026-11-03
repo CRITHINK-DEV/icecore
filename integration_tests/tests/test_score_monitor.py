@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from helpers.macros import MacroFailed, invoke, run_macro_with_logs
+from helpers.macros import MacroFailed, call_macro, invoke, run_macro_with_logs
 
 REL = {"database": "ICECORE_SANDBOX", "schema": "SPIKES", "identifier": "ORDERS", "quoted": True}
 VOLUME = {"metric": "row_count", "value": 1000}
@@ -117,34 +117,27 @@ def test_the_five_tests_take_the_scoring_arguments_and_refuse_a_bad_engine():
 
 # --- severity: an anomaly warns by default --------------------------------------------------------
 
-ANOMALY = {"engine": "native", "is_anomaly": True, "expected": 100.0, "lower": 90.0, "upper": 110.0}
-
-
-def fails(result, cfg=None):
-    vars_ = {"icecore": cfg} if cfg else {}
-    out, logs = run_macro_with_logs("it_anomaly_fails", {"result": result}, ["--vars", json.dumps(vars_)])
-    return out["fails"], logs
-
-
-def test_an_anomaly_only_warns_by_default_and_says_so():
-    failed, logs = fails(ANOMALY)
-    assert failed is False
-    assert any("warning: anomaly in row_count of X" in line and "not failed" in line for line in logs)
-
-
-def test_var_anomaly_severity_error_makes_an_anomaly_fail():
-    assert fails(ANOMALY, {"anomaly_severity": "error"})[0] is True
-
-
-def test_no_anomaly_never_fails_and_logs_nothing():
-    failed, logs = fails({**ANOMALY, "is_anomaly": False})
-    assert failed is False and not logs
-    assert fails(None)[0] is False
+def test_error_if_is_2_by_default_so_an_anomaly_alone_warns_and_1_with_anomaly_severity_error():
+    assert call_macro("_icecore_error_if") == ">=2"
+    out, _ = run_macro_with_logs("it_error_if", {}, ["--vars", json.dumps({"icecore": {"anomaly_severity": "error"}})])
+    assert out == ">=1"
 
 
 def test_an_invalid_anomaly_severity_is_refused():
     with pytest.raises(MacroFailed):
-        fails(ANOMALY, {"anomaly_severity": "fatal"})
+        run_macro_with_logs("it_error_if", {}, ["--vars", json.dumps({"icecore": {"anomaly_severity": "fatal"}})])
+
+
+def test_the_tests_set_dbts_warn_and_error_thresholds_in_their_config():
+    assert invoke(["deps"]).success
+    res = invoke(["parse"])
+    nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
+    spike = nodes["it_anom_volume_spike"].config
+    assert (spike.severity, spike.warn_if, spike.error_if) == ("error", ">=1", ">=2")
+    assert nodes["it_anom_volume_error"].config.error_if == ">=1"  # the project's config wins over the test definition's
+    assert nodes["it_anom_volume_warn"].config.severity.lower() == "warn"
+    res = invoke(["parse", "--vars", json.dumps({"icecore": {"anomaly_severity": "error"}})])
+    assert {n.name: n for n in res.result.nodes.values()}["it_anom_volume_spike"].config.error_if == ">=1"
 
 
 # --- the history is the test's own ----------------------------------------------------------------

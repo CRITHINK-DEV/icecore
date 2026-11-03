@@ -161,16 +161,13 @@
 {% endmacro %}
 
 
-{#- True when an anomaly must make the test fail: var anomaly_severity is error, or the test sets severity error itself
-    (config severity written on the test, not dbt's default). Otherwise an anomaly only WARNS: the result is false and one
-    warning line says what was seen; the metric, the icecore.anomaly event and METRICS carry it either way. dbt gives a test
-    one severity, so a hard threshold (max_lag, min/max rows, bounds) still fails at the test's own severity. -#}
-{% macro _icecore_anomaly_fails(result, what) %}
-  {%- if not icecore._icecore_anomalous(result) -%}{{ return(false) }}{%- endif -%}
-  {%- set explicit = (model.unrendered_config.get('severity') if model is defined and model is not none and model.unrendered_config is defined else none) -%}
-  {%- if icecore._icecore_anomaly_severity() == 'error' or (explicit is not none and explicit | string | lower == 'error') -%}{{ return(true) }}{%- endif -%}
-  {%- do log('icecore: warning: anomaly in ' ~ what ~ ': ' ~ icecore._icecore_anomaly_text(result) ~ ' (anomaly_severity is warn: the test is not failed)', info=True) -%}
-  {{ return(false) }}
+{#- The error_if of the monitor tests (they set config(severity='error', warn_if='>=1', error_if=...)). dbt counts the failing
+    rows: an anomaly alone returns exactly 1 row, a hard threshold breach (max_lag, min_rows, max_rows, bounds) at least 2.
+    anomaly_severity warn (default): error_if '>=2', so an anomaly WARNS and a hard breach fails. error: '>=1', an anomaly fails.
+    A severity, warn_if or error_if written on the test in the project overrides these (the project's config wins over the
+    config() of the test's own definition). -#}
+{% macro _icecore_error_if() %}
+  {{ return('>=2' if icecore._icecore_anomaly_severity() == 'warn' else '>=1') }}
 {% endmacro %}
 
 
@@ -184,4 +181,3 @@
 {% macro _icecore_anomaly_text(result) %}
   {{ return('anomaly (' ~ result.get('engine') ~ '): outside the expected band [' ~ result.get('lower') ~ ', ' ~ result.get('upper') ~ '] around ' ~ result.get('expected')) }}
 {% endmacro %}
-

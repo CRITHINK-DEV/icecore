@@ -4,6 +4,7 @@
     row_count with the scored result, then fails when it is outside min_rows / max_rows OR the engine says anomaly.
     Not enough history: not scored, the test passes on that account. emit_metric guards its own CALL. -#}
 {% test volume(model, min_rows=none, max_rows=none, engine=none, sensitivity=none, min_consecutive=none, lookback_days=30, min_points=7, shadow_engine=none) %}
+  {{ config(severity='error', warn_if='>=1', error_if=icecore._icecore_error_if()) }}
   {%- for pair in [('min_rows', min_rows), ('max_rows', max_rows)] -%}
     {%- if pair[1] is not none and (pair[1] is boolean or pair[1] is not number or pair[1] < 0) -%}
       {{ exceptions.raise_compiler_error("icecore.volume: " ~ pair[0] ~ " must be a non-negative number; got '" ~ pair[1] ~ "'") }}
@@ -34,10 +35,12 @@
     {%- endif -%}
   {%- endif -%}
 
-  {%- set anomalous = icecore._icecore_anomaly_fails(verdict, 'row_count of ' ~ icecore._icecore_quoted_name(model)) -%}
+  {%- set anomalous = icecore._icecore_anomalous(verdict) -%}
+  {#- dbt counts rows: a hard breach (or an unmeasured metric with a threshold) returns 2, an anomaly alone 1 (see _icecore_error_if) -#}
+  {%- set failing_rows = 2 if (breach or unmeasured is not none) else (1 if anomalous else 0) -%}
   select {{ 'null' if row_count is none else row_count }}::number as row_count,
          {{ 'null' if min_rows is none else min_rows }}::number as min_rows,
          {{ 'null' if max_rows is none else max_rows }}::number as max_rows,
          {{ 'null' if (unmeasured is none and not anomalous) else icecore._icecore_sql_literal(unmeasured if unmeasured is not none else icecore._icecore_anomaly_text(verdict)) }}::varchar as reason
-  where {{ 'true' if (breach or anomalous or unmeasured is not none) else 'false' }}
+  from (select 1 as k union all select 2 as k) where k <= {{ failing_rows }}
 {% endtest %}

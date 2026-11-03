@@ -197,7 +197,7 @@ MY_DB         | ENTERPRISE | MY_DB.TELEMETRY.EVENTS            | INFO      | ALW
 
 ## Anomaly tests
 
-`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` score each metric against their own history (30 days, at least 7 points). Until a test has 7 points it only records metrics. An anomaly **warns** by default: the test passes, a warning is logged, and `METRICS` and the alerts carry it. To make it fail the test, set `vars: icecore: anomaly_severity: error`, or `severity: error` on the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) always fails at the test's own severity. See [configuration](configuration.md#monitor-and-anomaly-settings).
+`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` score each metric against their own history (30 days, at least 7 points). Until a test has 7 points it only records metrics. An anomaly **warns** by default (status `warn`, and `METRICS` and the alerts carry it). To make it fail the test, set `vars: icecore: anomaly_severity: error`. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test (status `fail`), and `severity: warn` on a test makes everything warn. See [configuration](configuration.md#monitor-and-anomaly-settings).
 
 ## Turn telemetry off
 

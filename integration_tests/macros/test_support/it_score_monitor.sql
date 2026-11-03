@@ -35,9 +35,8 @@
   {% do _it_result(icecore.get_metric_history_sql(icecore._icecore_quoted_name(relation), point['metric'], point.get('column'), point.get('dimension'), 30, 1)) %}
 {% endmacro %}
 
-{#- Whether an anomaly fails the test under the current vars (outside a test there is no explicit severity). -#}
-{% macro it_anomaly_fails(result) %}
-  {% do _it_result({'fails': icecore._icecore_anomaly_fails(result, 'row_count of X')}) %}
+{% macro it_error_if() %}
+  {% do _it_result(icecore._icecore_error_if()) %}
 {% endmacro %}
 
 {% macro it_history_sql_for_test(rel, point, node_unique_id) %}

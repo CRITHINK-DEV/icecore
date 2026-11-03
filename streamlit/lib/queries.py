@@ -19,6 +19,7 @@ its empty state instead of failing on a view that does not exist.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from datetime import date, datetime
 from typing import Any, Callable, MutableMapping, TypedDict
@@ -297,6 +298,7 @@ def _as_row(row: Any) -> dict:
 
 LOCAL_SESSION_KEY = "icecore_local_session"
 _local: dict[str, Any] = {}  # one Snowpark session per app process (module state survives Streamlit reruns)
+_local_lock = threading.Lock()
 
 
 def session_params(env: MutableMapping | None = None) -> dict | None:
@@ -329,6 +331,7 @@ def session_params(env: MutableMapping | None = None) -> dict | None:
     for key, name in (("role", "SNOWFLAKE_ROLE"), ("warehouse", "SNOWFLAKE_WAREHOUSE"), ("database", "SNOWFLAKE_DATABASE")):
         if get(name):
             params[key] = get(name)
+    params["client_session_keep_alive"] = True  # the app stays open for hours; without it the session expires (~4 h idle)
     return params
 
 
@@ -347,8 +350,9 @@ def get_session(env: MutableMapping | None = None, store: dict | None = None) ->
         if params is None:
             raise
         store = _local if store is None else store
-        if LOCAL_SESSION_KEY not in store:
-            store[LOCAL_SESSION_KEY] = Session.builder.configs(params).create()
+        with _local_lock:  # Streamlit reruns can overlap: build one session, not one per rerun
+            if LOCAL_SESSION_KEY not in store:
+                store[LOCAL_SESSION_KEY] = Session.builder.configs(params).create()
         return store[LOCAL_SESSION_KEY]
 
 

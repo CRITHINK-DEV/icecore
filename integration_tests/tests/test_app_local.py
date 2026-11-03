@@ -60,6 +60,11 @@ def fake_snowpark(monkeypatch):
 
 # --- the choice of parameters --------------------------------------------------------------------------------
 
+def test_the_session_is_kept_alive(queries):
+    """The app stays open for hours; an idle session would expire after about 4 hours without keep-alive."""
+    assert queries.session_params({"SNOWFLAKE_CONNECTION_NAME": "dev"})["client_session_keep_alive"] is True
+
+
 def test_nothing_configured_gives_no_params(queries):
     assert queries.session_params({}) is None
     assert queries.session_params({"SNOWFLAKE_ACCOUNT": "acme"}) is None  # no user: not a login
@@ -69,7 +74,7 @@ def test_nothing_configured_gives_no_params(queries):
 def test_connection_name_wins_and_is_passed_whole(queries):
     env = {"SNOWFLAKE_CONNECTION_NAME": "dev", "SNOWFLAKE_ACCOUNT": "a", "SNOWFLAKE_USER": "u",
            "SNOWFLAKE_PRIVATE_KEY_PATH": "/k.p8", "SNOWFLAKE_ROLE": "R"}
-    assert queries.session_params(env) == {"connection_name": "dev", "role": "R"}
+    assert queries.session_params(env) == {"connection_name": "dev", "role": "R", "client_session_keep_alive": True}
 
 
 def test_key_pair_login(queries):
@@ -78,12 +83,12 @@ def test_key_pair_login(queries):
            "SNOWFLAKE_DATABASE": "DB"}
     assert queries.session_params(env) == {
         "account": "acme-x", "user": "me", "private_key_file": "/k.p8", "private_key_file_pwd": "pw",
-        "role": "R", "warehouse": "W", "database": "DB"}
+        "role": "R", "warehouse": "W", "database": "DB", "client_session_keep_alive": True}
 
 
 def test_without_a_key_the_browser_login_is_used(queries):
     assert queries.session_params({"SNOWFLAKE_ACCOUNT": "a", "SNOWFLAKE_USER": "u"}) == {
-        "account": "a", "user": "u", "authenticator": "externalbrowser"}
+        "account": "a", "user": "u", "authenticator": "externalbrowser", "client_session_keep_alive": True}
 
 
 # --- the session --------------------------------------------------------------------------------------------
@@ -107,7 +112,7 @@ def test_one_local_session_per_process(queries, fake_snowpark):
     env = {"SNOWFLAKE_CONNECTION_NAME": "dev"}
     first = queries.get_session(env, store)
     assert queries.get_session(env, store) is first
-    assert created == [{"connection_name": "dev"}]
+    assert created == [{"connection_name": "dev", "client_session_keep_alive": True}]
 
 
 # --- the views schema ---------------------------------------------------------------------------------------

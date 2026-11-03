@@ -9,7 +9,7 @@ This is the way we recommend for developers who want to browse their own observa
 **Why**
 
 - No warehouse stays up for the app. A Streamlit in Snowflake object needs a warehouse and a running app in the account; a local run needs neither. The app only holds a Snowflake session while you use it.
-- It reads only the views. Nothing is installed in the account for the app, and it writes nothing (the acknowledgement of an alert is the one write, through the `ICECORE_ACK` procedure, and only when you click it).
+- It reads only the views. Nothing is installed in the account for the app, and it writes nothing (the acknowledgement of an alert will be the one write, through the `ICECORE_ACK` procedure, and only when you click it).
 - It costs only the queries you make: each page runs a few small selects on the views, and results are cached for a few minutes.
 
 **How**
@@ -47,3 +47,5 @@ With no login configured the pages open and show their empty state, as in the te
 ## Deploy it to Snowflake
 
 If your team wants one shared URL, deploy the same `streamlit/` folder as a Streamlit in Snowflake object from a Snowflake Git repository (`CREATE STREAMLIT ... FROM '@<repo>/tags/v<version>/streamlit'`; packages are in `streamlit/environment.yml`). Inside Snowflake the app uses the active session, so none of the variables above apply. The cost is a warehouse for the app, running while someone has it open. Local and deployed show the same pages.
+
+`PORT` (default 8501) and `HOST` (default `localhost`) set where the app listens. Keep `HOST` as `localhost`: the app uses your Snowflake session, so anyone who can reach the address can read the views as you.

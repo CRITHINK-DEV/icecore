@@ -89,9 +89,9 @@
 {% macro _icecore_existing_control_objects(schema, kind) %}
   {%- set found = [] -%}
   {%- if kind == 'TASK' -%}
-    {%- set rows = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+    {%- set rows = run_query('SHOW TASKS LIKE ' ~ icecore._sql('ICECORE_SILENCE', 'string') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
   {%- else -%}
-    {%- set rows = run_query('SHOW ALERTS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_ALERT_%') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+    {%- set rows = run_query('SHOW ALERTS LIKE ' ~ icecore._sql('ICECORE_ALERT_%', 'string') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
   {%- endif -%}
   {%- for r in rows -%}
     {%- if (r['name'] | string).startswith('ICECORE_') -%}

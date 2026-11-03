@@ -120,7 +120,7 @@ def test_ack_shows_the_incident_acknowledged_until_a_build_does(monkeypatch):
     assert DATA["incidents"][0]["state"] == "open"                                  # the cached object is not changed
     at.run()
     assert calls.renders[-1]["data"]["incidents"][0]["state"] == "acknowledged"    # still patched on the next run
-    assert at.session_state["icecore_console_pending_acks"] == {KEY: "you"}
+    assert at.session_state["icecore_console_pending_acks"][KEY]["user"] == "you"
     # a later build shows it acknowledged: the patch ends
     calls_build = lambda: {**DATA, "incidents": [{"incident_key": KEY, "state": "acknowledged", "acknowledged_by": "jane"}]}
     from lib import console_data
@@ -130,3 +130,19 @@ def test_ack_shows_the_incident_acknowledged_until_a_build_does(monkeypatch):
     at.run()
     assert calls.renders[-1]["data"]["incidents"][0]["acknowledged_by"] == "jane"
     assert at.session_state["icecore_console_pending_acks"] == {}
+
+
+def test_an_ack_the_views_never_show_stops_being_patched_after_the_time_limit(monkeypatch):
+    import time as _time
+    at, calls = run(monkeypatch, actions=[{"action": "ack", "incident_key": KEY, "nonce": "1"}])
+    assert calls.renders[-1]["data"]["incidents"][0]["state"] == "acknowledged"
+    started = _time.time()
+    monkeypatch.setattr(_time, "time", lambda: started + 121)   # past PENDING_ACK_TTL_S; the views still say open
+    at.run()
+    assert calls.renders[-1]["data"]["incidents"][0]["state"] == "open"
+    assert at.session_state["icecore_console_pending_acks"] == {}
+
+
+def test_the_host_reads_the_user_through_the_query_layer():
+    text = Path(APP).read_text()
+    assert "queries.current_user()" in text and "session.sql" not in text

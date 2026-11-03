@@ -5,13 +5,16 @@ ICECORE_VIEWS_SCHEMA (default <current database>.ICECORE_OBS; see lib/settings.p
 Navigation, node pages, lineage and the theme live in the browser component; this host only fetches the data,
 passes it in, and handles the two actions the component returns (ack, refresh).
 """
+import time
+
 import streamlit as st
 
-from lib import ack, console_component, console_data, settings
+from lib import ack, console_component, console_data, queries, settings
 
 PENDING_KEY = "icecore_console_pending_acks"   # incident_key -> user, until a build shows it acknowledged
 FETCH_DAYS = 30        # the browser filters the window (7/15/30 days), so the server always reads the widest one
 CACHE_TTL_S = 300
+PENDING_ACK_TTL_S = 120   # the views show an ack within seconds; past this the patch stops and the views are trusted
 NOTICE_KEY = "icecore_console_notice"
 
 st.set_page_config(page_title="icecore", page_icon=":material/monitoring:", layout="wide",
@@ -38,18 +41,18 @@ def _build(days: int, views_schema: str) -> dict:
 
 
 def _current_user() -> str:
-    try:
-        from lib import queries
-        return str(queries.default_layer().session.sql("select current_user()").collect()[0][0])
-    except Exception:
-        return "you"
+    return queries.current_user() or "you"
 
 
 def _with_pending_acks(data: dict) -> dict:
     """The views lag the acknowledgement by a few seconds (event-table delay): until a build shows an incident
-    acknowledged, show it acknowledged by its user. The cached object is copied, never changed."""
-    pending = st.session_state.get(PENDING_KEY) or {}
+    acknowledged, and for PENDING_ACK_TTL_S at most, show it acknowledged by its user. The cached object is copied,
+    never changed."""
+    now = time.time()
+    pending = {k: v for k, v in (st.session_state.get(PENDING_KEY) or {}).items()
+               if now - v["at"] < PENDING_ACK_TTL_S}
     if not pending:
+        st.session_state[PENDING_KEY] = {}
         return data
     incidents, still = [], {}
     for inc in data.get("incidents") or []:
@@ -57,7 +60,7 @@ def _with_pending_acks(data: dict) -> dict:
         if key in pending and not inc.get("acknowledged_by"):  # a build that shows it acknowledged ends the patch
             still[key] = pending[key]
             if inc.get("state") == "open":
-                inc = {**inc, "state": "acknowledged", "acknowledged_by": pending[key]}
+                inc = {**inc, "state": "acknowledged", "acknowledged_by": pending[key]["user"]}
         incidents.append(inc)
     st.session_state[PENDING_KEY] = still
     return {**data, "incidents": incidents}
@@ -79,7 +82,8 @@ def _handle(action: dict | None) -> None:
         _build.clear()
         if result.ok:
             st.session_state[PENDING_KEY] = {**(st.session_state.get(PENDING_KEY) or {}),
-                                             action.get("incident_key"): _current_user()}
+                                             action.get("incident_key"): {"user": _current_user(),
+                                                                                       "at": time.time()}}
         st.session_state[NOTICE_KEY] = result.message
         st.rerun()
     elif kind == "refresh":

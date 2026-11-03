@@ -513,3 +513,12 @@ def build_node_executions_newest(views_schema, since=None, limit=DEFAULT_LIMIT):
 def node_executions_newest(since=None, limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
     """NODE_EXECUTIONS, newest first, so that a limit drops the oldest rows (node_executions reads oldest first)."""
     return _read(build_node_executions_newest, layer, since, limit, view="NODE_EXECUTIONS")
+
+
+def current_user(layer: QueryLayer | None = None) -> str | None:
+    """The Snowflake user of this session (who an acknowledgement is recorded for), or None when it cannot be read."""
+    try:
+        rows = (layer or default_layer()).session.sql("select current_user()").collect()
+        return str(rows[0][0]) if rows else None
+    except Exception:
+        return None

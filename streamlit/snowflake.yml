@@ -22,7 +22,6 @@ entities:
       - lib/ack.py
       - lib/console_component.py
       - lib/console_data.py
-      - lib/health.py
       - lib/incidents.py
       - lib/queries.py
       - lib/settings.py

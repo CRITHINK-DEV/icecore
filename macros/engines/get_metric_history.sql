@@ -74,7 +74,7 @@ where relation = {{ icecore._sql(name, 'string') }}
   and dimension is not distinct from {{ 'null' if dimension is none else icecore._sql(dimension | string, 'string') }}
   and value is not null
   {%- if node_unique_id is not none %}
-  and node_unique_id = {{ literal(node_unique_id | string) }}
+  and node_unique_id = {{ icecore._sql(node_unique_id | string, 'string') }}
   {%- endif %}
   and observed_at > dateadd(day, -{{ lookback_days }}, {{ now }})
   and observed_at <= dateadd(minute, -{{ delay_minutes }}, {{ now }})

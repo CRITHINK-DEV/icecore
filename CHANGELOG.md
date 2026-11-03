@@ -5,6 +5,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 ## [Unreleased]
 
 ### Added
+- `icecore.estimate_telemetry_cost` counts the records of the icecore monitor tests (own line), with `anomalies_per_run`, `assumed_columns` and `monitors` arguments.
 - Telemetry written to the Snowflake event table through setup-created procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`), with `icecore.setup` and `icecore.doctor`.
 - Run hooks: invocation and node spans, node and test results, query events, lineage.
 - Monitors: `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`, read from metadata where possible.

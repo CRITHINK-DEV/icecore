@@ -119,6 +119,7 @@ def test_setup_runs_the_estimate_after_recording_capabilities():
 
 def monitor_test(kind, attached="source.p.s.t", **kwargs):
     return {"unique_id": f"test.p.{kind}_{abs(hash((kind, str(kwargs))))}", "resource_type": "test", "attached_node": attached,
+            "depends_on": {"macros": [f"macro.icecore.test_{kind}"]},
             "test_metadata": {"name": kind, "namespace": "icecore", "kwargs": kwargs}}
 
 
@@ -149,11 +150,13 @@ def test_one_metric_record_per_computed_metric_and_one_signature_per_schema_chan
              monitor_test("all_columns_anomaly", exclude_columns=["c"]),                # 2 default metrics x (3 - 1) columns
              monitor_test("dimension_anomaly", max_values=5, column_name="b")]          # 5 values + other
     out = monitor_records(nodes, sources)
-    # metrics: 1 + 1 + 3 + 2 + 4 + 6 = 17; anomaly warn upper bound: one per metric = 17; one signature
-    assert (out["tests"], out["metrics"], out["anomalies"], out["schema_signatures"]) == (7, 17, 17, 1)
-    assert out["records"] == 35 and out["dimension_values"] == 6
+    # metrics: 1 + 1 + 3 + 2 + 4 + 6 = 17; no anomaly events unless anomalies_per_run says so; one signature
+    assert (out["tests"], out["metrics"], out["anomalies"], out["schema_signatures"]) == (7, 17, 0, 1)
+    assert out["records"] == 18 and out["dimension_values"] == 6
     # one ICECORE_EMIT CALL per test, 100 events each: the 7 tests send 1, 1, 1, 6, 4, 8, 12 events
     assert out["calls"] == 7
+    assert monitor_records(nodes, sources, anomalies_per_run=5)["anomalies"] == 5
+    assert monitor_records(nodes, sources, anomalies_per_run=5)["records"] == 23
 
 
 def test_untyped_columns_and_wide_tables_follow_their_assumptions():
@@ -167,7 +170,7 @@ def test_untyped_columns_and_wide_tables_follow_their_assumptions():
     wide = {"source.p.s.t": {"columns": {f"c{i}": {} for i in range(1400)}}}
     assert monitor_records([monitor_test("schema_changes")], wide)["schema_signatures"] == 3
     # more than 100 events in a test need more than one CALL
-    assert monitor_records([monitor_test("dimension_anomaly", max_values=60, column_name="b")])["calls"] == 2
+    assert monitor_records([monitor_test("dimension_anomaly", max_values=120, column_name="b")])["calls"] == 2
 
 
 def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
@@ -180,7 +183,7 @@ def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
     assert out["rows_per_run"] == base["rows_per_run"] + mon + (out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"])
     text = message(logs)
     assert f"{mon:,} are icecore monitor records" in text
-    assert "anomaly warn events (an upper bound" in text and "schema signatures" in text and "silence verdicts" in text
+    assert "anomaly warn events (only what anomalies_per_run says" in text and "schema signatures" in text and "silence verdicts" in text
     # the other entries and the text of the existing lines do not change
     assert {k: v for k, v in out["records_per_run"].items() if k not in ("monitors", "call_overhead")} == \
            {k: v for k, v in base["records_per_run"].items() if k != "call_overhead"}

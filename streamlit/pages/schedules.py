@@ -13,7 +13,7 @@ since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=filters
 
 declared, e1 = console.guarded(lambda: queries.sla_declared())
 silences, e2 = console.guarded(lambda: queries.silence_events())
-nodes, e3 = console.guarded(lambda: queries.node_executions(since=since, limit=queries.MAX_LIMIT))
+nodes, e3 = console.guarded(lambda: queries.node_executions(limit=queries.MAX_LIMIT))
 metrics, e4 = console.guarded(lambda: queries.metrics(metric=logic.LAG_METRIC, since=since, limit=queries.MAX_LIMIT))
 error = e1 or e2 or e3 or e4
 if error:
@@ -25,6 +25,10 @@ if not declared and not sources:
     console.empty(slas.EMPTY_MESSAGE, stop=False)
     st.code(slas.SLA_EXAMPLE, language="yaml")
     st.stop()
+
+for note in (console.truncation_note(nodes, queries.MAX_LIMIT), console.truncation_note(metrics, queries.MAX_LIMIT)):
+    if note:
+        st.caption(note)
 
 console.kpi_row(logic.tiles(schedule_rows, sources))
 
@@ -40,7 +44,7 @@ if schedule_rows:
         "last_success_at": st.column_config.DatetimeColumn("Last success"),
         "silent_now": st.column_config.CheckboxColumn("Silent now"),
         "channel": None, "severity": None, "slower_than_declared": None,
-    }, key="schedules_table", limit=queries.MAX_LIMIT if len(nodes) == queries.MAX_LIMIT else None)
+    }, key="schedules_table")
 else:
     console.empty(slas.EMPTY_MESSAGE, stop=False)
     st.code(slas.SLA_EXAMPLE, language="yaml")
@@ -71,6 +75,6 @@ if sources:
         "relation": st.column_config.TextColumn("Relation"),
         "observed_at": st.column_config.DatetimeColumn("Measured at"),
         "unique_id": None, "lag_minutes": None, "threshold_minutes": None, "over_limit": None,
-    }, key="schedules_sources", limit=queries.MAX_LIMIT if len(metrics) == queries.MAX_LIMIT else None)
+    }, key="schedules_sources")
 else:
     st.caption("No source freshness recorded in this window.")

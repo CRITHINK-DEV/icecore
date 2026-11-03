@@ -5,7 +5,7 @@ Everything here needs Streamlit (Tile lives in lib.console), so it skips in the 
     cd integration_tests && $SCRATCH/stvenv/bin/python -m pytest --noconftest tests/test_app_page_schedules.py
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,7 +17,7 @@ sys.path.insert(0, str(APP_DIR))
 from lib import slas  # noqa: E402
 from lib.pages import schedules as logic  # noqa: E402
 
-T0 = datetime(2026, 11, 1, 8, 0, 0)
+T0 = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) - timedelta(days=3)
 
 
 def decl(uid="model.p.orders", every=60, grace=5):
@@ -77,13 +77,27 @@ def test_sources_take_the_latest_lag_per_relation_with_the_merged_threshold():
         lag("DB.RAW.USERS", 600, "source.p.raw.users", threshold=None),
         {"relation": "DB.RAW.USERS", "metric": "row_count", "value": 5, "observed_at": T0},
     ])
-    by = {r["unique_id"]: r for r in rows}
+    by = {r["relation"]: r for r in rows}
     assert len(rows) == 2
-    o = by["source.p.raw.orders"]
+    o = by["DB.RAW.ORDERS"]
     assert (o["lag_minutes"], o["threshold_minutes"], o["limit"], o["status"]) == (120.0, 60.0, "1h", "late")
-    u = by["source.p.raw.users"]
+    u = by["DB.RAW.USERS"]
     assert (u["limit"], u["status"], u["threshold_minutes"]) == ("no limit set", "ok", None)
-    assert rows[0]["unique_id"] == "source.p.raw.orders"  # over limit first
+    assert rows[0]["relation"] == "DB.RAW.ORDERS"  # over limit first
+
+
+def test_two_freshness_tests_on_one_source_show_once():
+    rows = logic.sources_table([lag("DB.RAW.ORDERS", 100, "test.p.fresh_a"), lag("DB.RAW.ORDERS", 200, "test.p.fresh_b")])
+    assert len(rows) == 1 and rows[0]["unique_id"] is None  # a test id is not the source's id
+
+
+def test_a_weekly_model_with_an_old_success_is_not_silent():
+    weekly = decl(every=7 * 1440)
+    old = {"unique_id": "model.p.orders", "status": "success", "started_at": T0 - timedelta(days=9)}
+    verdict = silence(detected=T0 - timedelta(days=8))
+    verdict["last_success_at"] = T0 - timedelta(days=16)
+    (row,) = logic.schedules_table([weekly], [verdict], [old])  # the page reads executions without a window
+    assert row["status"] == "ok" and row["last_success_at"] == T0 - timedelta(days=9)
 
 
 def test_tiles_sources_over_limit():

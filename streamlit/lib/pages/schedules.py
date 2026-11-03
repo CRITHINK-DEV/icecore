@@ -45,7 +45,7 @@ def sources_table(metrics: list[dict]) -> list[dict]:
     for m in metrics:
         if m.get("metric") != LAG_METRIC or _num(m.get("value")) is None:
             continue
-        key = m.get("node_unique_id") or m.get("relation")
+        key = m.get("relation")  # not node_unique_id: that is the freshness test's id, and tests can be several
         if key is None:
             continue
         at = slas._as_dt(m.get("observed_at")) or datetime.min
@@ -59,7 +59,7 @@ def sources_table(metrics: list[dict]) -> list[dict]:
         over = limit_min is not None and lag_min > limit_min
         relation = str(m.get("relation") or key)
         rows.append({
-            "unique_id": m.get("node_unique_id"),
+            "unique_id": m.get("node_unique_id") if str(m.get("node_unique_id") or "").startswith("source.") else None,
             "name": relation.rsplit(".", 1)[-1],
             "relation": relation,
             "status": "late" if over else "ok",

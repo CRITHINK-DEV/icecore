@@ -27,6 +27,7 @@
   {%- if min_points is not integer or min_points is boolean or min_points < 1 -%}
     {{ exceptions.raise_compiler_error('icecore: min_points must be an integer of at least 1, got ' ~ min_points) }}
   {%- endif -%}
+  {%- do icecore._icecore_anomaly_severity() -%}
   {%- set unscored = [] -%}
   {%- for p in points -%}{%- do unscored.append(none) -%}{%- endfor -%}
   {%- if not execute or not points or not icecore._icecore_flag('monitor_score', true) -%}{{ return(unscored) }}{%- endif -%}
@@ -34,10 +35,16 @@
 
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set delay = icecore._icecore_history_delay(none) -%}
+  {#- the history is the test's own: its metrics carry the test's unique_id (icecore._icecore_metric_attrs), so two tests on one
+      column, or two windows, never share points. None outside a test: then the history is the relation's. -#}
+  {%- set test_id = icecore._icecore_test_id() -%}
   {%- set series_sql = [] -%}
   {%- set values = [] -%}
   {%- for p in points -%}
-    {%- do series_sql.append(icecore.get_metric_history_sql(name, p['metric'], p.get('column'), p.get('dimension'), lookback_days, delay, none, schema)) -%}
+    {%- if p['metric'] is not string or (p.get('column') is not none and p.get('column') is not string) or (p.get('dimension') is not none and p.get('dimension') is not string) -%}
+      {{ exceptions.raise_compiler_error('icecore: a scored metric, column and dimension must be text, got ' ~ p) }}
+    {%- endif -%}
+    {%- do series_sql.append(icecore.get_metric_history_sql(name, p['metric'], p.get('column'), p.get('dimension'), lookback_days, delay, none, schema, test_id)) -%}
     {%- do values.append(icecore._icecore_metric_number(p['value'])) -%}
   {%- endfor -%}
 
@@ -60,6 +67,8 @@
   {%- endfor -%}
 
   {%- set insufficient = [] -%}
+  {%- set relation_fallback = {'reason': none} -%}
+  {%- set logged = [] -%}
   {%- for i in indexes if (i | string) in native -%}
     {%- set row = {} -%}
     {%- for key, value in native[i | string].items() -%}{%- do row.update({key | lower: value}) -%}{%- endfor -%}
@@ -73,21 +82,34 @@
         {%- do result.update({field: none if row.get(field) is none else row[field] | float}) -%}
       {%- endfor -%}
       {%- if settings.engine != 'native' -%}
+        {%- set p = points[i] -%}
         {%- if result['history_days'] < 14 -%}
-          {%- do result.update({'fallback_reason': 'history_too_short'}) -%}
+          {%- set reason = 'history_too_short' -%}
+        {%- elif relation_fallback.get('reason') is not none -%}
+          {#- the model is per relation: once it could not score, the other points of the relation do not try -#}
+          {%- set reason = relation_fallback['reason'] -%}
         {%- else -%}
-          {%- set p = points[i] -%}
-          {%- set attempt = icecore._cortex_attempt(icecore.cortex_model_name(name), icecore.cortex_series_key(p['metric'], p.get('column'), p.get('dimension')),
-                                                   series_sql[i], values[i], settings, none, none, schema) -%}
-          {%- if attempt.get('result') is not none -%}
-            {%- set result = attempt['result'] -%}
-            {%- do result.update({'fallback_reason': none}) -%}
+          {%- set cortex = icecore.cortex__score(icecore.cortex_model_name(name), icecore.cortex_series_key(p['metric'], p.get('column'), p.get('dimension')),
+                                                 series_sql[i], values[i], settings.sensitivity, settings.min_consecutive, none, schema) -%}
+          {%- if 'error' not in cortex -%}
+            {%- set reason = none -%}
+            {%- for key in ['history_points', 'history_days', 'baseline'] -%}{%- do cortex.update({key: result.get(key)}) -%}{%- endfor -%}
+            {%- do cortex.update({'fallback_reason': none}) -%}
+            {%- set result = cortex -%}
           {%- else -%}
-            {%- do result.update({'fallback_reason': attempt.get('fallback_reason')}) -%}
+            {%- if cortex.get('state') == 'missing' -%}{%- set reason = 'model_missing' -%}
+            {%- elif cortex.get('state') == 'stale' -%}{%- set reason = 'model_stale' -%}
+            {%- else -%}{%- set reason = icecore._cortex_diagnose(cortex.get('error')).fallback_reason -%}
+            {%- endif -%}
+            {%- do relation_fallback.update({'reason': reason}) -%}
           {%- endif -%}
         {%- endif -%}
-        {%- if result.get('fallback_reason') is not none -%}
-          {%- do log("icecore: anomaly engine '" ~ settings.engine ~ "' scored " ~ points[i]['metric'] ~ " of " ~ name ~ " with native (" ~ result.get('fallback_reason') ~ ")") -%}
+        {%- if reason is not none -%}
+          {%- do result.update({'fallback_reason': reason}) -%}
+          {%- if reason not in logged -%}
+            {%- do logged.append(reason) -%}
+            {%- do log("icecore: anomaly engine '" ~ settings.engine ~ "' scored " ~ p['metric'] ~ " of " ~ name ~ " with native (" ~ reason ~ "); logged once per relation", info=True) -%}
+          {%- endif -%}
         {%- endif -%}
       {%- endif -%}
       {#- the history window the verdict rests on, for the metric's attributes (the anomaly event carries it): dbt.window.* -#}
@@ -112,9 +134,43 @@
 {% endmacro %}
 
 
-{#- The dbt.window.* attributes of a scored result ({} for none), to pass to emit_metric. -#}
-{% macro _icecore_window_attrs(result) %}
-  {{ return({} if result is none else result.get('window_attributes', {})) }}
+{#- The attributes a test passes to emit_metric with its metric: dbt.node.unique_id (the test, always, so that the history it
+    reads next time is its own, scored or not) and, for a scored result, its dbt.window.* history window. -#}
+{% macro _icecore_metric_attrs(result) %}
+  {%- set attrs = {} -%}
+  {%- do icecore._icecore_put(attrs, 'dbt.node.unique_id', icecore._icecore_test_id()) -%}
+  {%- if result is not none -%}{%- do attrs.update(result.get('window_attributes', {})) -%}{%- endif -%}
+  {{ return(attrs) }}
+{% endmacro %}
+
+
+{#- The unique_id of the test being run (the node dbt compiles), or none outside a test. -#}
+{% macro _icecore_test_id() %}
+  {%- if model is defined and model is not none and model.unique_id is defined -%}{{ return(model.unique_id) }}{%- endif -%}
+  {{ return(none) }}
+{% endmacro %}
+
+
+{#- var icecore.anomaly_severity: warn (default) or error. -#}
+{% macro _icecore_anomaly_severity() %}
+  {%- set severity = icecore._icecore_setting('anomaly_severity', 'warn') | string | lower -%}
+  {%- if severity not in ['warn', 'error'] -%}
+    {{ exceptions.raise_compiler_error("icecore: anomaly_severity must be warn or error, got '" ~ severity ~ "'") }}
+  {%- endif -%}
+  {{ return(severity) }}
+{% endmacro %}
+
+
+{#- True when an anomaly must make the test fail: var anomaly_severity is error, or the test sets severity error itself
+    (config severity written on the test, not dbt's default). Otherwise an anomaly only WARNS: the result is false and one
+    warning line says what was seen; the metric, the icecore.anomaly event and METRICS carry it either way. dbt gives a test
+    one severity, so a hard threshold (max_lag, min/max rows, bounds) still fails at the test's own severity. -#}
+{% macro _icecore_anomaly_fails(result, what) %}
+  {%- if not icecore._icecore_anomalous(result) -%}{{ return(false) }}{%- endif -%}
+  {%- set explicit = (model.unrendered_config.get('severity') if model is defined and model is not none and model.unrendered_config is defined else none) -%}
+  {%- if icecore._icecore_anomaly_severity() == 'error' or (explicit is not none and explicit | string | lower == 'error') -%}{{ return(true) }}{%- endif -%}
+  {%- do log('icecore: warning: anomaly in ' ~ what ~ ': ' ~ icecore._icecore_anomaly_text(result) ~ ' (anomaly_severity is warn: the test is not failed)', info=True) -%}
+  {{ return(false) }}
 {% endmacro %}
 
 
@@ -128,3 +184,4 @@
 {% macro _icecore_anomaly_text(result) %}
   {{ return('anomaly (' ~ result.get('engine') ~ '): outside the expected band [' ~ result.get('lower') ~ ', ' ~ result.get('upper') ~ '] around ' ~ result.get('expected')) }}
 {% endmacro %}
+

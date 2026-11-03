@@ -113,3 +113,51 @@ def test_the_five_tests_take_the_scoring_arguments_and_refuse_a_bad_engine():
         assert nodes[name].test_metadata.name == test
         assert nodes[name].test_metadata.kwargs["engine"] == "native" and nodes[name].test_metadata.kwargs["sensitivity"] == "high"
     assert not invoke(["parse", "--vars", json.dumps({"it_anom_engine": "magic"})]).success
+
+
+# --- severity: an anomaly warns by default --------------------------------------------------------
+
+ANOMALY = {"engine": "native", "is_anomaly": True, "expected": 100.0, "lower": 90.0, "upper": 110.0}
+
+
+def fails(result, cfg=None):
+    vars_ = {"icecore": cfg} if cfg else {}
+    out, logs = run_macro_with_logs("it_anomaly_fails", {"result": result}, ["--vars", json.dumps(vars_)])
+    return out["fails"], logs
+
+
+def test_an_anomaly_only_warns_by_default_and_says_so():
+    failed, logs = fails(ANOMALY)
+    assert failed is False
+    assert any("warning: anomaly in row_count of X" in line and "not failed" in line for line in logs)
+
+
+def test_var_anomaly_severity_error_makes_an_anomaly_fail():
+    assert fails(ANOMALY, {"anomaly_severity": "error"})[0] is True
+
+
+def test_no_anomaly_never_fails_and_logs_nothing():
+    failed, logs = fails({**ANOMALY, "is_anomaly": False})
+    assert failed is False and not logs
+    assert fails(None)[0] is False
+
+
+def test_an_invalid_anomaly_severity_is_refused():
+    with pytest.raises(MacroFailed):
+        fails(ANOMALY, {"anomaly_severity": "fatal"})
+
+
+# --- the history is the test's own ----------------------------------------------------------------
+
+def test_the_history_read_filters_on_the_tests_unique_id_when_given():
+    own, _ = run_macro_with_logs("it_history_sql_for_test", {"rel": REL, "point": VOLUME, "node_unique_id": "test.p.t.abc"})
+    assert "and node_unique_id = 'test.p.t.abc'" in own
+    shared, _ = run_macro_with_logs("it_history_sql_for_test", {"rel": REL, "point": VOLUME, "node_unique_id": None})
+    assert "node_unique_id" not in shared
+
+
+def test_emit_metric_accepts_the_tests_unique_id_as_an_attribute():
+    out, _ = run_macro_with_logs("it_emit_metric_render", {"rel": REL, "metric": "row_count", "value": 5,
+                                                          "attributes": {"dbt.node.unique_id": "test.p.t.abc", "dbt.other": 1}})
+    attrs = out["events"][0]["attributes"]
+    assert attrs["dbt.node.unique_id"] == "test.p.t.abc" and "dbt.other" not in attrs

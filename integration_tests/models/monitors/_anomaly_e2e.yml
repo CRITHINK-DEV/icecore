@@ -21,6 +21,7 @@ sources:
                   name: it_anom_column_spike
                   metrics: [avg]
                   window_tag: spike
+                  since: "2020-01-01T00:00:00.000000Z"
                   timestamp_column: loaded_at
           - name: country
             data_tests:
@@ -39,6 +40,16 @@ sources:
               name: it_anom_volume_warn
               config:
                 severity: warn
+          - icecore.volume:
+              name: it_anom_volume_error
+              config:
+                severity: error
+          - icecore.volume:
+              name: it_anom_volume_threshold
+              min_rows: 5000
+          - icecore.all_columns_anomaly:
+              name: it_anom_all_columns_spike
+              timestamp_column: loaded_at
           - icecore.freshness:
               name: it_anom_freshness_override
               engine: native

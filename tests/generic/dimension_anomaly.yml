@@ -10,7 +10,7 @@ macros:
       (default `vars: icecore: dimension_max_values`, 20, the most frequent ones); the rest are grouped in one
       `<column>=<other>` metric, and a null value is written as `<column>=<null>`. It fails when a count is outside the
       static `bounds`. Each count is also scored against its own history (`icecore.score_monitor_metrics`: one query
-      per 25 values) and written with its result (`METRICS.anomaly_*`); the test fails on a bound breach OR an anomaly. A value with
+      per 25 values) and written with its result (`METRICS.anomaly_*`); the test fails on a bound breach (hard threshold); an anomaly only warns by default (the test passes and logs a warning); it fails the test when var `anomaly_severity` is `error` or the test sets `severity: error` itself. A hard threshold of this test still fails at the test's own severity. The history is this test's own (its `unique_id`), never another test's on the same series. Native engine cost: one query per 25 values; engine cortex or auto adds the Cortex calls for series of 14+ days (once per relation when the model cannot score). A value with
       fewer than `min_points` history points is not scored (an info line says so). The previous observation is the newest dimension metric
       record of the column, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago,
       and `since` overrides both. When no window can be read the readers log why, no metric is written and the test

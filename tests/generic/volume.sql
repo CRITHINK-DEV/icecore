@@ -30,11 +30,11 @@
     {%- else -%}
       {%- set breach = (min_rows is not none and row_count < min_rows) or (max_rows is not none and row_count > max_rows) -%}
       {%- set verdict = icecore.score_monitor_metrics(model, [{'metric': 'row_count', 'value': row_count}], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine)[0] -%}
-      {%- do icecore.emit_metric(model, 'row_count', row_count, anomaly=verdict, attributes=icecore._icecore_window_attrs(verdict)) -%}
+      {%- do icecore.emit_metric(model, 'row_count', row_count, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict)) -%}
     {%- endif -%}
   {%- endif -%}
 
-  {%- set anomalous = icecore._icecore_anomalous(verdict) -%}
+  {%- set anomalous = icecore._icecore_anomaly_fails(verdict, 'row_count of ' ~ icecore._icecore_quoted_name(model)) -%}
   select {{ 'null' if row_count is none else row_count }}::number as row_count,
          {{ 'null' if min_rows is none else min_rows }}::number as min_rows,
          {{ 'null' if max_rows is none else max_rows }}::number as max_rows,

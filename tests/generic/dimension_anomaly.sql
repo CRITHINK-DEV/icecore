@@ -33,9 +33,9 @@
       {%- set scores = icecore.score_monitor_metrics(model, to_emit, engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine) -%}
       {%- for entry in to_emit -%}
         {%- set result = scores[loop.index0] -%}
-        {%- if result is not none -%}{%- do entry.update({'anomaly': result}) -%}
-          {%- do entry['attributes'].update(icecore._icecore_window_attrs(result)) -%}{%- endif -%}
-        {%- if icecore._icecore_anomalous(result) and not (breaches | selectattr('dimension', 'equalto', entry['dimension']) | list) -%}
+        {%- if result is not none -%}{%- do entry.update({'anomaly': result}) -%}{%- endif -%}
+        {%- do entry['attributes'].update(icecore._icecore_metric_attrs(result)) -%}
+        {%- if icecore._icecore_anomaly_fails(result, entry['metric'] ~ ' of ' ~ name) and not (breaches | selectattr('dimension', 'equalto', entry['dimension']) | list) -%}
           {%- do breaches.append({'dimension': entry['dimension'], 'value': entry['value'], 'min': result.get('lower'), 'max': result.get('upper'), 'reason': icecore._icecore_anomaly_text(result)}) -%}
         {%- endif -%}
       {%- endfor -%}

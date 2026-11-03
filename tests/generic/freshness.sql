@@ -38,11 +38,11 @@
       {%- set lag_seconds = ((ms | float) / 1000) | round(3) -%}
       {%- set breach = max_lag_seconds is not none and lag_seconds > max_lag_seconds -%}
       {%- set verdict = icecore.score_monitor_metrics(model, [{'metric': 'freshness_lag_seconds', 'value': lag_seconds}], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine)[0] -%}
-      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_window_attrs(verdict)) -%}
+      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict)) -%}
     {%- endif -%}
   {%- endif -%}
 
-  {%- set anomalous = icecore._icecore_anomalous(verdict) -%}
+  {%- set anomalous = icecore._icecore_anomaly_fails(verdict, 'freshness_lag_seconds of ' ~ icecore._icecore_quoted_name(model)) -%}
   select {{ 'null' if lag_seconds is none else lag_seconds }}::float as lag_seconds,
          {{ 'null' if max_lag_seconds is none else max_lag_seconds }}::float as max_lag_seconds,
          {{ 'null' if (unmeasured is none and not anomalous) else icecore._icecore_sql_literal(unmeasured if unmeasured is not none else icecore._icecore_anomaly_text(verdict)) }}::varchar as reason

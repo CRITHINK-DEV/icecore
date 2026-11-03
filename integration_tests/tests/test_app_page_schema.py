@@ -63,7 +63,8 @@ def test_changes_table_newest_first_and_opens_the_node():
     rows = sc.changes_table(list(reversed(CHANGES)))
     assert [r["detected_at"].day for r in rows] == [3, 3, 2, 2]
     first = rows[0]
-    assert first["unique_id"] == first["node_unique_id"] if "node_unique_id" in first else True
+    assert {r["unique_id"] for r in rows[:2]} == {"model.p.orders", "model.p.users"}
+    assert next(r for r in rows if r["column"] == "NEW")["unique_id"] == "model.p.orders"
     assert {"detected_at", "relation", "change_kind", "column", "from_type", "to_type", "unique_id"} <= set(first)
     assert all(r["unique_id"] for r in rows)
 

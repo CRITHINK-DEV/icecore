@@ -1,5 +1,5 @@
 """Schema changes: tiles, changes per day by kind, and the changes table (a row opens its node)."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
@@ -10,7 +10,7 @@ console.page("Schema changes", "What changed in the tables and columns.", ['sche
 
 filters = console.filter_bar("schema", layers=None, statuses=False)
 rows, error = console.guarded(lambda: queries.schema_changes(
-    since=datetime.now() - timedelta(days=filters.days), limit=queries.MAX_LIMIT))
+    since=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=filters.days), limit=queries.MAX_LIMIT))
 if not rows:
     console.empty("No schema changes in this window.", error)
 

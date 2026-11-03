@@ -1,7 +1,7 @@
 """Schema changes: rows in, tiles, table, per-day chart data and the column snapshot out (no Streamlit widgets)."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lib import queries
@@ -26,9 +26,9 @@ def tiles(changes: list[Row]) -> list[Tile]:
         Tile("Changes", len(changes), help="Column changes detected in the window."),
         Tile("Tables affected", len({c.get("relation") for c in changes if c.get("relation")}),
              help="Tables with at least one change in the window."),
-        Tile("Columns added", kind("added")),
-        Tile("Columns removed", kind("removed")),
-        Tile("Type changes", kind("type_changed")),
+        Tile("Columns added", kind("added"), help="Columns that appeared in the window."),
+        Tile("Columns removed", kind("removed"), help="Columns that disappeared in the window."),
+        Tile("Type changes", kind("type_changed"), help="Columns whose data type changed in the window."),
     ]
 
 
@@ -74,7 +74,7 @@ def column_snapshot(relation: str) -> tuple[list[dict], str | None]:
     """For the node page: the latest column snapshot of `relation` and the read error text (None when it worked)."""
     try:
         rows = queries.schema_columns(relation, limit=queries.MAX_LIMIT,
-                                      since=datetime.now() - timedelta(days=SNAPSHOT_DAYS))
+                                      since=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=SNAPSHOT_DAYS))
     except Exception as exc:  # no session (offline) or the view is not created yet
         return [], f"{type(exc).__name__}: {exc}"
     return latest_snapshot(list(rows)), None

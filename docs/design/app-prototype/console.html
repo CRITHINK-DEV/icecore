@@ -271,6 +271,7 @@ select.inp{padding-right:4px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.25.6/babel.min.js"></script>
 <script type="text/babel" data-presets="react">
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const { useState, useMemo, useEffect, useRef, useContext, createContext, Fragment } = React;
 const RF = window.ReactFlow;
 const ReactFlowView = RF.default || RF.ReactFlow;
@@ -638,7 +639,7 @@ function Incidents() {
     const p = pal(); const start = Math.min(...incidents.map(i => parseT(i.first_detected_at))) - MS.d / 2;
     return base(p, {
       grid: { left: 210, right: 40, top: 10, bottom: 46 },
-      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const i = shown[e.dataIndex]; return `<b>${i.title}</b><br/>First seen ${fmtTs(parseT(i.first_detected_at))}<br/>Open for ${fmtSpan((i.resolvedAt || AS_OF) - parseT(i.first_detected_at))}<br/>${i.occurrences} occurrence(s)`; } },
+      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const i = shown[e.dataIndex]; return `<b>${esc(i.title)}</b><br/>First seen ${esc(fmtTs(parseT(i.first_detected_at)))}<br/>Open for ${esc(fmtSpan((i.resolvedAt || AS_OF) - parseT(i.first_detected_at)))}<br/>${esc(i.occurrences)} occurrence(s)`; } },
       xAxis: ax(p, 'Date (first seen to now)', { type: 'value', min: start, max: AS_OF + MS.h * 2, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => fmtDay(v) }, splitNumber: 5 }),
       yAxis: ax(p, '', { type: 'category', inverse: true, data: shown.map(i => i.title.length > 30 ? i.title.slice(0, 29) + '…' : i.title), splitLine: { show: false } }),
       series: [
@@ -701,7 +702,7 @@ function BandChart({ series, engine, height = 300 }) {
       grid: { left: 70, right: 20, top: 30, bottom: 50 },
       legend: { top: 0, right: 0, data: ['Observed', 'Expected', 'Expected band', 'Anomaly'], textStyle: { color: p.ink2, fontSize: 11 } },
       tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 },
-        formatter: a => { const x = pts[a[0].dataIndex]; return `<b>${fmtDay(x.t)}</b><br/>Observed ${fmtNum(x.value)}<br/>Expected ${fmtNum(x.expected)}<br/>Band ${fmtNum(x.lower)} to ${fmtNum(x.upper)}<br/>${x.anomaly ? '<b style="color:' + p.fail + '">Anomaly</b>' : 'Inside the band'}${x.score != null ? '<br/>Score ' + x.score : ''}`; } },
+        formatter: a => { const x = pts[a[0].dataIndex]; return `<b>${esc(fmtDay(x.t))}</b><br/>Observed ${esc(fmtNum(x.value))}<br/>Expected ${esc(fmtNum(x.expected))}<br/>Band ${esc(fmtNum(x.lower))} to ${esc(fmtNum(x.upper))}<br/>${esc(x.anomaly ? '<b style="color:' + p.fail + '">Anomaly</b>' : 'Inside the band')}${esc(x.score != null ? '<br/>Score ' + x.score : '')}`; } },
       xAxis: ax(p, 'Observed at (day)', { type: 'category', boundaryGap: false, data: pts.map(x => fmtDay(x.t)), splitLine: { show: false } }),
       yAxis: ax(p, `${humanMetric(series ? series.metric : '')} (${metricUnit(series ? series.metric : '')})`, { type: 'value', scale: true, nameGap: 52, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => fmtNum(v) } }),
       series: [
@@ -761,7 +762,7 @@ function Tests() {
   const passRate = 100 - sum(FAILS) / Math.max(1, sum(TESTED)) * 100;
   const opt = useMemo(() => { const p = pal(); return base(p, {
     grid: { left: 56, right: 20, top: 24, bottom: 54 },
-    tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: a => { const i = a[0].dataIndex; return `<b>${fmtRun(RUNS[i].t)}</b><br/>${FAILS[i]} failing of ${TESTED[i]} tests<br/>Pass rate ${pct(100 - FAILS[i] / Math.max(1, TESTED[i]) * 100)}`; } },
+    tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: a => { const i = a[0].dataIndex; return `<b>${esc(fmtRun(RUNS[i].t))}</b><br/>${esc(FAILS[i])} failing of ${esc(TESTED[i])} tests<br/>Pass rate ${esc(pct(100 - FAILS[i] / Math.max(1, TESTED[i]) * 100))}`; } },
     xAxis: ax(p, 'Run start time', { type: 'category', data: RUNS.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
     yAxis: ax(p, 'Failing tests (count)', { type: 'value', minInterval: 1, nameGap: 34 }),
     series: [{ type: 'bar', barMaxWidth: 14, color: p.fail, data: FAILS.map(v => ({ value: v, itemStyle: { color: v ? p.fail : p.line, borderRadius: [2, 2, 0, 0] } })) }],
@@ -843,7 +844,7 @@ function Gantt({ run, filterLayer }) {
     const p = pal();
     return base(p, {
       grid: { left: 180, right: 30, top: 10, bottom: 46 },
-      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const x = ex[e.dataIndex]; const n = NODE[x.unique_id]; return `<b>${n.name}</b><br/>${LAYER_LABEL[LAYER_GROUP(n.layer)]}, ${n.materialization || n.type}<br/>Starts at +${((x.t - run.t) / 1000).toFixed(1)} s<br/>Took ${fmtSec(x.execution_time_s)}<br/>Credits ${fmtCr(x.credits)}${x.status !== 'success' ? '<br/><b style="color:' + p.fail + '">Error</b>' : ''}`; } },
+      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const x = ex[e.dataIndex]; const n = NODE[x.unique_id]; return `<b>${esc(n.name)}</b><br/>${esc(LAYER_LABEL[LAYER_GROUP(n.layer)])}, ${esc(n.materialization || n.type)}<br/>Starts at +${esc(((x.t - run.t) / 1000).toFixed(1))} s<br/>Took ${esc(fmtSec(x.execution_time_s))}<br/>Credits ${esc(fmtCr(x.credits))}${esc(x.status !== 'success' ? '<br/><b style="color:' + p.fail + '">Error</b>' : '')}`; } },
       xAxis: ax(p, 'Seconds since run start', { type: 'value', min: 0 }),
       yAxis: ax(p, '', { type: 'category', inverse: true, data: ex.map(x => NODE[x.unique_id].name), splitLine: { show: false }, axisLabel: { color: p.ink2, fontSize: 10.5 } }),
       series: [
@@ -1132,7 +1133,7 @@ function Freshness() {
   const limits = [...new Set(src.map(f => f.max_lag_min).filter(v => v != null))];
   const optS = useMemo(() => { const p = pal(); return base(p, {
     grid: { left: 170, right: 70, top: 10, bottom: 46 },
-    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const s = SLAS[e.dataIndex]; return `<b>${s.name}</b><br/>Last success ${fmtTs(s.last)}<br/>Allowed ${s.expected_every} + ${s.grace} grace<br/>${s.late ? 'Late by ' + fmtSpan(AS_OF - s.due) : 'Due in ' + fmtSpan(s.due - AS_OF)}`; } },
+    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const s = SLAS[e.dataIndex]; return `<b>${esc(s.name)}</b><br/>Last success ${esc(fmtTs(s.last))}<br/>Allowed ${esc(s.expected_every)} + ${esc(s.grace)} grace<br/>${esc(s.late ? 'Late by ' + fmtSpan(AS_OF - s.due) : 'Due in ' + fmtSpan(s.due - AS_OF))}`; } },
     xAxis: ax(p, 'Time since last success (% of allowed interval + grace)', { type: 'value', min: 0, max: v => Math.max(140, Math.ceil(v.max / 20) * 20), axisLabel: { color: p.ink3, fontSize: 10.5, formatter: '{value}%' } }),
     yAxis: ax(p, '', { type: 'category', inverse: true, data: SLAS.map(s => s.name), splitLine: { show: false }, axisLabel: { color: p.ink2 } }),
     series: [{ type: 'bar', barMaxWidth: 14, data: SLAS.map(s => ({ value: +(s.used * 100).toFixed(1), itemStyle: { color: s.late ? p.stale : p.ok, borderRadius: 2 } })),
@@ -1141,7 +1142,7 @@ function Freshness() {
   }); }, [theme]);
   const optF = useMemo(() => { const p = pal(); return base(p, {
     grid: { left: 170, right: 40, top: 10, bottom: 46 },
-    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => `<b>${src[e.dataIndex].name}</b><br/>Newest data is ${src[e.dataIndex].freshness_lag_min} min old<br/>Limit ${src[e.dataIndex].max_lag_min == null ? 'not declared' : src[e.dataIndex].max_lag_min + ' min'}` },
+    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => `<b>${esc(src[e.dataIndex].name)}</b><br/>Newest data is ${esc(src[e.dataIndex].freshness_lag_min)} min old<br/>Limit ${esc(src[e.dataIndex].max_lag_min == null ? 'not declared' : src[e.dataIndex].max_lag_min + ' min')}` },
     xAxis: ax(p, 'Age of newest source data (minutes, log scale)', { type: 'log', min: 1, logBase: 10 }),
     yAxis: ax(p, '', { type: 'category', inverse: true, data: src.map(s => s.name), splitLine: { show: false }, axisLabel: { color: p.ink2 } }),
     series: [{ type: 'bar', barMaxWidth: 14, data: src.map(s => ({ value: s.freshness_lag_min, itemStyle: { color: s.over ? p.stale : p.ok, borderRadius: 2 } })), label: { show: true, position: 'right', color: p.ink3, formatter: '{c} min' },
@@ -1297,7 +1298,7 @@ function NodePage({ id }) {
     if (n.type === 'test') {
       const a = TR[id] || [], f = TRF[id] || [];
       return base(p, { grid: { left: 60, right: 20, top: 24, bottom: 54 },
-        tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: x => { const i = x[0].dataIndex; return `<b>${fmtRun(RUNS[i].t)}</b><br/>${a[i] || 'not run'}${f[i] ? `, ${f[i]} failing rows` : ''}`; } },
+        tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: x => { const i = x[0].dataIndex; return `<b>${esc(fmtRun(RUNS[i].t))}</b><br/>${esc(a[i] || 'not run')}${f[i] ? `, ${esc(f[i])} failing rows` : ''}`; } },
         xAxis: ax(p, 'Run start time', { type: 'category', data: RUNS.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
         yAxis: ax(p, 'Failing rows (count)', { type: 'value', minInterval: 1, nameGap: 40 }),
         series: [{ type: 'bar', barMaxWidth: 14, data: RUNS.map((r, i) => ({ value: a[i] == null ? null : (f[i] || 0), itemStyle: { color: isBad(a[i]) ? p.fail : p.ok, borderRadius: [2, 2, 0, 0] } })) }] });

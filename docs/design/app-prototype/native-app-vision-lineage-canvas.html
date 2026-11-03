@@ -272,6 +272,7 @@ select.input { padding-right:4px; }
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 <script type="text/babel" data-presets="react">
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const { useState, useMemo, useEffect, useRef, useCallback, useContext, createContext, Fragment } = React;
 const RFNS = window.ReactFlow;
 const Flow = RFNS.default || RFNS.ReactFlow;
@@ -1051,7 +1052,7 @@ function RunsSheet({ onFocus }) {
   const gantt = useMemo(() => {
     const cats = execs.map(e => BY_ID[e.unique_id].name);
     return { animation: false, title: cTitle(P, `Node timeline, run of ${fmtDT(t0)}`), grid: { left: 190, right: 16, top: 34, bottom: 40 },
-      tooltip: { ...cTip(P), formatter: p => { const e = execs[p.value[0]]; return `<b>${BY_ID[e.unique_id].name}</b><br>Started ${p.value[1].toFixed(1)} s after the run<br>Took ${fmtS(e.execution_time_s)}<br>${e.status === 'error' ? 'Failed' : 'Built'}, ${fmtCr(e.credits)}`; } },
+      tooltip: { ...cTip(P), formatter: p => { const e = execs[p.value[0]]; return `<b>${esc(BY_ID[e.unique_id].name)}</b><br>Started ${esc(p.value[1].toFixed(1))} s after the run<br>Took ${esc(fmtS(e.execution_time_s))}<br>${esc(e.status === 'error' ? 'Failed' : 'Built')}, ${esc(fmtCr(e.credits))}`; } },
       xAxis: cAxis(P, 'Seconds since the run started', { type: 'value', min: 0, nameGap: 26 }),
       yAxis: cAxis(P, '', { type: 'category', data: cats, inverse: true, splitLine: { show: false }, axisLabel: { color: P.ink2, fontSize: 11, fontFamily: FONT } }),
       series: [{ type: 'custom', encode: { x: [1, 2], y: 0 }, data: execs.map((e, i) => { const s = (ts(e.started_at) - t0) / 1000; return { value: [i, s, s + e.execution_time_s], itemStyle: { color: e.status === 'error' ? P.failed : P.lane[laneOf(e.unique_id)] } }; }),
@@ -1088,7 +1089,7 @@ function CostSheet({ onFocus }) {
   const { P } = useContext(ThemeCtx);
   const days = useMemo(() => { const m = {}; RUNS.forEach(r => { const k = r.started_at.slice(0, 10); m[k] = m[k] || { cr: 0, pending: 0 }; if (r.credits == null) m[k].pending++; else m[k].cr += r.credits; }); return Object.entries(m); }, []);
   const opt = useMemo(() => ({ animation: false, title: cTitle(P, `Credits per day, last ${days.length} days (all stored history)`), grid: { left: 52, right: 12, top: 36, bottom: 40 },
-    tooltip: { ...cTip(P), trigger: 'axis', formatter: ps => { const d = days[ps[0].dataIndex]; return `<b>${fmtDay(ts(d[0] + 'T00:00:00'))}</b><br>${d[1].cr.toFixed(3)} credits${d[1].pending ? `<br>${d[1].pending} run not attributed yet` : ''}`; } },
+    tooltip: { ...cTip(P), trigger: 'axis', formatter: ps => { const d = days[ps[0].dataIndex]; return `<b>${esc(fmtDay(ts(d[0] + 'T00:00:00')))}</b><br>${esc(d[1].cr.toFixed(3))} credits${d[1].pending ? `<br>${esc(d[1].pending)} run not attributed yet` : ''}`; } },
     xAxis: cAxis(P, 'Day', { type: 'category', data: days.map(d => fmtDay(ts(d[0] + 'T00:00:00'))), splitLine: { show: false }, nameGap: 26 }),
     yAxis: cAxis(P, 'Credits', { type: 'value', nameGap: 40 }),
     series: [{ type: 'bar', barWidth: '58%', data: days.map(d => ({ value: +d[1].cr.toFixed(4), itemStyle: { color: d[1].pending ? P.lineStrong : P.ice } })),
@@ -1165,7 +1166,7 @@ function SchemaSheet({ onFocus }) {
   const opt = useMemo(() => {
     const t0 = RUNS.length ? ts(RUNS[0].started_at) : NOW;
     return { animation: false, title: cTitle(P, 'Column changes over time'), grid: { left: 120, right: 20, top: 36, bottom: 44 },
-      tooltip: { ...cTip(P), formatter: p => { const c = ch[p.dataIndex]; return `<b>${c.relation}.${c.column}</b><br>${c.change.replace('_', ' ')}${c.type ? ', ' + c.type : ''}${c.from ? `, ${c.from} to ${c.to}` : ''}<br>${fmtDT(ts(c.detected_at))}`; } },
+      tooltip: { ...cTip(P), formatter: p => { const c = ch[p.dataIndex]; return `<b>${esc(c.relation)}.${esc(c.column)}</b><br>${esc(c.change.replace('_', ' '))}${esc(c.type ? ', ' + c.type : '')}${c.from ? `, ${esc(c.from)} to ${esc(c.to)}` : ''}<br>${esc(fmtDT(ts(c.detected_at)))}`; } },
       xAxis: cAxis(P, 'Date detected', { type: 'time', min: t0, max: NOW, nameGap: 28, axisLabel: { color: P.ink3, fontSize: 11, formatter: v => fmtDay(v) } }),
       yAxis: cAxis(P, 'Table', { type: 'category', data: rels, nameGap: 100, splitLine: { show: true, lineStyle: { color: P.line, type: 'dashed' } } }),
       series: [{ type: 'scatter', symbolSize: 16, data: ch.map(c => ({ value: [ts(c.detected_at), c.relation], itemStyle: { color: C[c.change] || P.ice } })),

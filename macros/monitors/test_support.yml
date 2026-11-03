@@ -10,7 +10,7 @@ macros:
     description: Now on Snowflake's clock as an ISO 8601 UTC string. Shared by the generic tests.
 
   - name: _icecore_previous_signature
-    description: Columns of the newest schema signature record of a relation read through base_events, or none. Never raises.
+    description: Columns of the newest complete schema snapshot (the chunks of one invocation's `icecore.schema_signature` records) of a relation read through base_events, or none (also none while a chunk is missing). Never raises.
     arguments:
       - name: relation
         type: Relation

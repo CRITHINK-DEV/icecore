@@ -206,6 +206,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |
+| `SCHEMA_COLUMNS` | view | One row per column per schema_changes run (the full column state; feeds the Elementary compat view `schema_columns_snapshot`). |
 | `INVOCATIONS` | view | One row per dbt invocation. |
 | `NODE_EXECUTIONS` | view | One row per node per invocation. |
 | `TEST_RESULTS` | view | One row per test per invocation. |

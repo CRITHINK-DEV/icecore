@@ -11,3 +11,9 @@
   {% endif %}
   {% do log('icecore_it_result:' ~ tojson(icecore.node_attributes(node, result)), info=True) %}
 {% endmacro %}
+
+
+{#- Renders icecore._icecore_runtime with synthetic invocation signals (S13: EXECUTE DBT PROJECT detection). -#}
+{% macro it_runtime(project_dir=none, profiles_dir=none) %}
+  {% do log('icecore_it_result:' ~ tojson(icecore._icecore_runtime({'project_dir': project_dir, 'profiles_dir': profiles_dir})), info=True) %}
+{% endmacro %}

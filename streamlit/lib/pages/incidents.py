@@ -59,7 +59,7 @@ def rows(incidents: list[dict], states: dict[str, str], *, now: datetime) -> dic
         out["open" if st == "stale" else st if st in GROUPS else "open"].append(_row(incident, st, now))
 
     def order(r):
-        first = state_logic._naive(r["first_seen"])
+        first = state_logic.naive(r["first_seen"])
         return (r["stale"], r["severity"] != "error", first or datetime.max)
 
     for g in GROUPS:
@@ -83,7 +83,7 @@ def per_day(incidents: list[dict]) -> list[dict]:
     """Incidents first seen per day (UTC) and kind, for charts.daily."""
     counts: dict[tuple[str, str], int] = {}
     for i in incidents or []:
-        first = state_logic._naive(i.get("first_detected_at"))
+        first = state_logic.naive(i.get("first_detected_at"))
         if first is None:
             continue
         key = (first.date().isoformat(), KIND_LABEL.get(i.get("kind"), str(i.get("kind"))))

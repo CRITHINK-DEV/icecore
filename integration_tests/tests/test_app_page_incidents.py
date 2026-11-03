@@ -171,3 +171,23 @@ def test_incidents_read_error_shows_caption(monkeypatch):
 def test_incidents_page_all_empty(monkeypatch):
     at = render(monkeypatch, [])
     assert at.info
+
+
+def test_failed_supporting_read_is_named(monkeypatch):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    from lib import queries
+
+    monkeypatch.syspath_prepend(str(APP_DIR))
+    monkeypatch.setattr(queries, "alerts_feed", lambda *a, **k: INCIDENTS)
+    monkeypatch.setattr(queries, "test_results", lambda *a, **k: [])
+    monkeypatch.setattr(queries, "metrics", lambda *a, **k: [])
+
+    def boom(*a, **k):
+        raise RuntimeError("no view")
+
+    monkeypatch.setattr(queries, "node_executions", boom)
+    at = AppTest.from_file(str(APP_DIR / "pages" / "incidents.py"), default_timeout=30).run()
+    assert not at.exception
+    assert any("Could not read NODE_EXECUTIONS" in c.value and "resolved states may be missing" in c.value
+               for c in at.caption)

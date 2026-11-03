@@ -17,6 +17,11 @@ def _naive(ts):
     return ts if isinstance(ts, datetime) else None
 
 
+def naive(ts):
+    """Public form of _naive: a datetime as naive UTC, else None."""
+    return _naive(ts)
+
+
 def as_of(*row_lists: list[dict], keys=_AS_OF_KEYS) -> datetime | None:
     """The newest timestamp found in the rows (never the app's clock), or None."""
     best = None

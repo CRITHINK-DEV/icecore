@@ -64,7 +64,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
         "recorded_at", "layer")),
-    "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
+    "ALERTS_FEED": ("merged", "macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
         "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
@@ -121,9 +121,12 @@ def qualified(views_schema: str, view: str) -> str:
     return f"{schema.upper()}.{view}"
 
 
-def _select_list(view: str) -> str:
+def _select_list(view: str, present: frozenset[str] | None = None) -> str:
+    """The view's columns; with `present` (upper-case names the view really has), only those."""
     cols = []
     for name in VIEWS[view][2]:
+        if present is not None and name.upper() not in present:
+            continue
         cols.append('"COLUMN" as "column"' if name == "column" else name)
     return ", ".join(cols)
 
@@ -375,11 +378,41 @@ def is_available(view: str) -> bool:
     return VIEWS[view][0] == "merged"
 
 
+# Columns a view really has, per (views schema, view), learned when a read hits a column the view does not have yet:
+# a view created by an older icecore lacks the newest columns until `icecore.setup` runs again. Kept for the app
+# process: after setup upgrades the views, restart the app to read the new columns.
+_VIEW_COLUMNS: dict[tuple[str, str], frozenset[str]] = {}
+_MISSING_COLUMN = "invalid identifier"
+
+
+def _view_columns(layer: QueryLayer, view: str) -> frozenset[str]:
+    rows = layer.session.sql(f"describe view {qualified(layer.views_schema, view)}").collect()
+    return frozenset(str(_as_row(r).get("name", "")).upper() for r in rows)
+
+
+def _only_present(built: tuple[str, list[Any]], view: str, present: frozenset[str]) -> tuple[str, list[Any]]:
+    sql, params = built
+    return sql.replace(_select_list(view), _select_list(view, present), 1), params
+
+
 def _read(builder: Callable, layer: QueryLayer | None, *args, view: str, **kwargs) -> list[dict]:
+    """Rows of one view. A view from an older icecore that lacks some of VIEWS' columns is read with the columns it
+    has (looked up once with DESCRIBE VIEW); the missing keys are simply absent and pages show "not recorded yet"."""
     if not is_available(view):
         return []
     layer = layer or default_layer()
-    return layer.run(builder(layer.views_schema, *args, **kwargs))
+    built = builder(layer.views_schema, *args, **kwargs)
+    key = (layer.views_schema.upper(), view)
+    present = _VIEW_COLUMNS.get(key)
+    if present is not None:
+        return layer.run(_only_present(built, view, present))
+    try:
+        return layer.run(built)
+    except Exception as exc:
+        if _MISSING_COLUMN not in str(exc).lower():
+            raise
+        present = _VIEW_COLUMNS[key] = _view_columns(layer, view)
+        return layer.run(_only_present(built, view, present))
 
 
 # --- one function per view ---------------------------------------------------------------------------------------

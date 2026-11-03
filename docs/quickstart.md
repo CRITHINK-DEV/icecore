@@ -45,7 +45,7 @@ ALTER DATABASE <db> SET EVENT_TABLE = <db>.<schema>.<event_table>;
 
 The role that runs dbt needs USAGE on the database, on the icecore schema and on both procedures, and SELECT on the views. Setup, and the roles' details, are in [Configuration](configuration.md#what-setup-creates).
 
-`setup` also checks the database's log and trace levels. It needs `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ON_EVENT` or `ALWAYS`. If its role may change them, it does. If not, it prints the `ALTER DATABASE` statement for an admin.
+`setup` also checks the log and trace levels that apply to the icecore schema (its own, or inherited from the database). It needs `LOG_LEVEL` at least `INFO` and `TRACE_LEVEL` `ALWAYS`: `ON_EVENT` drops spans written without an event. If its role may change them, it runs `ALTER SCHEMA <db>.<schema> SET ...`, which needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account. If not, it prints that statement for an admin. It never proposes a database-wide `TRACE_LEVEL`.
 
 ## 2. Install the package
 
@@ -101,7 +101,7 @@ icecore: setup in "MY_DB"."ICECORE_OBS" (9 steps)
 icecore: capabilities of MY_DB: edition ENTERPRISE (organization_usage), event table MY_DB.TELEMETRY.EVENTS (set at DATABASE level), LOG_LEVEL INFO, TRACE_LEVEL ALWAYS, Cortex yes
 icecore: setup step 2/9 create_schema: CREATE SCHEMA IF NOT EXISTS "MY_DB"."ICECORE_OBS": ok
 icecore: setup step 3/9 create_emit_procedures: CREATE OR REPLACE ... COPY GRANTS "MY_DB"."ICECORE_OBS"."ICECORE_EMIT", "MY_DB"."ICECORE_OBS"."ICECORE_EMIT_RUN"
-icecore: telemetry levels of MY_DB are sufficient (LOG_LEVEL INFO, TRACE_LEVEL ALWAYS): nothing changed
+icecore: telemetry levels of MY_DB.ICECORE_OBS are sufficient (LOG_LEVEL INFO, TRACE_LEVEL ALWAYS): nothing changed
 icecore: setup step 4/9 set_telemetry_levels: levels sufficient, ran 0, printed 1 for an admin
 icecore: setup step 5/9 record_capabilities: icecore.capabilities: ok 1
 icecore: telemetry cost: 12,960 rows per month (18 rows per run for 3 nodes (...) x 24 runs per day x 30 days).
@@ -113,7 +113,7 @@ icecore: setup step 9/9 create_tasks: planned, not available yet (Snowflake task
 
 Read the output for three things:
 
-- Step 4 says `levels sufficient`, or prints the `ALTER DATABASE` statement for an admin. With sufficient levels, `printed 1 for an admin` is not a problem: it is the recommendation to cluster the event table, an `ALTER TABLE ... CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)` that an admin may run.
+- Step 4 says `levels sufficient`, or prints the `ALTER SCHEMA` statement for an admin. With sufficient levels, `printed 1 for an admin` is not a problem: it is the recommendation to cluster the event table, an `ALTER TABLE ... CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)` that an admin may run.
 - The cost line is an estimate of what icecore will write to your event table each month. `runs_per_day` is how often dbt runs.
 - Steps 8 and 9 are not built yet. They are reported as planned and do nothing.
 
@@ -207,7 +207,7 @@ dbt build --vars '{icecore: {telemetry: false}}'
 
 ## If no records appear
 
-Run `dbt run-operation icecore.doctor` first. A failed check names the missing procedure, grant or level. A troubleshooting guide is coming.
+Run `dbt run-operation icecore.doctor` first. A failed check names the missing procedure, grant or level. See [Troubleshooting](troubleshooting.md).
 
 ## Next
 

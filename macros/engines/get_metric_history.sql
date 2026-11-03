@@ -64,15 +64,14 @@
   {%- endif -%}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set source = source or icecore._icecore_procedure('METRICS', schema) -%}
-  {%- set literal = icecore._icecore_sql_literal -%}
   {%- set now = "convert_timezone('UTC', current_timestamp())::timestamp_ntz" -%}
   {%- set sql -%}
 select observed_at, value
 from {{ source }}
-where relation = {{ literal(name) }}
-  and metric = {{ literal(metric | string) }}
-  and "COLUMN" is not distinct from {{ 'null' if column is none else literal(column | string) }}
-  and dimension is not distinct from {{ 'null' if dimension is none else literal(dimension | string) }}
+where relation = {{ icecore._sql(name, 'string') }}
+  and metric = {{ icecore._sql(metric | string, 'string') }}
+  and "COLUMN" is not distinct from {{ 'null' if column is none else icecore._sql(column | string, 'string') }}
+  and dimension is not distinct from {{ 'null' if dimension is none else icecore._sql(dimension | string, 'string') }}
   and value is not null
   and observed_at > dateadd(day, -{{ lookback_days }}, {{ now }})
   and observed_at <= dateadd(minute, -{{ delay_minutes }}, {{ now }})

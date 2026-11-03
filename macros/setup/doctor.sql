@@ -4,12 +4,14 @@
 
     Checks, in order, and reports; it never fails the run (every read and CALL is guarded):
       1. event_table       re-detects the capabilities (detect_capabilities, reads only): an active event table;
-      2. levels            the database's LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS
+      2. levels            the obs schema's LOG_LEVEL at least INFO and TRACE_LEVEL ALWAYS
                            (telemetry_levels_plan); the fix is printed, never run;
-      3. ICECORE_EMIT, ICECORE_EMIT_RUN
+      3. ICECORE_EMIT, ICECORE_EMIT_RUN, ICECORE_ACK
                            one guarded test CALL of each, tagged icecore.doctor.probe = true (an
                            icecore.doctor_probe span event and an INFO LOG record): a missing procedure or grant
-                           shows here;
+                           shows here. ICECORE_ACK is probed with a key that is no incident and reported as
+                           INFORMATION only (never a failure, never a grant suggestion): the dbt role must not hold
+                           it, so "cannot call" is the normal answer for that role (nothing is written);
       4. records           icecore records of the last 24 hours, counted through base_events() on Snowflake's clock,
                            without doctor's probes and the icecore.capabilities records of setup and doctor.
     The likely cause of "no records in 24 h" is the first failed check of 1-3, else the telemetry hooks.
@@ -37,7 +39,7 @@
     {%- endif -%}
   {%- endif -%}
 
-  {%- set report = icecore._icecore_doctor_report(capabilities, probes, count, count_error, schema) -%}
+  {%- set report = icecore._icecore_doctor_report(capabilities, probes, count, count_error, schema, icecore.schema_levels(capabilities['database'], schema)) -%}
   {%- for check in report['checks'] -%}
     {% do log('icecore: doctor: check ' ~ check['name'] ~ ': ' ~ ('ok' if check['ok'] else 'FAILED') ~ ' (' ~ check['detail'] ~ ')', info=True) %}
   {%- endfor -%}
@@ -63,7 +65,26 @@
       'ICECORE_EMIT': icecore._icecore_emit_in_schema(schema, 'doctor_probe', 'icecore doctor probe', tag) | string,
       'ICECORE_EMIT_RUN': icecore._icecore_guarded_call(icecore._icecore_procedure('ICECORE_EMIT_RUN', schema),
           [{'type': 'log', 'level': 'info', 'message': 'icecore doctor probe', 'attrs': log_attrs}]) | string,
+      'ICECORE_ACK': icecore._icecore_ack_probe(schema) | string,
   }) }}
+{% endmacro %}
+
+
+{#- One guarded CALL of ICECORE_ACK with a key that is no incident (32 zeros, a constant, no record value): the status. -#}
+{% macro _icecore_ack_probe(schema) %}
+  {%- set sql -%}
+EXECUTE IMMEDIATE $$
+DECLARE
+  r STRING;
+BEGIN
+  CALL {{ icecore._icecore_procedure('ICECORE_ACK', schema) }}('00000000000000000000000000000000') INTO :r;
+  RETURN r;
+EXCEPTION
+  WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
+END;
+$$
+  {%- endset -%}
+  {{ return(run_query(sql | trim).columns[0].values()[0] | string) }}
 {% endmacro %}
 
 
@@ -85,7 +106,7 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
 {#- Pure: the checks and the verdict. status: ok (every check passed, records found), no_records (cause:
     event_table, levels, procedures or hooks), or warn (records found but a check failed, or the count could not be
     read). Returns {status, cause, message, records_24h, checks: [{name, ok, detail}]}. -#}
-{% macro _icecore_doctor_report(capabilities, probes, count, count_error=none, schema=none) %}
+{% macro _icecore_doctor_report(capabilities, probes, count, count_error=none, schema=none, schema_levels=none) %}
   {%- set where = (capabilities.get('database') or target.database) ~ '.' ~ icecore.obs_schema_name(schema) -%}
   {%- set checks = [] -%}
   {%- set causes = {} -%}
@@ -94,10 +115,10 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
   {%- do checks.append({'name': 'event_table', 'ok': event_table != '',
       'detail': event_table or 'no active event table; an admin must set one (icecore.set_telemetry_levels prints the statement)'}) -%}
 
-  {%- set plan = icecore.telemetry_levels_plan(capabilities) -%}
+  {%- set plan = icecore.telemetry_levels_plan(capabilities, none, none, schema, schema_levels) -%}
   {%- set levels = 'LOG_LEVEL ' ~ plan['log_level'] ~ ', TRACE_LEVEL ' ~ plan['trace_level'] -%}
   {%- do checks.append({'name': 'levels', 'ok': plan['levels_ok'], 'detail': levels if plan['levels_ok'] else levels
-      ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ON_EVENT or ALWAYS on the database; an admin can run: '
+      ~ '; icecore needs LOG_LEVEL at least INFO and TRACE_LEVEL ALWAYS on its schema; an admin can run: '
       ~ (plan['attempt'] | join('; '))}) -%}
 
   {%- for name in ['ICECORE_EMIT', 'ICECORE_EMIT_RUN'] -%}
@@ -106,6 +127,17 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
     {%- do checks.append({'name': name, 'ok': ok, 'detail': 'test CALL: ' ~ status if ok else 'test CALL: ' ~ status
         ~ '; run icecore.setup, and grant USAGE on the database, the schema and the procedure to the role that runs dbt'}) -%}
   {%- endfor -%}
+  {#- ICECORE_ACK is informational and never a failure: the dbt role must NOT hold it (only the roles that acknowledge
+      incidents do), so a refusal to call it is the normal answer here. No grant is ever suggested for it. -#}
+  {%- if 'ICECORE_ACK' in (probes or {}) -%}
+    {%- set ack = probes['ICECORE_ACK'] | string -%}
+    {%- if 'not_an_open_incident' in ack -%}
+      {%- set ack_detail = 'informational: this role can call it (it refused the probe key, nothing was written)' -%}
+    {%- else -%}
+      {%- set ack_detail = 'informational: this role cannot call it (' ~ ack ~ '); expected for the role that runs dbt, which must not hold ICECORE_ACK' -%}
+    {%- endif -%}
+    {%- do checks.append({'name': 'ICECORE_ACK', 'ok': true, 'detail': ack_detail}) -%}
+  {%- endif -%}
 
   {%- if count_error -%}
     {%- set records_detail = 'could not count icecore records: ' ~ count_error -%}

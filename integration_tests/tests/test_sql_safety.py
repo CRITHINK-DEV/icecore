@@ -57,8 +57,8 @@ def test_string_context_round_trips_the_value(monkeypatch):
 IDENT_BAD = ["X$$; GRANT ROLE A TO ROLE B; --", "A$$B", 'A"B', "A\\B", "A\nB", "A B", "A;B", "A\n", "A\r", "", "A\x00B", "É"]
 
 
-def test_ident_context_accepts_only_letters_digits_and_underscore(monkeypatch):
-    ok = ["ICECORE_OBS", "a1_", "9", "icecore_obs_ab12"]
+def test_ident_context_accepts_only_letters_digits_underscore_and_a_single_dollar_sign(monkeypatch):
+    ok = ["ICECORE_OBS", "a1_", "9", "icecore_obs_ab12", "MY$DB", "A$"]
     payloads_in(monkeypatch, ok + IDENT_BAD)
     out = run_macro("it_sql", {"context": "ident"})
     for value, row in zip(ok, out):
@@ -79,11 +79,30 @@ def test_ident_context_takes_a_list_of_parts():
         call_macro("_sql", value=["DB", "SCH$$"], context="ident")
 
 
-def test_name_context_keeps_quotes_and_spaces_and_refuses_dollar_and_control_characters(monkeypatch):
-    payloads_in(monkeypatch, ['Mixed Case "Orders"', "a-b", "x$$y", "x\ny", "x\x7fy"])
+def test_name_context_keeps_quotes_spaces_and_a_single_dollar_and_refuses_double_dollar_and_control_characters(monkeypatch):
+    payloads_in(monkeypatch, ['Mixed Case "Orders"', "a-b", "MY$DB", "x$$y", "x\ny", "x\x7fy", "x\r"])
     out = run_macro("it_sql", {"context": "name"})
-    assert out[0]["sql"] == '"Mixed Case ""Orders"""' and out[1]["sql"] == '"a-b"'
-    assert all(r["error"] and "SQL name" in r["error"] for r in out[2:])
+    assert out[0]["sql"] == '"Mixed Case ""Orders"""' and out[1]["sql"] == '"a-b"' and out[2]["sql"] == '"MY$DB"'
+    assert all(r["error"] and "SQL name" in r["error"] for r in out[3:])
+
+
+def test_an_account_database_named_my_dollar_db_works_and_x_dollar_dollar_y_a_newline_and_a_quote_are_refused():
+    assert call_macro("_sql", value="MY$DB", context="ident") == '"MY$DB"'
+    assert call_macro("_sql", value=["MY$DB", "S"], context="ident") == '"MY$DB"."S"'
+    assert call_macro("_sql", value="MY$DB", context="name") == '"MY$DB"'
+    for context in ("ident", "name"):
+        for bad in ("X$$Y", "X\nY", "X\x00Y"):
+            with pytest.raises(MacroFailed, match="invalid SQL"):
+                call_macro("_sql", value=bad, context=context)
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
+        call_macro("_sql", value='X"Y', context="ident")
+
+
+def test_the_procedure_of_a_database_with_a_single_dollar_sign_renders_and_stays_one_statement(monkeypatch):
+    monkeypatch.setenv("SNOWFLAKE_DATABASE", "MY$DB")
+    out = run_macro("it_procedure_for_target", {})
+    assert out["error"] is None and out["procedure"] == '"MY$DB"."ICECORE_OBS"."ICECORE_EMIT"'
+    assert len(split(out["sql"])) == 1
 
 
 def test_an_unknown_context_raises():
@@ -112,7 +131,7 @@ NAME_PAYLOADS = [
 
 
 def refused(payload: str) -> bool:
-    return "$" in payload or any(ord(c) < 32 or ord(c) == 127 for c in payload)
+    return "$$" in payload or any(ord(c) < 32 or ord(c) == 127 for c in payload)
 
 
 def test_every_name_renderer_yields_exactly_one_statement_for_every_name_payload(monkeypatch):
@@ -174,7 +193,7 @@ def test_the_guarded_status_of_a_bad_procedure_is_a_status_not_an_exception():
     assert out.startswith("icecore-error invalid_procedure")
 
 
-@pytest.mark.parametrize("procedure", ['"A"."B"."C"', '"MY-DB"."S"."P"', '"My DB"."S"."P"', '"A""B"."S"."P"'])
+@pytest.mark.parametrize("procedure", ['"A"."B"."C"', '"MY$DB"."S"."P"', '"MY-DB"."S"."P"', '"My DB"."S"."P"', '"A""B"."S"."P"'])
 def test_the_guard_accepts_every_name_icecore_sql_builds(procedure):
     assert call_macro("_icecore_procedure_problem", procedure=procedure) is None
 
@@ -225,9 +244,22 @@ def test_a_procedure_name_that_is_not_built_by_the_package_is_refused_by_the_gua
 
 # --- the codebase ------------------------------------------------------------------------------------------
 
+HAND_QUOTING = [
+    # a quote glued to a value or a call: '"' ~ x, x ~ '"', '."' ~ x ~ '"', "'" ~ x ~ "'"
+    re.compile(r"""'\.?"'\s*~|~\s*'"\.?'|'[^']*\."'\s*~|~\s*'"[^']*'"""),
+    re.compile(r"""["]'["]\s*~|~\s*["]'["]"""),
+    # replace of a quote: replace("'", ...), replace('"', '""'), replace("\\'" ...)
+    re.compile(r"""replace\(\s*(['"])(\\\\|'|"|\\')\1\s*,\s*(['"])(?!\3)"""),
+    re.compile(r"""replace\(\s*["]'["]"""),
+    # the retired helper names are wrappers: no caller uses them for a literal
+    re.compile(r"icecore\._(icecore_sql_literal|icecore_block_literal|icecore_schema_literal)\("),
+    re.compile(r"\bset\s+\w+\s*=\s*icecore\._icecore_(sql_literal|block_literal|schema_literal)\b"),
+]
+
+
 def test_only_icecore_sql_builds_literals_and_identifiers():
-    # The old helpers are one-line wrappers that call icecore._sql, and no macro builds a quoted identifier or a
-    # string literal by hand (no replace of a quote in the package outside macros/util/sql.sql).
+    # No macro builds a quoted identifier or a string literal by hand: not '."' ~ x ~ '"', not '"' ~ x ~ '"', not
+    # "'" ~ x ~ "'", no replace of a quote, no call of the retired literal wrappers (macros/util/sql.sql is the one place).
     offenders = []
     for path in (REPO / "macros").rglob("*.sql"):
         if path.name == "sql.sql":
@@ -236,6 +268,21 @@ def test_only_icecore_sql_builds_literals_and_identifiers():
             code = line.split("{#-")[0]
             # dropping quotes to compare two names (replace('"', '')) builds no SQL
             code = code.replace("""replace('"', '')""", "")
-            if re.search(r"""replace\(\s*(['"])(\\\\|'|")\1|replace\(["']'["']""", code) or re.search(r"""'"'\s*~""", code):
+            if "raise_compiler_error" in code or re.search(r"\blog\(", code):
+                continue  # a message quoting a value for a person builds no SQL
+            if any(rx.search(code) for rx in HAND_QUOTING):
                 offenders.append(f"{path.relative_to(REPO)}:{n}: {line.strip()}")
     assert not offenders, offenders
+
+
+@pytest.mark.parametrize("line", [
+    """{{ return('"' ~ db ~ '"."' ~ name ~ '"') }}""",
+    """{{ return(schema ~ '."' ~ view['name'] ~ '"') }}""",
+    """{{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}""",
+    """{%- do quoted.append('"' ~ part ~ '"') -%}""",
+    """{%- set lit = "'" ~ value ~ "'" -%}""",
+    """{{ value | replace("'", "''") }}""",
+    """{{ icecore._icecore_sql_literal(x) }}""",
+])
+def test_the_scan_catches_every_hand_quoting_pattern(line):
+    assert any(rx.search(line.replace("""replace('"', '')""", "")) for rx in HAND_QUOTING), line

@@ -238,3 +238,30 @@ def test_default_observed_at_buckets_by_the_utc_hour():
     assert result["baseline"] == "seasonal"
     assert result["expected"] in {100.0 + 10 * now.hour, 100.0 + 10 * after}
     assert result["is_anomaly"] is False or after != now.hour
+
+
+# --- min_points ----------------------------------------------------------------------------------------
+
+
+def test_min_points_defaults_to_7_and_is_rendered():
+    sql = lambda **kw: call_macro("native__score_sql", series_sql="select 1", current_value=1, sensitivity="medium",
+                                  min_consecutive=1, **kw).lower()
+    assert "history_points < 7" in sql()
+    assert "history_points < 10" in sql(min_points=10)
+
+
+@pytest.mark.parametrize("bad", [0, 1.5, "7", True])
+def test_min_points_must_be_a_positive_integer(bad):
+    from helpers.macros import MacroFailed
+    with pytest.raises(MacroFailed, match="min_points"):
+        call_macro("native__score_sql", series_sql="select 1", current_value=1, sensitivity="medium",
+                   min_consecutive=1, min_points=bad)
+
+
+@pytest.mark.sandbox
+def test_a_7_point_series_is_not_flagged_when_min_points_is_10():
+    points = daily([100, 101, 99, 100, 100, 101, 99])
+    assert native(points, 500)["is_anomaly"] is True  # default 7: enough history
+    result = call_macro("native__score", series_sql=series_sql(points), current_value=500, sensitivity="medium",
+                        min_consecutive=1, min_points=10)
+    assert result["is_anomaly"] is False and result["baseline"] == "insufficient_history"

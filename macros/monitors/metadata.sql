@@ -16,7 +16,7 @@
   {%- set sql -%}
     select case when t.token > 0
                 then to_varchar(to_timestamp_ntz(t.token, 9), 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"') end
-    from (select system$last_change_commit_time({{ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation)) }})::number(38, 0) as token) t
+    from (select system$last_change_commit_time({{ icecore._sql(icecore._icecore_quoted_name(relation), 'string') }})::number(38, 0) as token) t
   {%- endset -%}
   {{ return(icecore._icecore_safe_scalar(sql, 'get_last_change_time', relation)) }}
 {% endmacro %}
@@ -139,8 +139,8 @@ end;
             when is_transient = 'YES' then 'transient'
             else 'standard' end)
     from {{ icecore._sql(parts[0], 'name') }}.information_schema.tables
-    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
-      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
   {%- endset -%}
   {%- set info = icecore._icecore_safe_scalar(sql, 'get_row_count_metadata', relation) -%}
   {%- if info is none -%}
@@ -160,8 +160,8 @@ end;
     micro-partition after DELETE / UPDATE / MERGE, about 1.9 times a full scan in S5. -#}
 {% macro _icecore_changes_source(relation, since, until=none) %}
   {{ return(icecore._icecore_quoted_name(relation)
-      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))'
-      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(until) ~ '))')) }}
+      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._sql(since, 'string') ~ '))'
+      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._sql(until, 'string') ~ '))')) }}
 {% endmacro %}
 
 

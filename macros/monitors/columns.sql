@@ -71,6 +71,101 @@
 {% endmacro %}
 
 
+{#- Several columns of one model in one query. Returns {column: metrics}, one entry per distinct requested column
+    in the form it was given: the same dict compute_column_metrics returns for it, or none for a column that is
+    not found. Returns none when the window is none or the table's columns cannot be read. With one distinct column
+    it is the per-column path (compute_column_metrics). With more, the model's column types are read once
+    and one CHANGES (or timestamp-window) query computes every metric of every column in one select list, so the
+    table is scanned once instead of once per column. Same window rules: bounds included, fallback only on the
+    window-coverage codes, once per window. -#}
+{% macro compute_columns_metrics(relation, columns, window, metrics=none) %}
+  {%- if not execute or window is none -%}{{ return(none) }}{%- endif -%}
+  {%- set requested = [] -%}
+  {%- for column in columns -%}
+    {%- if column is none -%}
+      {{ exceptions.raise_compiler_error('compute_columns_metrics needs column names for ' ~ icecore._icecore_quoted_name(relation)) }}
+    {%- endif -%}
+    {%- if column not in requested -%}{%- do requested.append(column) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- if requested | length == 0 -%}{{ return({}) }}{%- endif -%}
+  {%- if requested | length == 1 -%}
+    {{ return({requested[0]: icecore.compute_column_metrics(relation, requested[0], window, metrics)}) }}
+  {%- endif -%}
+  {%- set names = icecore._icecore_column_metric_names(metrics) -%}
+  {%- set numeric = icecore._icecore_numeric_metric_names() -%}
+  {%- if names | length == 0 -%}
+    {%- set out = {} -%}
+    {%- for column in requested -%}{%- do out.update({column: {}}) -%}{%- endfor -%}
+    {{ return(out) }}
+  {%- endif -%}
+  {%- set types = icecore._icecore_column_types_read(relation) -%}
+  {%- if 'error' in types -%}
+    {% do log('icecore: warning: compute_columns_metrics could not read the columns of ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ types['error'], info=True) %}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set type_by_name = types.get('value') or {} -%}
+  {#- plan: given name -> {resolved, metrics}; selected: the distinct resolved columns, in first-seen order -#}
+  {%- set plan = {} -%}
+  {%- set selected = [] -%}
+  {%- for column in requested -%}
+    {%- set resolved = icecore._icecore_column_name(column) -%}
+    {%- set col_type = type_by_name.get(resolved) -%}
+    {%- if col_type is none -%}
+      {% do log('icecore: warning: compute_columns_metrics could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': column ' ~ column ~ ' not found', info=True) %}
+      {%- do plan.update({column: none}) -%}
+    {%- else -%}
+      {%- set wanted = [] -%}
+      {%- set skipped = [] -%}
+      {%- for metric in names -%}
+        {%- if metric in numeric and col_type not in icecore._icecore_numeric_types() -%}
+          {%- do skipped.append(metric) -%}
+        {%- else -%}
+          {%- do wanted.append(metric) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if skipped -%}
+        {% do log('icecore: warning: compute_column_metrics: ' ~ (skipped | join(', ')) ~ ' skipped for column ' ~ column
+            ~ ' of ' ~ icecore._icecore_quoted_name(relation) ~ ': ' ~ col_type ~ ' is not numeric', info=True) %}
+      {%- endif -%}
+      {%- do plan.update({column: {'resolved': resolved, 'metrics': wanted}}) -%}
+      {%- if wanted and resolved not in selected -%}{%- do selected.append(resolved) -%}{%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set parsed = {} -%}
+  {%- if selected -%}
+    {#- the query asks for the union of the metrics of each selected column: its own wanted list -#}
+    {%- set spec = [] -%}
+    {%- for resolved in selected -%}
+      {%- set wanted_for = [] -%}
+      {%- for column in requested if plan[column] is not none and plan[column]['resolved'] == resolved -%}
+        {%- for metric in plan[column]['metrics'] if metric not in wanted_for -%}{%- do wanted_for.append(metric) -%}{%- endfor -%}
+      {%- endfor -%}
+      {%- do spec.append({'column': resolved, 'metrics': wanted_for}) -%}
+    {%- endfor -%}
+    {%- set value = icecore._icecore_window_run(relation, window, 'compute_columns_metrics', spec, none) -%}
+    {%- if value is none -%}{{ return(none) }}{%- endif -%}
+    {%- set parsed = fromjson(value) if value is string else value -%}
+  {%- endif -%}
+  {%- set out = {} -%}
+  {%- for column in requested -%}
+    {%- if plan[column] is none -%}
+      {%- do out.update({column: none}) -%}
+    {%- else -%}
+      {%- set one = {} -%}
+      {%- if plan[column]['metrics'] -%}
+        {%- set index = selected.index(plan[column]['resolved']) | string -%}
+        {%- for metric in plan[column]['metrics'] -%}
+          {%- set v = parsed[index].get(metric) -%}
+          {%- do one.update({metric: (v | int) if (metric == 'window_rows' and v is not none) else v}) -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {%- do out.update({column: one}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(out) }}
+{% endmacro %}
+
+
 {#- Private --------------------------------------------------------------------------------------- -#}
 
 {#- Metric name -> aggregate over the window rows, where `c` is the quoted column.
@@ -129,10 +224,50 @@
   {%- set exprs = icecore._icecore_column_metric_exprs(c) -%}
   {%- set pairs = [] -%}
   {%- for metric in icecore._icecore_column_metric_names(metrics) -%}
-    {%- do pairs.append(icecore._icecore_sql_literal(metric) ~ ', ' ~ exprs[metric]) -%}
+    {%- do pairs.append(icecore._sql(metric, 'string') ~ ', ' ~ exprs[metric]) -%}
   {%- endfor -%}
   {{ return('select object_construct_keep_null(' ~ (pairs | join(', ')) ~ ') from ('
       ~ icecore._icecore_window_rows_sql(relation, window, [column_name]) ~ ') w') }}
+{% endmacro %}
+
+
+{#- The one query of several columns: select object_construct_keep_null('0', {metrics of the first column}, '1', ...)
+    over the window rows of just those columns. `spec` is [{column, metrics}]; keys are positions in spec, so no
+    column name is ever written into a string literal (names appear only as quoted identifiers).
+    TODO(PR #75): route the identifiers through the shared icecore._sql(..., 'name') helper once it is merged. -#}
+{% macro _icecore_columns_metrics_sql(relation, spec, window) %}
+  {%- set pairs = [] -%}
+  {%- set columns = [] -%}
+  {%- for item in spec -%}
+    {%- do columns.append(item['column']) -%}
+    {%- set exprs = icecore._icecore_column_metric_exprs(icecore._icecore_column_ref(item['column'])) -%}
+    {%- set inner = [] -%}
+    {%- for metric in item['metrics'] -%}
+      {%- do inner.append(icecore._sql(metric, 'string') ~ ', ' ~ exprs[metric]) -%}
+    {%- endfor -%}
+    {%- do pairs.append(icecore._sql(loop.index0 | string, 'string') ~ ', object_construct_keep_null(' ~ (inner | join(', ')) ~ ')') -%}
+  {%- endfor -%}
+  {{ return('select object_construct_keep_null(' ~ (pairs | join(', ')) ~ ') from ('
+      ~ icecore._icecore_window_rows_sql(relation, window, columns) ~ ') w') }}
+{% endmacro %}
+
+
+{#- {'value': {COLUMN_NAME: DATA_TYPE}} of every column of the relation, from one INFORMATION_SCHEMA read, or {'error'}.
+    No column name goes into the SQL. The database comes from the model's configured database (project config), so it is
+    validated against [A-Za-z0-9_] before it is quoted; anything else returns an error and nothing runs.
+    TODO(PR #75): quote database, schema and table through the shared icecore._sql(..., 'name') helper once it is merged. -#}
+{% macro _icecore_column_types_read(relation) %}
+  {%- set parts = icecore._icecore_name_parts(relation) -%}
+  {%- if not modules.re.match('^[A-Za-z0-9_]+\\Z', parts[0] | string) -%}
+    {{ return({'error': 'database name ' ~ (parts[0] | string | tojson) ~ ' is not a plain identifier; icecore reads only [A-Za-z0-9_] database names here'}) }}
+  {%- endif -%}
+  {%- set sql -%}
+    select coalesce(object_agg(column_name, data_type::variant), object_construct())
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.columns
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
+  {%- endset -%}
+  {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}
 
 
@@ -161,6 +296,9 @@
   {%- if what == 'compute_column_metrics' -%}
     {{ return(icecore._icecore_column_metrics_sql(relation, column, window, extra)) }}
   {%- endif -%}
+  {%- if what == 'compute_columns_metrics' -%}
+    {{ return(icecore._icecore_columns_metrics_sql(relation, column, window)) }}
+  {%- endif -%}
   {{ return(icecore._icecore_dimension_metrics_sql(relation, column, window, extra)) }}
 {% endmacro %}
 
@@ -188,6 +326,14 @@
     {% do log('icecore: warning: ' ~ what ~ ' could not read ' ~ icecore._icecore_quoted_name(relation) ~ ': column ' ~ column ~ ' not found', info=True) %}
     {{ return(none) }}
   {%- endif -%}
+  {{ return(icecore._icecore_window_run(relation, window, what, column, extra)) }}
+{% endmacro %}
+
+
+{#- The query and fallback part of _icecore_window_scalar, for a caller that has checked its columns itself
+    (compute_columns_metrics reads every column type in one query). `column` is a column name, or for
+    compute_columns_metrics the list of {column, metrics}. -#}
+{% macro _icecore_window_run(relation, window, what, column, extra) %}
   {%- set out = icecore._icecore_try_scalar(icecore._icecore_window_query(what, relation, column, window, extra)) -%}
   {%- if 'error' in out and window['mode'] == 'changes' and window.get('timestamp_column') is not none
         and out.get('code') in icecore._icecore_changes_window_error_codes() -%}
@@ -215,14 +361,14 @@
   {%- set refs = [] -%}
   {%- for col in columns -%}{%- do refs.append(icecore._icecore_column_ref(col)) -%}{%- endfor -%}
   {%- set select_list = refs | join(', ') -%}
-  {%- set since = icecore._icecore_sql_literal(window['since']) -%}
+  {%- set since = icecore._sql(window['since'], 'string') -%}
   {%- if window['mode'] == 'changes' -%}
     {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'], window.get('until'))
         ~ " where metadata$action = 'INSERT'") }}
   {%- endif -%}
   {%- set ts = icecore._icecore_column_ref(window['timestamp_column']) -%}
   {%- set ts_type = window['timestamp_type'] -%}
-  {%- set stop = icecore._icecore_sql_literal(window['until']) if window.get('until') is not none else none -%}
+  {%- set stop = icecore._sql(window['until'], 'string') if window.get('until') is not none else none -%}
   {%- if ts_type == 'DATE' -%}
     {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')::date') -%}
   {%- elif ts_type == 'TIMESTAMP_NTZ' -%}
@@ -277,9 +423,9 @@
   {%- set sql -%}
     select data_type
     from {{ icecore._sql(parts[0], 'name') }}.information_schema.columns
-    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
-      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
-      and column_name = {{ icecore._icecore_sql_literal(icecore._icecore_column_name(column_name)) }}
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
+      and column_name = {{ icecore._sql(icecore._icecore_column_name(column_name), 'string') }}
   {%- endset -%}
   {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}

@@ -49,17 +49,30 @@ def test_package_declares_the_obs_schema_var():
 
 
 def test_procedure_ddl_is_the_gate1_contract():
-    emit, emit_run = run_macro("it_procedure_ddl", {})
+    emit, emit_run, ack, notified, score = run_macro("it_procedure_ddl", {})
     schema = f'"{DATABASE}"."ICECORE_OBS"'
     assert emit.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_EMIT"(events ARRAY)')
     assert "LANGUAGE SQL" in emit and "EXECUTE AS OWNER" in emit
     assert "SYSTEM$ADD_EVENT(:nm, :a)" in emit
     assert "> 100" in emit  # refuses more than 100 events per CALL
+    assert "LOWER(nm) = 'icecore.ack'" in emit and "forbidden_event" in emit  # icecore.ack is ICECORE_ACK's only
+    assert "LOWER(nm) = 'icecore.notified'" in emit  # icecore.notified is ICECORE_NOTIFIED's only
+    assert 'if any(str(n or "").lower() == "icecore.notified" for n in names)' in emit_run
+    assert notified.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_NOTIFIED"(incident_key STRING, channel STRING)')
+    assert "LANGUAGE SQL" in notified and "EXECUTE AS OWNER" in notified and "CURRENT_USER()" in notified
+    assert "SYSTEM$ADD_EVENT('icecore.notified'" in notified and "invalid_incident_key" in notified
+    assert "EXECUTE IMMEDIATE" not in notified.upper() and "IDENTIFIER(" not in notified.upper()  # no object name from a caller
+    assert ack.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_ACK"(incident_key STRING)')
+    assert "LANGUAGE SQL" in ack and "EXECUTE AS OWNER" in ack and "CURRENT_USER()" in ack
+    assert f'{schema}."ALERTS_FEED"' in ack and "acknowledged_at IS NULL" in ack
+    assert "SYSTEM$ADD_EVENT('icecore.ack'" in ack
     assert emit_run.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_EMIT_RUN"(spans ARRAY)')
     assert "LANGUAGE PYTHON" in emit_run and "EXECUTE AS OWNER" in emit_run
     assert "PACKAGES = ('snowflake-snowpark-python', 'opentelemetry-api==1.38.0')" in emit_run
     assert "snowflake-telemetry-python" not in emit_run
     assert 'trace.get_tracer("icecore")' in emit_run and 'logging.getLogger("icecore")' in emit_run
+    assert score.startswith(f'CREATE OR REPLACE PROCEDURE {schema}."ICECORE_SCORE"(model STRING, series STRING, points ARRAY')
+    assert "RETURNS VARIANT" in score and "LANGUAGE SQL" in score and "EXECUTE AS OWNER" in score and "COPY GRANTS" in score
 
 
 def test_records_carry_prefix_base_attributes_and_message():
@@ -168,10 +181,10 @@ def params(obs, tag: str) -> dict:
 
 
 @pytest.mark.sandbox
-def test_create_emit_procedures_creates_both(sf, obs):
+def test_create_emit_procedures_creates_all_three(sf, obs):
     rows = sf.cursor().execute(f'show user procedures in schema "{DATABASE}"."{obs["schema"]}"').fetchall()
     names = sorted(r[1] for r in rows)
-    assert names == ["ICECORE_EMIT", "ICECORE_EMIT_RUN"]
+    assert names == ["ICECORE_ACK", "ICECORE_EMIT", "ICECORE_EMIT_RUN", "ICECORE_NOTIFIED", "ICECORE_SCORE"]
 
 
 @pytest.mark.sandbox

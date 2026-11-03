@@ -1,0 +1,246 @@
+"""UC6 alerts_feed view (macros/views/alerts_feed.sql) and icecore.acknowledge (macros/alerts/acknowledge.sql).
+
+Offline tests render the SQL. The sandbox test creates the emitter procedures and the views in a run_id-named schema,
+ICECORE_OBS_<run_id>; seeds a failed test (two `hooks_a+` builds, so two consecutive runs of the same failing test),
+one anomalous metric (icecore.emit_metric with a scored result) and one schema change; reads the feed; acknowledges
+the anomaly with icecore.acknowledge; and drops the schema at the end.
+"""
+import json
+import os
+import time
+import uuid
+
+import pytest
+from snowflake.connector import DictCursor
+
+from helpers.events import assert_no_events, wait_for_events
+from helpers.macros import MacroFailed, run_macro, run_macro_with_logs
+from helpers.run_hooks import (
+    drop_fixture_views, icecore_vars, invocation_records, obs_schema, run_with_hooks, snowflake_since,
+)
+
+DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
+
+
+def feed_sql(*icecore_vars_: dict, schema=None) -> str:
+    extra = ["--vars", json.dumps({"icecore": icecore_vars_[0]})] if icecore_vars_ else []
+    out = run_macro_with_logs("it_views_render", {"schema": schema}, extra)[0]
+    return {v["name"]: v["sql"] for v in out}["ALERTS_FEED"]
+
+
+# --- offline: rendering only, no connection ------------------------------------------------------
+
+def test_alerts_feed_is_one_of_the_created_views():
+    names = [v["name"] for v in run_macro("it_views_render", {"schema": None})]
+    assert names.count("ALERTS_FEED") == 1
+
+
+def test_feed_reads_base_events_and_unions_the_three_live_signals():
+    sql = feed_sql()
+    assert "from DB.TELEMETRY.EVENTS" in sql and "ICECORE_EMIT%" in sql
+    for needle in ["'node_result'", "record_name = 'icecore.metric'", "record_name = 'icecore.schema_change'",
+                   "where status in ('fail', 'error', 'warn')", "where anomaly_is_anomaly = true",
+                   "record_name = 'icecore.ack'", '"icecore.ack.incident_key"', '"icecore.ack.by"']:
+        assert needle in sql, needle
+
+
+def test_silence_and_cost_slots_are_empty_ctes_with_the_signal_columns():
+    sql = feed_sql()
+    for slot, story in [("silence_events", "uc6-silence"), ("cost_regressions", "cost-regression")]:
+        head, _, rest = sql.partition(f"{slot} as (")
+        body = rest.split("\n),", 1)[0]
+        assert "where false" in body, slot
+        for column in ["as kind", "as node_key", "as severity", "as title", "as detected_at", "as invocation_id"]:
+            assert column in body, (slot, column)
+        assert story in head.split("-- EMPTY SLOT")[-1], slot
+    assert "from silence_events" in sql and "from cost_regressions" in sql
+
+
+def test_incident_key_hashes_node_kind_and_window():
+    sql = feed_sql()
+    assert "md5(node_key || '|' || kind || '|' || window_epoch::string) as incident_key" in sql
+    assert "group by node_key, kind, window_epoch" in sql
+
+
+@pytest.mark.parametrize("setting, seconds", [({}, 86400), ({"alert_window_hours": 1}, 3600),
+                                              ({"alert_window_hours": 0.5}, 1800), ({"alert_window_hours": 0}, 86400),
+                                              ({"alert_window_hours": "junk"}, 86400)])
+def test_window_length_is_a_var_default_24_hours(setting, seconds):
+    sql = feed_sql(setting)
+    assert f"/ {seconds}) * {seconds} as window_epoch" in sql
+
+
+@pytest.mark.parametrize("key", ["", "not-a-key", "x" * 32])
+def test_acknowledge_needs_an_incident_key(key):
+    with pytest.raises(MacroFailed, match="incident_key"):
+        run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": key}})
+
+
+def test_acknowledge_takes_no_by_argument():
+    with pytest.raises(MacroFailed):
+        run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": "0" * 32, "by": "me"}})
+
+
+def test_feed_counts_only_acks_of_icecore_ack_at_or_after_first_detection():
+    sql = feed_sql()
+    assert "startswith(executable_name, 'ICECORE_ACK(')" in sql
+    assert "acks.event_at >= incidents.first_detected_at" in sql
+
+
+def test_base_events_admits_the_ack_procedure():
+    assert """startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')""" in feed_sql()
+
+
+# --- sandbox --------------------------------------------------------------------------------------
+
+SCORED = {"engine": "native", "expected": 1000.0, "lower": 900.0, "upper": 1100.0, "score": -3.2,
+          "is_anomaly": True, "fallback_reason": None}
+
+
+def _feed(sf, schema: str, where: str = "true", params=None) -> list:
+    sql = f'select * from "{DATABASE}"."{schema}"."ALERTS_FEED" where {where} order by kind'
+    return [{k.lower(): v for k, v in r.items()} for r in sf.cursor(DictCursor).execute(sql, params or {}).fetchall()]
+
+
+@pytest.fixture(scope="module")
+def seeded(dbt, sf):
+    run_id = uuid.uuid4().hex
+    with obs_schema(sf) as schema:
+        obs_vars = ["--vars", json.dumps(icecore_vars(schema))]
+        since = snowflake_since(sf)
+        invocations = []
+        try:
+            for _ in range(2):  # the same failing test on two consecutive runs
+                res, run_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, schema)
+                assert res.success, res.exception
+                invocations.append(run_results["metadata"]["invocation_id"])
+                invocation_records(sf, schema, invocations[-1], min_rows=14, since=since, settle_s=5)
+        finally:
+            drop_fixture_views(sf, run_id)
+        rel = {"database": DATABASE, "schema": "SPIKES", "identifier": f"it_feed_{run_id}", "quoted": True}
+        relation = f'"{DATABASE}"."SPIKES"."it_feed_{run_id}"'
+        run_macro("it_emit_metric", {"rel": rel, "metric": "row_count", "value": 100}, obs_vars)  # not anomalous
+        run_macro("it_emit_metric", {"rel": rel, "metric": "null_rate", "value": 0.5, "column": "amount",
+                                     "anomaly": SCORED}, obs_vars)
+        run_macro("it_emit_events", {"events": [{"kind": "schema_change", "attributes": {
+            "dbt.node.relation": relation, "dbt.schema.change_kind": "added", "dbt.schema.column": "NEW_COL",
+            "dbt.schema.to_type": "NUMBER(38,0)"}}]}, obs_vars)
+        wait_for_events(
+            sf, "resource_attributes:\"snow.database.name\"::string = %(db)s"
+                " and resource_attributes:\"snow.schema.name\"::string = %(schema)s and record_type = 'SPAN_EVENT'"
+                " and record:name::string in ('icecore.metric', 'icecore.schema_change')",
+            {"db": DATABASE, "schema": schema}, min_rows=3, since=since, settle_s=10)
+        run_macro("it_create_views", {"schema": schema}, obs_vars)
+        yield {"schema": schema, "obs_vars": obs_vars, "run_id": run_id, "invocations": invocations, "since": since,
+               "relation": relation}
+
+
+@pytest.mark.sandbox
+def test_failed_test_and_anomaly_are_two_rows_with_distinct_keys(seeded, sf):
+    rows = _feed(sf, seeded["schema"], "kind in ('test_failure', 'anomaly')")
+    assert sorted(r["kind"] for r in rows) == ["anomaly", "test_failure"]
+    assert len({r["incident_key"] for r in rows}) == 2
+    assert all(r["acknowledged_at"] is None and r["acknowledged_by"] is None for r in rows)
+
+
+@pytest.mark.sandbox
+def test_only_anomalous_metrics_and_one_schema_change_are_in_the_feed(seeded, sf):
+    rows = _feed(sf, seeded["schema"], "node_key like %(r)s", {"r": f"%it_feed_{seeded['run_id']}%"})
+    assert sorted(r["kind"] for r in rows) == ["anomaly", "schema_change"]
+    anomaly = next(r for r in rows if r["kind"] == "anomaly")
+    assert "null_rate" in anomaly["node_key"] and "row_count" not in anomaly["node_key"]
+
+
+@pytest.mark.sandbox
+def test_same_failure_on_two_runs_in_one_window_is_one_key(seeded, sf):
+    rows = _feed(sf, seeded["schema"], "kind = 'test_failure'")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["occurrences"] == 2 and r["last_invocation_id"] in seeded["invocations"]
+    assert r["first_detected_at"] < r["last_detected_at"] and r["severity"] == "warn"
+    assert r["node_key"].startswith("test.")
+
+
+@pytest.mark.sandbox
+def test_forged_ack_through_icecore_emit_is_refused_and_writes_nothing(seeded, sf):
+    key = _feed(sf, seeded["schema"], "kind = 'test_failure'")[0]["incident_key"]
+    since = snowflake_since(sf, 1)
+    out = run_macro("it_emit", {"kind": "ack", "attributes": {"icecore.ack.incident_key": key,
+                                                              "icecore.ack.by": "someone-else"}}, seeded["obs_vars"])
+    assert out["statuses"][0].startswith("icecore-error forbidden_event"), out
+    # the refusal is of the whole CALL: a batch holding one ack lands nothing
+    out = run_macro("it_emit_events", {"events": [{"kind": "metric_probe"}, {"kind": "icecore.ack", "attributes": {
+        "icecore.ack.incident_key": key}}]}, seeded["obs_vars"])
+    assert "forbidden_event" in str(out)
+    assert_no_events(
+        sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s"
+            " and record:name::string in ('icecore.ack', 'icecore.metric_probe')",
+        {"schema": seeded["schema"]}, wait_s=40, since=since)
+    assert _feed(sf, seeded["schema"], "incident_key = %(k)s", {"k": key})[0]["acknowledged_at"] is None
+
+
+@pytest.mark.sandbox
+def test_forged_ack_written_by_another_writer_is_ignored(seeded, sf):
+    key = _feed(sf, seeded["schema"], "kind = 'test_failure'")[0]["incident_key"]
+    since = snowflake_since(sf, 1)
+    now_ns = int(sf.cursor().execute("select date_part(epoch_second, current_timestamp())").fetchone()[0]) * 1_000_000_000  # Snowflake's clock
+    item = {"name": "icecore.forged", "start_ns": now_ns, "end_ns": now_ns, "attrs": {}, "events": [
+        {"name": "icecore.ack", "ts_ns": now_ns, "attrs": {"icecore.ack.incident_key": key, "icecore.ack.by": "forger"}}]}
+    run_macro("it_emit_run_items", {"items": [item]}, seeded["obs_vars"])
+    rows = wait_for_events(
+        sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s and record:name::string = 'icecore.ack'",
+        {"schema": seeded["schema"]}, since=since, settle_s=5)
+    assert [r["resource_attributes"]["snow.executable.name"].split("(")[0] for r in rows] == ["ICECORE_EMIT_RUN"]
+    assert _feed(sf, seeded["schema"], "incident_key = %(k)s", {"k": key})[0]["acknowledged_at"] is None
+
+
+@pytest.mark.sandbox
+def test_ack_of_a_key_that_is_no_incident_is_refused(seeded, sf):
+    out = run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": "0" * 32}},
+                              seeded["obs_vars"])[0]
+    assert out.startswith("icecore-error") and "not_an_open_incident" in out, out
+
+
+@pytest.mark.sandbox
+def test_ack_sets_acknowledged_at_and_by_the_caller_on_that_key_only(seeded, sf):
+    anomaly = _feed(sf, seeded["schema"], "kind = 'anomaly'")[0]
+    caller = sf.cursor().execute("select current_user()").fetchone()[0]
+    since = snowflake_since(sf, 1)
+    out = run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": anomaly["incident_key"]}},
+                              seeded["obs_vars"])[0]
+    assert out == "ok 1", out
+    rows = wait_for_events(
+        sf, "resource_attributes:\"snow.schema.name\"::string = %(schema)s and record:name::string = 'icecore.ack'"
+            " and startswith(resource_attributes:\"snow.executable.name\"::string, 'ICECORE_ACK(')",
+        {"schema": seeded["schema"]}, since=since, settle_s=5)
+    assert len(rows) == 1
+    feed = {r["kind"]: r for r in _feed(sf, seeded["schema"])}
+    assert feed["anomaly"]["acknowledged_at"] is not None
+    assert feed["anomaly"]["acknowledged_by"] == caller, (feed["anomaly"]["acknowledged_by"], caller)
+    assert feed["test_failure"]["acknowledged_at"] is None and feed["schema_change"]["acknowledged_at"] is None
+
+
+@pytest.mark.sandbox
+def test_an_acknowledged_incident_cannot_be_acknowledged_again(seeded, sf):
+    anomaly = _feed(sf, seeded["schema"], "kind = 'anomaly'")[0]
+    out = run_macro_with_logs("it_call", {"name": "acknowledge", "kwargs": {"incident_key": anomaly["incident_key"]}},
+                              seeded["obs_vars"])[0]
+    assert "not_an_open_incident" in out, out
+
+
+@pytest.mark.sandbox
+def test_an_ack_written_before_the_incident_existed_does_not_count(seeded, sf):
+    """The event table copied with the ack's TIMESTAMP moved 3 days back, as if written before the incident."""
+    copy = f'"{DATABASE}"."SPIKES"."it_ack_{seeded["run_id"]}"'
+    cur = sf.cursor()
+    cur.execute(f"create table {copy} as select * from {DATABASE}.TELEMETRY.EVENTS"
+                " where RESOURCE_ATTRIBUTES:\"snow.schema.name\"::string = %s", (seeded["schema"],))
+    try:
+        cur.execute(f"update {copy} set TIMESTAMP = dateadd(day, -3, TIMESTAMP) where RECORD:name::string = 'icecore.ack'")
+        views = run_macro("it_views_render", {"schema": seeded["schema"], "event_table": copy})
+        sql = {v["name"]: v["sql"] for v in views}["ALERTS_FEED"]
+        rows = {r["KIND"]: r for r in sf.cursor(DictCursor).execute(sql).fetchall()}
+        assert {"anomaly", "test_failure", "schema_change"} <= set(rows)
+        assert all(r["ACKNOWLEDGED_AT"] is None for r in rows.values())
+    finally:
+        cur.execute(f"drop table if exists {copy}")

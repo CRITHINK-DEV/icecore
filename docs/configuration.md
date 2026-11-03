@@ -127,7 +127,7 @@ Run these with `dbt run-operation`. Arguments go in `--args`.
 dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'
 ```
 
-`setup` runs these steps in order and prints one line for each: detect capabilities, create the schema, create the two procedures, set the database's log and trace levels, record the capabilities, print the cost estimate, create the views. It creates no tables. Running it again changes nothing, and grants made on the procedures and views are kept.
+`setup` runs these steps in order and prints one line for each: detect capabilities, create the schema, create the procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN` and `ICECORE_ACK`), set the database's log and trace levels, record the capabilities, print the cost estimate, create the views. It creates no tables. Running it again changes nothing, and grants made on the procedures and views are kept.
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ The role that runs `setup` needs:
 - CREATE PROCEDURE and CREATE VIEW on the schema;
 - read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table).
 
-`setup` changes the database's `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ON_EVENT` or `ALWAYS`, if its role may. When it may not, it prints the `ALTER DATABASE` statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
+`setup` sets `LOG_LEVEL` to at least `INFO` and `TRACE_LEVEL` to `ALWAYS` on the icecore schema (`ALTER SCHEMA <db>.<schema> SET ...`), if its role may; that needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account. The levels of the schema override the database's, so the rest of the database is not traced. `ON_EVENT` is not enough, because it drops the spans that `ICECORE_EMIT_RUN` writes without an event. When the role may not, `setup` prints the statement for an admin and carries on. It also prints, for an admin and never runs: `ALTER ACCOUNT SET EVENT_TABLE = SNOWFLAKE.TELEMETRY.EVENTS` when no event table is active, and a recommended `ALTER TABLE <event_table> CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)`. A `printed 1 for an admin` with sufficient levels is that clustering recommendation. It never runs `ALTER ACCOUNT`.
 
 ### `icecore.doctor`
 
@@ -188,16 +188,22 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | --- | --- | --- |
 | `ICECORE_EMIT` | SQL procedure | Writes span events. At most 100 events and 512 KB per `CALL`. |
 | `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
+| `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |
+| `INVOCATIONS` | view | One row per dbt invocation. |
+| `NODE_EXECUTIONS` | view | One row per node per invocation. |
 | `TEST_RESULTS` | view | One row per test per invocation. |
 | `LINEAGE` | view | One row per dependency edge per invocation. |
 | `LINEAGE_LATEST` | view | The edges of each project's latest invocation that wrote lineage. |
 | `CAPABILITIES` | view | The latest detection of edition, event table, levels and Cortex, per database. |
+| `SILENCE_EVENTS` | view | One row per missed run, written by the silence task. |
+
+Columns, types and source keys of every view are in the [views reference](reference/views.md).
 
 The procedures run with their owner's rights. The role that runs dbt needs USAGE on the database, the schema and both procedures. The role that runs dbt also needs SELECT on the views. Readers need USAGE on the database and schema, SELECT on the views, and the `EVENTS_VIEWER` application role when the views read the account table.
 
-Which view fills from which record today: `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness` and `icecore.volume` tests. `SCHEMA_CHANGES` stays empty until the test that writes it is merged.
+Which view fills from which record today: `INVOCATIONS`, `NODE_EXECUTIONS`, `TEST_RESULTS` and `LINEAGE` fill from the hooks, `CAPABILITIES` from `setup` and `doctor`, `METRICS` from the `icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` tests, `SCHEMA_CHANGES` from the `icecore.schema_changes` test, and `SILENCE_EVENTS` from the silence task.
 
 ## Generic tests
 

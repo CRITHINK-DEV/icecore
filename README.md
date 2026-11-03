@@ -74,10 +74,10 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 dbt run-operation icecore.doctor
 ```
 
-- `setup` detects the account's capabilities, creates the schema if it is missing, creates the procedures `ICECORE_EMIT` and `ICECORE_EMIT_RUN` and the views (`metrics`, `schema_changes`) in it, and checks the database's `LOG_LEVEL` and `TRACE_LEVEL`. When its role cannot set the levels, it prints the `ALTER DATABASE` statement for an admin. Running it again changes nothing, and grants on the procedures and views are kept. All arguments are optional; `schema` defaults to the `obs_schema` var (`ICECORE_OBS`). If you pass another schema, set the var to it too, because dbt runs write through the procedures of the var's schema.
+- `setup` detects the account's capabilities, creates the schema if it is missing, creates the procedures `ICECORE_EMIT` and `ICECORE_EMIT_RUN` and the views (`metrics`, `schema_changes`) in it, and checks the `LOG_LEVEL` and `TRACE_LEVEL` that apply to that schema. When its role cannot set them, it prints an `ALTER SCHEMA` statement for an admin (never a database-wide `TRACE_LEVEL`). Running it again changes nothing, and grants on the procedures and views are kept. All arguments are optional; `schema` defaults to the `obs_schema` var (`ICECORE_OBS`). If you pass another schema, set the var to it too, because dbt runs write through the procedures of the var's schema.
 - `setup` ends with an estimate of the rows icecore will write per month and the ingestion credits, from your node count and `runs_per_day`. Run it alone with `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`. For 100 nodes and 24 runs a day it estimates 149,760 rows and 0.0048 to 0.21 credits a month at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It prints its assumptions and sources.
 - `doctor` never fails. It checks the event table, the database's levels, makes one test `CALL` of each procedure, and counts icecore records of the last 24 hours. It ends with `OK: <n> icecore records in the last 24 h`, or with `no records in 24 h` and the likely cause, most often the hooks above.
-- The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table) ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
+- The role that runs `setup` needs USAGE on the database, CREATE SCHEMA on it (or an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema (CREATE TASK too when a model declares `meta.sla`; the silence procedure `ICECORE_SILENCE_CHECK` runs with its owner's rights, so grant USAGE on it to nobody but the task's owner: the dbt role never needs it), and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table) ([Gate 1](spikes/GATE1.md#what-setup-creates-and-the-grants-it-needs)).
 
 ### Configuration
 
@@ -90,10 +90,16 @@ vars:
     node_results: true       # end_run: one record per node result (status, rows, time, message, test failures)
     query_events: true       # end_run: the node's Snowflake query id, as an event on the node's span
     lineage: true            # end_run: the DAG's edges (parent, child unique ids) as LOG records
+    samples: false           # true: end_run writes up to sample_rows failed rows of each failed test that stores its failures
+    sample_rows: 10          # rows per sample
+    sample_exclude_columns: [] # column names whose sampled values become '?', for example [email, phone]
+    samples_on_warn: false   # true: also sample tests that only warned
     result_message: redacted # redacted, full or none
 ```
 
 `result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
+
+Samples are off by default because they copy real row values from your tables into the event table, and anyone who can read the event table can read them, which may be more people than can read the data. To turn them on, set `samples: true`: each failed test that stores its failures (`store_failures`) then writes up to `sample_rows` rows. To keep sensitive values out, list the columns in `sample_exclude_columns` (any case): their names stay in each row and their values become `?`.
 
 The pre-releases are tagged 0.1.0-alpha, 0.2.0-beta and 0.3.0-beta, before 1.0.0. Naming a prerelease in the range lets `dbt deps` install them; with the range above it picks the newest one below 1.0.0 (checked against dbt-core 1.8.10's resolver).
 
@@ -138,10 +144,10 @@ flowchart LR
 | **Run telemetry hooks** | `icecore.start_run()` and `icecore.end_run(results)`: invocation, node and test results, sent at `on-run-end` through `ICECORE_EMIT_RUN`, in as many `CALL`s as needed and grouped by `dbt.invocation_id`. | `building` |
 | **Monitor tests** | `icecore.freshness`, `icecore.volume`, `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.dimension_anomaly`. | `planned` |
 | **Setup and doctor** | `icecore.setup` creates the schema, the two emitter procedures and the views, and checks the levels; `icecore.doctor` checks the install and counts the last 24 hours of records. | `building` |
-| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; `metrics` and `schema_changes` exist, the rest follow. | `building` |
+| **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; all exist. | `building` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
 | **Missed-run detection** | A Snowflake task compares `meta.sla` schedules with the last successful run. | `planned` |
-| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `planned` |
+| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. Missed runs and cost regressions do not raise alerts yet. | `building` |
 | **Cortex engine and shadow scoring** | `SNOWFLAKE.ML.ANOMALY_DETECTION` when the account allows it, compared side by side with the native engine. | `planned` |
 | **Failed-row samples** | A capped sample of failing rows on test failure (payload limits from spike S2). | `planned` |
 | **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. | `planned` |
@@ -195,7 +201,11 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
+- [Public roadmap](docs/roadmap.md): what is built, what comes next and what is only considered.
+- [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
+- [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
+- [Troubleshooting](docs/troubleshooting.md): by symptom, with how to confirm and the fix.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 
 ## Develop icecore
@@ -211,7 +221,7 @@ The full guide is [docs/development.md](docs/development.md): the two dbt enviro
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
+Issues and pull requests are welcome. Read [CONTRIBUTING](CONTRIBUTING.md) first. Start with [Develop icecore](#develop-icecore) to run the test suites, and read the [design](docs/design/scope-and-architecture.md) before proposing a new module.
 
 <!-- enable at public release (Gate 3) -->
 <!--

@@ -167,7 +167,8 @@
 {% endmacro %}
 
 
-{#- Records -> lists of at most max_events records and max_bytes of the literal as it is sent: the escaped JSON
+{#- (size per record is its literal's length, quotes included: those two bytes stand for the ", " the array adds between records; the start of 4 is the two quotes and the two brackets.)
+    Records -> lists of at most max_events records and max_bytes of the literal as it is sent: the escaped JSON
     (backslash and quote doubled, `$` as four characters), not the raw JSON, which under-counts it up to four
     times. A record larger than max_bytes alone goes in a chunk of its own and is sent.
     (S2: a CALL keeps only its last 128 events, and lands none at about 1 MB.) -#}
@@ -175,7 +176,7 @@
   {%- set chunks = [] -%}
   {%- set ns = namespace(current=[], size=4) -%}
   {%- for record in records -%}
-    {%- set size = (icecore._sql(tojson(record), 'string') | length) - 1 -%}
+    {%- set size = icecore._sql(tojson(record), 'string') | length -%}
     {%- if ns.current and ((ns.current | length) >= max_events or ns.size + size > max_bytes) -%}
       {%- do chunks.append(ns.current) -%}
       {%- set ns.current = [] -%}
@@ -195,9 +196,9 @@
     icecore._icecore_procedure, from parts that went through icecore._sql: dotted, each part double-quoted with
     embedded quotes doubled. Any such name is accepted (a database like MY-DB or "My DB" is valid); what is checked
     is the structure, so a quote can never end a part early, plus the two things that matter inside a `$$` body:
-    no dollar sign and no control character. -#}
+    no `$$` and no control character (a single `$` is a valid name character). -#}
 {% macro _icecore_procedure_problem(procedure) %}
-  {%- if procedure is not string or not modules.re.match('^"(?:[^"\\x00-\\x1f\\x7f$]|"")+"(?:\\."(?:[^"\\x00-\\x1f\\x7f$]|"")+")*\\Z', procedure) -%}
+  {%- if procedure is not string or '$$' in procedure or not modules.re.match('^"(?:[^"\\x00-\\x1f\\x7f]|"")+"(?:\\."(?:[^"\\x00-\\x1f\\x7f]|"")+")*\\Z', procedure) -%}
     {{ return('icecore: invalid procedure name ' ~ ((procedure | string)[:60] | tojson) ~ ': build it with icecore._icecore_procedure') }}
   {%- endif -%}
   {{ return(none) }}

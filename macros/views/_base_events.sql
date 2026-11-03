@@ -29,7 +29,7 @@
   {%- endif -%}
   {%- set columns = [] -%}
   {%- for column, key, kind in icecore._icecore_base_event_attributes() -%}
-    {%- set path = 'RECORD_ATTRIBUTES:"' ~ key ~ '"::string' -%}
+    {%- set path = 'RECORD_ATTRIBUTES:' ~ icecore._sql(key, 'name') ~ '::string' -%}
     {%- if kind == 'string' -%}
       {%- do columns.append(path ~ ' as ' ~ column) -%}
     {%- else -%}
@@ -57,9 +57,11 @@ select
     RECORD_ATTRIBUTES as attributes
 from {{ event_table }}
 where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
-  and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(database)) }}
-  and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(obs_schema)) }}
-  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
+  and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._sql(icecore._icecore_stored_name(database), 'string') }}
+  and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._sql(icecore._icecore_stored_name(obs_schema), 'string') }}
+  and (RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
+       or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')
+       or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_NOTIFIED('))
   and (
     SCOPE:name::string = 'icecore'
     or (RECORD_TYPE = 'SPAN_EVENT' and RECORD:name::string like 'icecore.%')

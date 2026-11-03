@@ -7,7 +7,7 @@ macros:
       keeps the node-result LOGs (`icecore.kind = node_result`) of test nodes (unique id starting `test.`); a
       duplicated record collapses to the latest. Columns: `invocation_id`, `project`, `test_unique_id`,
       `test_name`, `test_type` (generic or singular), `"COLUMN"` (quote it), `severity`, `status`, `failures`,
-      `message` (redacted by default), `execution_time_s`, the scored-test fields `engine`, `expected`, `lower`,
+      `message` (redacted by default), `execution_time_s`, `root_cause_unique_id` and `root_cause_kind` (null unless root-cause attribution wrote them), the scored-test fields `engine`, `expected`, `lower`,
       `upper`, `score` (null unless the test wrote dbt.anomaly.* keys), `executed_at` (the event TIMESTAMP) and
       `query_id`. The spec's `model_unique_id` is not a column: no emitter writes it yet.
     arguments:

@@ -1,0 +1,1513 @@
+<!doctype html>
+<!--
+DIRECTION D: Console
+1. Idea: a quiet, dense, tabbed workspace that sits naturally beside a warehouse web console; every page has the same anatomy: title, 3-5 KPI tiles with sparklines, a filter bar, one chart, one table; a row click opens the node page.
+2. Suits: the platform lead doing the morning check and the engineer triaging an alert, who both want one predictable layout everywhere and plain status pills over decoration.
+3. Great: one learned pattern for ten sections; a transparent health score per layer (formula on hover); failures-first tables; lineage with status overlay and root-cause path; credits next to duration everywhere.
+4. Cost to build: low. About 90% maps 1:1 to stock Streamlit (st.metric, st.dataframe, st.tabs, Altair); the only custom component is the React Flow lineage. Roughly 1-2 weeks.
+5. Generated report: this file is the report. The CLI writes the views as JSON in place of icecore-mock-data.js; Acknowledge/Resolve stay local (session) in the static file.
+6. Streamlit: one st.navigation page per left-nav entry, URL state in st.query_params; the element map below says which widget renders what and what Streamlit cannot do natively.
+
+STREAMLIT ELEMENT MAP (target: Streamlit >= 1.45, local and in Snowflake)
+- Left nav with counts ............ st.navigation([st.Page(...)]) in the sidebar; counts go in the page title ("Incidents (4)"). No coloured badges natively.
+- Top bar search .................. st.selectbox over node names (accepts typing) -> st.switch_page + st.query_params["node"].
+- Theme toggle .................... built-in settings menu (light/dark); custom tokens via .streamlit/config.toml [theme] + [theme.dark].
+- Page header + KPI tiles ......... st.title + st.caption; st.columns(5) of st.metric(label, value, delta, help=..., border=True, chart_data=series, chart_type="line"|"bar").
+- Health score tile + formula ..... st.metric(..., help="formula as markdown"): the hover tooltip shows the formula. The bronze > silver > gold pipeline strip and per-component bars need st.html (static) or are dropped.
+- Filter bar ...................... st.columns with st.segmented_control / st.pills (status, layer, window), st.multiselect, st.text_input, st.number_input; values mirrored in st.query_params.
+- Primary table + status pills .... st.dataframe(df, column_config={TextColumn, NumberColumn(format), ProgressColumn, LineChartColumn/BarChartColumn for sparklines, LinkColumn}), hide_index=True.
+                                    Pills: no coloured chip column type; use emoji-prefixed TextColumn ("🔴 Failed") or pandas Styler cell colours.
+- Row click -> node page .......... st.dataframe(on_select="rerun", selection_mode="single-row") then st.switch_page("node.py") with st.query_params.
+- "Last 30 runs" strip ............ BarChartColumn of 0/1 values (no per-bar colour), or Altair rect heatmap.
+- Tabs (Open/Ack/Resolved etc.) ... st.tabs (labels carry counts). Note st.tabs renders all tabs every run; use st.segmented_control when tabs are heavy.
+- Acknowledge / Resolve ........... st.button per selected row (or st.data_editor checkbox column) -> UPDATE on the ack table -> st.rerun(); st.toast for feedback.
+- Charts .......................... Altair via st.altair_chart: bars + rule lines, band chart = mark_area(y=lower,y2=upper) + mark_line(expected, dashed) + mark_line(observed) + mark_point(anomaly);
+                                    Gantt = mark_bar(x=start, x2=end, y=node); timeline of incidents = mark_bar(x, x2). Chart click -> st.altair_chart(on_select="rerun") with a point selection.
+                                    (streamlit-echarts could reuse these ECharts options verbatim, but it is a third-party component.)
+- Shadow scoring (native vs Cortex) two st.columns of st.metric + st.dataframe of the joined points.
+- Lineage ......................... CUSTOM COMPONENT (React + reactflow@11 + dagre), the one place it is unavoidable: pan/zoom/minimap, status overlay, upstream/downstream highlight,
+                                    root-cause path, layer filter, search, node side panel; returns the clicked node id to Python (Streamlit.setComponentValue). Same bundle as the Native App.
+- Node side panel ................. st.dialog or a right st.columns pane.
+WHAT STREAMLIT CANNOT DO NATIVELY: coloured pills inside dataframe cells (only Styler/emoji); hover-linked highlight across charts and tables; inline expanding rows; a keyboard-first
+  table with sticky filter bar; badges in the nav; rich hover popovers (only plain `help` tooltips); any graph/lineage interaction; instant client-side ack without a rerun.
+-->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>icecore console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css">
+<style>
+:root{
+  --bg:#F3F5F7; --panel:#FFFFFF; --side:#F9FAFB; --ink:#17202D; --ink-2:#465265; --ink-3:#778194;
+  --line:#DFE3E9; --line-2:#ECEFF3; --hover:#F1F4F8; --sel:#E8F0FB;
+  --accent:#1D5FB0; --accent-soft:#E5EEF9; --band:rgba(29,95,176,.13); --bar:#A9BCD6;
+  --fail:#C2342A; --fail-soft:#FBE8E6; --warn:#A5680B; --warn-soft:#FBF0DC; --ok:#1E7A4F; --ok-soft:#E2F2E9;
+  --stale:#6A4DB8; --stale-soft:#EEE9FA; --muted:#8A93A1; --muted-soft:#EDEFF2;
+  --bronze:#A3632C; --silver:#7B8899; --gold:#B5880F; --transient:#3C8293; --sources:#98A1AE; --snapshot:#8A6BB3;
+  --shadow:0 1px 2px rgba(16,24,40,.05); --pop:0 10px 30px rgba(16,24,40,.16);
+  --font:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+[data-theme="dark"]{
+  --bg:#121821; --panel:#18202B; --side:#151C26; --ink:#E5EAF1; --ink-2:#AEB8C6; --ink-3:#7F8A9B;
+  --line:#28323F; --line-2:#212A36; --hover:#1E2733; --sel:#1C2B40;
+  --accent:#6EA6EE; --accent-soft:#1B2C44; --band:rgba(110,166,238,.18); --bar:#3C5476;
+  --fail:#F0766B; --fail-soft:#3A1F21; --warn:#E3A847; --warn-soft:#382B17; --ok:#5CC48E; --ok-soft:#173226;
+  --stale:#A592EE; --stale-soft:#2A2442; --muted:#7F8A9B; --muted-soft:#232C38;
+  --bronze:#CF8A4F; --silver:#A3B0C1; --gold:#DDB33E; --transient:#5FB0C2; --sources:#7F8A9B; --snapshot:#AA8FD6;
+  --shadow:0 1px 2px rgba(0,0,0,.3); --pop:0 10px 30px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.mono{font-family:var(--mono);font-size:11.5px}
+.muted{color:var(--ink-3)}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:48px minmax(0,1fr);height:100vh}
+/* top bar */
+.top{grid-column:1/3;display:flex;align-items:center;gap:16px;padding:0 16px 0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;letter-spacing:-.01em;width:186px}
+.brand svg{color:var(--accent)}
+.proj{display:flex;align-items:center;gap:8px;color:var(--ink-2)}
+.proj b{font-weight:600;color:var(--ink)}
+.env{font-size:11px;padding:1px 7px;border-radius:10px;background:var(--ok-soft);color:var(--ok);font-weight:600}
+.top .grow{flex:1}
+.gsearch{position:relative;width:min(340px,32vw)}
+.gsearch input{width:100%;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 10px 0 30px}
+.gsearch svg{position:absolute;left:9px;top:8px;color:var(--ink-3)}
+.gsearch .res{position:absolute;top:34px;left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--pop);z-index:50;max-height:320px;overflow:auto;padding:4px}
+.gsearch .res button{display:flex;width:100%;justify-content:space-between;gap:8px;border:0;background:none;padding:6px 8px;border-radius:5px;text-align:left;cursor:pointer}
+.gsearch .res button:hover,.gsearch .res button.on{background:var(--hover)}
+.asof{color:var(--ink-3);font-size:12px;white-space:nowrap}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;color:var(--ink-2)}
+.iconbtn:hover{background:var(--hover)}
+/* side nav */
+.side{background:var(--side);border-right:1px solid var(--line);overflow:auto;padding:12px 10px}
+.side hr{border:0;border-top:1px solid var(--line);margin:10px 6px}
+.nav{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--ink-2);text-align:left;font-weight:500}
+.nav:hover{background:var(--hover);color:var(--ink)}
+.nav.on{background:var(--sel);color:var(--accent);font-weight:600}
+.nav svg{flex:none}
+.nav .cnt{margin-left:auto;font-size:11px;font-weight:600;padding:0 6px;border-radius:9px;line-height:17px;background:var(--muted-soft);color:var(--ink-2)}
+.nav .cnt.fail{background:var(--fail-soft);color:var(--fail)} .nav .cnt.warn{background:var(--warn-soft);color:var(--warn)} .nav .cnt.stale{background:var(--stale-soft);color:var(--stale)}
+.side .foot{margin:14px 10px 0;color:var(--ink-3);font-size:11.5px;line-height:1.5}
+/* main */
+.main{overflow:auto;min-width:0}
+.page{padding:20px 28px 48px;max-width:1500px}
+.crumbs{color:var(--ink-3);font-size:12px;margin-bottom:4px}
+.crumbs button{border:0;background:none;padding:0;color:var(--accent);cursor:pointer}
+.ph{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}
+.ph h1{margin:0;font-size:21px;font-weight:650;letter-spacing:-.015em}
+.ph p{margin:3px 0 0;color:var(--ink-3);max-width:76ch}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 13px 10px;min-width:0;box-shadow:var(--shadow)}
+.kpi-label{color:var(--ink-2);font-size:12px;display:flex;gap:5px;align-items:center}
+.kpi-label .help{display:inline-flex;width:14px;height:14px;border-radius:50%;border:1px solid var(--line);font-size:9.5px;align-items:center;justify-content:center;color:var(--ink-3);cursor:help}
+.kpi-row{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-top:3px}
+.kpi-value{font-size:23px;font-weight:650;letter-spacing:-.02em;line-height:1.15;white-space:nowrap}
+.kpi-value .unit{font-size:13px;font-weight:500;color:var(--ink-3);margin-left:3px}
+.kpi-sub{color:var(--ink-3);font-size:11.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-fail{color:var(--fail)} .t-warn{color:var(--warn)} .t-ok{color:var(--ok)} .t-stale{color:var(--stale)}
+.delta{font-weight:600;margin-right:5px} .delta.bad{color:var(--fail)} .delta.good{color:var(--ok)} .delta.flat{color:var(--ink-3)}
+/* filter bar */
+.fbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:14px}
+.fgrp{display:flex;align-items:center;gap:7px}
+.fgrp > label,.fgrp > span.l{color:var(--ink-3);font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg)}
+.seg button{border:0;background:none;padding:4px 10px;cursor:pointer;color:var(--ink-2);font-size:12px;border-right:1px solid var(--line);white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--hover)}
+.seg button.on{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.seg button:disabled{opacity:.45;cursor:default}
+.inp{height:28px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 9px;min-width:0}
+.inp.num{width:70px}
+select.inp{padding-right:4px}
+/* cards */
+.grid2{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px}
+.grid2.even{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:14px;box-shadow:var(--shadow);min-width:0}
+.card-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 14px 0}
+.card-h h3{margin:0;font-size:13.5px;font-weight:650}
+.card-h p{margin:2px 0 0;color:var(--ink-3);font-size:12px}
+.card-b{padding:8px 14px 12px}
+.card-b.flush{padding:8px 0 0}
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{border:0;background:none;padding:8px 12px 9px;cursor:pointer;color:var(--ink-2);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;gap:7px;align-items:center}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.tab .n{font-size:11px;padding:0 6px;border-radius:9px;background:var(--muted-soft);color:var(--ink-2);line-height:17px}
+.tab .sev{font-size:11px;color:var(--ink-3);font-weight:400}
+/* table */
+.tbl-wrap{overflow:auto;border-top:1px solid var(--line-2)}
+.tbl{width:100%;border-collapse:separate;border-spacing:0}
+.tbl th{position:sticky;top:0;z-index:1;background:var(--panel);text-align:left;font-weight:600;color:var(--ink-2);font-size:12px;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+.tbl th.ns{cursor:default}
+.tbl th .sort{font-size:8px;margin-left:4px;color:var(--accent)}
+.tbl td{padding:6px 10px;border-bottom:1px solid var(--line-2);vertical-align:middle;white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis}
+.tbl td:first-child,.tbl th:first-child{padding-left:14px}
+.tbl tr.click{cursor:pointer}
+.tbl tr.click:hover td{background:var(--hover)}
+.tbl tr.sel td{background:var(--sel)}
+.tbl td.empty{text-align:center;color:var(--ink-3);padding:22px;white-space:normal}
+.tbl .num{text-align:right}
+.tbl .wrap{white-space:normal;min-width:220px}
+.cell2{display:flex;flex-direction:column;line-height:1.3}
+.cell2 small{color:var(--ink-3);font-size:11px}
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:1px 8px 1px 7px;border-radius:10px;line-height:18px;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-fail{background:var(--fail-soft);color:var(--fail)} .p-warn{background:var(--warn-soft);color:var(--warn)} .p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-stale{background:var(--stale-soft);color:var(--stale)} .p-muted{background:var(--muted-soft);color:var(--ink-2)} .p-info{background:var(--accent-soft);color:var(--accent)}
+.badge{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:0 7px;border-radius:4px;line-height:18px;border:1px solid var(--line);color:var(--ink-2);background:var(--panel);white-space:nowrap}
+.badge.cortex{border-color:var(--stale);color:var(--stale)}
+.badge.native{border-color:var(--accent);color:var(--accent)}
+.lyr{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-2)}
+.lyr i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;font-size:12px;font-weight:600;color:var(--ink)}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+[data-theme="dark"] .btn.primary{color:#0E1620}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent;background:none;color:var(--accent)}
+.strip{display:block}
+.empty-state{padding:26px 18px;text-align:center;color:var(--ink-2)}
+.empty-state b{display:block;color:var(--ink);margin-bottom:4px}
+.note{font-size:12px;color:var(--ink-3);margin-top:-4px;margin-bottom:12px}
+/* health pipeline */
+.health{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;align-items:stretch;margin-bottom:14px}
+.hjoin{display:flex;align-items:center;justify-content:center;color:var(--ink-3)}
+.htile{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px 12px 16px;box-shadow:var(--shadow);cursor:help;overflow:visible}
+.htile::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--lc)}
+.htile:hover,.htile:focus-visible{border-color:var(--lc)}
+.htop{display:flex;justify-content:space-between;align-items:baseline}
+.hname{font-weight:650;font-size:13.5px}
+.hname small{font-weight:400;color:var(--ink-3);margin-left:6px;font-size:12px}
+.hscore{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.hscore span{font-size:13px;color:var(--ink-3);font-weight:500;margin-left:2px}
+.hcomps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.hc{font-size:11px;color:var(--ink-3)}
+.hc .bar{height:4px;border-radius:2px;background:var(--line-2);margin:4px 0 2px;overflow:hidden}
+.hc .bar i{display:block;height:100%;border-radius:2px}
+.hc b{color:var(--ink-2);font-weight:600}
+.hpop{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:min(440px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--pop);padding:12px 14px;cursor:auto;color:var(--ink-2);font-size:12px;display:none}
+.htile:hover .hpop,.htile:focus-within .hpop,.htile:focus .hpop{display:block}
+.hpop h4{margin:0 0 6px;color:var(--ink);font-size:12.5px}
+.hpop .f{font-family:var(--mono);font-size:11px;background:var(--bg);border-radius:5px;padding:6px 8px;margin:6px 0;color:var(--ink)}
+.hpop table{width:100%;border-collapse:collapse;margin-top:4px}
+.hpop td{padding:3px 4px;border-top:1px solid var(--line-2);vertical-align:top}
+.hpop td.n{text-align:right;white-space:nowrap;color:var(--ink)}
+.hpop .drop{color:var(--ink-3);font-style:italic}
+/* lineage */
+.lin-wrap{position:relative;height:calc(100vh - 48px - 178px);min-height:540px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lin-wrap.mini{height:380px;min-height:0;border:0;border-radius:0}
+.lin-tools{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.ice-node{width:196px;height:48px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:6px 9px 6px 13px;position:relative;font-size:12px;color:var(--ink);box-shadow:var(--shadow);transition:opacity .15s}
+.ice-node .bar{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:7px 0 0 7px;background:var(--sc)}
+.ice-node .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:14px}
+.ice-node .meta{display:flex;gap:6px;align-items:center;color:var(--ink-3);font-size:10.5px;margin-top:2px;white-space:nowrap}
+.ice-node .meta i{width:7px;height:7px;border-radius:2px;display:inline-block}
+.ice-node .dot{position:absolute;right:8px;top:8px;width:8px;height:8px;border-radius:50%;background:var(--sc)}
+.ice-node .nb{margin-left:auto;color:var(--ink-2)}
+.ice-node .nb.f{color:var(--fail);font-weight:600}
+.ice-node.dim{opacity:.28}
+.ice-node.hl{border-color:var(--accent)}
+.ice-node.sel{box-shadow:0 0 0 2px var(--accent)}
+.ice-node.root{box-shadow:0 0 0 2px var(--fail);border-color:var(--fail)}
+.ice-node.impacted{border:1px dashed var(--warn)}
+.ice-node .tag{position:absolute;top:-9px;left:10px;font-size:10px;font-weight:700;padding:0 6px;border-radius:8px;line-height:16px}
+.ice-node .tag.r{background:var(--fail);color:#fff}
+.ice-node .tag.i{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+.s-failed{--sc:var(--fail)} .s-warn{--sc:var(--warn)} .s-ok{--sc:var(--ok)} .s-stale{--sc:var(--stale)} .s-notrun{--sc:var(--muted)}
+.react-flow__handle{opacity:0;width:4px;height:4px;min-width:0;min-height:0;border:0}
+.react-flow__attribution{background:transparent!important;font-size:9px}
+.react-flow__controls{box-shadow:var(--shadow);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.react-flow__controls-button{background:var(--panel);border-bottom:1px solid var(--line);fill:var(--ink-2)}
+.react-flow__controls-button:hover{background:var(--hover)}
+.react-flow__controls-button svg{fill:var(--ink-2)}
+.react-flow__minimap{background:var(--bg);border:1px solid var(--line);border-radius:6px}
+.lpanel{position:absolute;z-index:6;top:10px;right:10px;width:310px;max-height:calc(100% - 20px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--pop);padding:12px 14px}
+.lpanel h4{margin:0;font-size:14px;word-break:break-all}
+.lpanel .x{position:absolute;right:8px;top:8px}
+.lpanel dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0;font-size:12px}
+.lpanel dt{color:var(--ink-3)} .lpanel dd{margin:0;text-align:right}
+.lpanel .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.lpanel ul{margin:4px 0 0;padding-left:16px;color:var(--ink-2)}
+.lpanel .sec{border-top:1px solid var(--line-2);margin-top:10px;padding-top:8px}
+.lpanel .sec > b{font-size:12px}
+.rc-box{background:var(--fail-soft);color:var(--ink);border-radius:6px;padding:8px 10px;margin-top:8px;font-size:12px}
+.legend{position:absolute;z-index:5;left:10px;top:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;box-shadow:var(--shadow);font-size:11.5px;display:flex;flex-direction:column;gap:3px;max-width:240px}
+.legend .row{display:flex;align-items:center;gap:7px;color:var(--ink-2)}
+.legend .row i{width:9px;height:9px;border-radius:50%}
+.legend .row b{margin-left:auto;color:var(--ink);font-weight:600;padding-left:12px}
+.legend .fl{border-top:1px solid var(--line-2);margin-top:5px;padding-top:6px}
+.legend .fl button{display:block;border:0;background:none;padding:2px 0;color:var(--fail);cursor:pointer;font-weight:600;text-align:left}
+.toast{position:fixed;right:18px;bottom:18px;z-index:100;background:var(--ink);color:var(--panel);padding:9px 14px;border-radius:7px;box-shadow:var(--pop);font-size:12.5px;max-width:420px}
+.kv{display:grid;grid-template-columns:200px 1fr;gap:0;font-size:12.5px}
+.kv div{padding:7px 14px;border-bottom:1px solid var(--line-2)}
+.kv div:nth-child(odd){color:var(--ink-3)}
+.reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.reasons span{font-size:12px;color:var(--ink-2);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 7px}
+.hstack{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.linkish{border:0;background:none;padding:0;color:var(--accent);cursor:pointer;font-weight:500}
+.linkish:hover{text-decoration:underline}
+@media (max-width:1180px){ .grid2,.grid2.even{grid-template-columns:minmax(0,1fr)} .page{padding:16px 18px 40px} }
+@media (max-width:1100px){ .app{grid-template-columns:196px minmax(0,1fr)} .brand{width:164px} .asof{display:none} .hcomps{grid-template-columns:repeat(2,1fr)} }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<noscript>This report needs JavaScript to render.</noscript>
+<script src="icecore-mock-data.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/reactflow@11.11.4/dist/umd/index.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.25.6/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef, useContext, createContext, Fragment } = React;
+const RF = window.ReactFlow;
+const ReactFlowView = RF.default || RF.ReactFlow;
+const { MiniMap, Controls, Background, Handle, Position, MarkerType, useReactFlow } = RF;
+const D = window.ICECORE_DATA;
+
+/* ---------------- time + format helpers ---------------- */
+const MS = { s: 1e3, m: 60e3, h: 3600e3, d: 86400e3 };
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const pad = n => String(n).padStart(2, '0');
+const parseT = s => (s ? new Date(String(s).slice(0, 23)).getTime() : null);
+const fmtDay = t => { const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()}`; };
+const fmtTs = t => { if (t == null) return '—'; const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtRun = t => { const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtSec = s => (s == null ? '—' : s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
+const fmtSpan = ms => { const a = Math.abs(ms); return a < MS.h ? `${Math.round(a / MS.m)} min` : a < 2 * MS.d ? `${(a / MS.h).toFixed(1)} h` : `${(a / MS.d).toFixed(1)} days`; };
+const fmtCr = c => (c == null ? '—' : c < 0.1 ? c.toFixed(4) : c.toFixed(3));
+const fmtNum = v => { if (v == null) return '—'; const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : a >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : v.toLocaleString('en-US'); };
+const pct = v => (v == null ? 'n/a' : `${v.toFixed(v >= 99.95 || v === 0 ? 0 : 1)}%`);
+const durStr = s => { const m = /^(\d+(?:\.\d+)?)([smhd])$/.exec(s || ''); return m ? +m[1] * MS[m[2]] : 0; };
+const sum = a => a.reduce((x, y) => x + (y || 0), 0);
+const median = a => { const b = a.filter(v => v != null).sort((x, y) => x - y); if (!b.length) return null; const m = Math.floor(b.length / 2); return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+const humanMetric = m => ({ row_count: 'Row count', freshness_lag_minutes: 'Freshness lag' }[m] || m.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()));
+const metricUnit = m => (/minutes$/.test(m) ? 'minutes' : m === 'row_count' ? 'rows' : 'value');
+const RC_KIND = { stale_source: 'Stale source' };
+const rcKind = k => (k ? RC_KIND[k] || k.replace(/_/g, ' ') : '');
+
+/* ---------------- data model (derived only from window.ICECORE_DATA) ---------------- */
+const RUNS = [...D.runs].sort((a, b) => parseT(a.started_at) - parseT(b.started_at)).map((r, i) => ({ ...r, t: parseT(r.started_at), idx: i }));
+const NR = RUNS.length, LAST = NR - 1;
+const RUN_IDX = {}; RUNS.forEach((r, i) => { RUN_IDX[r.invocation_id] = i; });
+const AS_OF = Math.max(parseT(D.generated_at), ...RUNS.map(r => r.t + r.duration_s * 1000));
+const NODE = {}; D.nodes.forEach(n => { NODE[n.unique_id] = n; });
+const ASSETS = D.nodes.filter(n => n.type !== 'test');
+const TESTS = D.nodes.filter(n => n.type === 'test');
+const BY_NAME = {}; ASSETS.forEach(n => { BY_NAME[n.name] = n.unique_id; });
+const PARENTS = {}, CHILDREN = {};
+ASSETS.forEach(n => { PARENTS[n.unique_id] = n.depends_on.filter(p => NODE[p] && NODE[p].type !== 'test'); CHILDREN[n.unique_id] = []; });
+ASSETS.forEach(n => PARENTS[n.unique_id].forEach(p => CHILDREN[p].push(n.unique_id)));
+const testTarget = t => { const d = (t.depends_on || []).filter(x => NODE[x]); return d.length ? d[d.length - 1] : null; };
+const TESTS_OF = {}; TESTS.forEach(t => { const m = testTarget(t); if (m) { (TESTS_OF[m] = TESTS_OF[m] || []).push(t.unique_id); } });
+const TR = {}, TRF = {};
+D.test_results.forEach(r => {
+  const i = RUN_IDX[r.invocation_id]; if (i == null) return;
+  if (!TR[r.test_unique_id]) { TR[r.test_unique_id] = Array(NR).fill(null); TRF[r.test_unique_id] = Array(NR).fill(null); }
+  TR[r.test_unique_id][i] = r.status; TRF[r.test_unique_id][i] = r.failures;
+});
+const isBad = s => s === 'fail' || s === 'error';
+const TRC = {};
+D.test_results.forEach(r => { const i = RUN_IDX[r.invocation_id]; if (i == null || !r.root_cause_unique_id) return; if (!TRC[r.test_unique_id] || i > TRC[r.test_unique_id].i) TRC[r.test_unique_id] = { id: r.root_cause_unique_id, kind: r.root_cause_kind, i }; });
+const latestIdx = tid => { const a = TR[tid]; if (!a) return -1; for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return i; return -1; };
+const latestTest = tid => { const i = latestIdx(tid); return i < 0 ? null : TR[tid][i]; };
+const FAILS = RUNS.map((r, i) => TESTS.filter(t => TR[t.unique_id] && isBad(TR[t.unique_id][i])).length);
+const TESTED = RUNS.map((r, i) => TESTS.filter(t => TR[t.unique_id] && TR[t.unique_id][i] != null).length);
+const EX = {}, EX_RUN = {};
+D.node_executions.forEach(e => {
+  const i = RUN_IDX[e.invocation_id]; if (i == null) return;
+  const x = { ...e, t: parseT(e.started_at), i };
+  if (!EX[e.unique_id]) EX[e.unique_id] = Array(NR).fill(null);
+  EX[e.unique_id][i] = x; (EX_RUN[e.invocation_id] = EX_RUN[e.invocation_id] || []).push(x);
+});
+Object.values(EX_RUN).forEach(a => a.sort((x, y) => x.t - y.t));
+const SERIES = {};
+D.metrics.forEach(m => {
+  const k = m.unique_id + '|' + m.metric;
+  if (!SERIES[k]) SERIES[k] = { key: k, uid: m.unique_id, relation: m.relation, metric: m.metric, pts: {} };
+  (SERIES[k].pts[m.engine] = SERIES[k].pts[m.engine] || []).push({ ...m, t: parseT(m.observed_at) });
+});
+Object.values(SERIES).forEach(s => Object.values(s.pts).forEach(a => a.sort((x, y) => x.t - y.t)));
+const SERIES_LIST = Object.values(SERIES);
+const seriesLatest = s => { let best = null; Object.values(s.pts).forEach(a => { const p = a[a.length - 1]; if (p && (!best || p.t > best.t)) best = p; }); return best; };
+const seriesAnomalous = s => Object.values(s.pts).some(a => a.length && a[a.length - 1].anomaly);
+const SLAS = D.slas.map(s => { const last = parseT(s.last_success_at); const allowed = durStr(s.expected_every) + durStr(s.grace); const due = last + allowed; return { ...s, last, allowed, due, late: AS_OF > due, used: (AS_OF - last) / allowed }; });
+const SLA_BY = {}; SLAS.forEach(s => { SLA_BY[s.unique_id] = s; });
+const FRESH = {}; D.source_freshness.forEach(f => { FRESH[f.unique_id] = f; });
+const SCHEMA = D.schema_changes.map(c => ({ ...c, t: parseT(c.detected_at) })).sort((a, b) => b.t - a.t);
+const CAP = D.capabilities || {};
+
+const LAYER_GROUP = l => ({ gold_analytics: 'gold', gold: 'gold', silver: 'silver', bronze: 'bronze', transient: 'transient', seed: 'sources', source: 'sources', snapshot: 'snapshot' }[l] || l);
+const LAYER_LABEL = { sources: 'Sources & seeds', transient: 'Transient', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', snapshot: 'Snapshots' };
+const LAYER_ORDER = ['sources', 'transient', 'bronze', 'silver', 'gold', 'snapshot'];
+const KIND_LABEL = { test_failure: 'Test failure', anomaly: 'Anomaly', schema_change: 'Schema change', silence: 'Missed schedule', cost: 'Cost' };
+const STATUS_LABEL = { failed: 'Failed', warn: 'Warning', stale: 'Late', ok: 'OK', notrun: 'Not run' };
+const STATUS_TONE = { failed: 'fail', warn: 'warn', stale: 'stale', ok: 'ok', notrun: 'muted' };
+const CHANGE_LABEL = { added: 'Column added', removed: 'Column removed', type_changed: 'Type changed' };
+
+const incNode = inc => { if (inc.node_unique_id && NODE[inc.node_unique_id]) return inc.node_unique_id; if (NODE[inc.node]) return inc.node; return BY_NAME[String(inc.node).split('|')[0]] || null; };
+const incAsset = inc => { const id = incNode(inc); if (!id) return null; return NODE[id].type === 'test' ? testTarget(NODE[id]) : id; };
+const declaredRoot = id => { for (const t of (TESTS_OF[id] || [])) if (isBad(latestTest(t)) && TRC[t] && NODE[TRC[t].id]) return TRC[t];
+  const inc = D.incidents.find(i => i.root_cause && NODE[i.root_cause] && incAsset(i) === id); return inc ? { id: inc.root_cause, kind: inc.root_cause_kind } : null; };
+const incTarget = inc => String(inc.node).split('|')[0].replace(/^test\.[^.]+\./, '').replace(/\.[0-9a-f]{10}$/, '');
+
+function computeStatus(incidents) {
+  const rank = { ok: 0, notrun: 1, warn: 2, stale: 3, failed: 4 };
+  const st = {};
+  ASSETS.forEach(n => {
+    const id = n.unique_id; let s = 'ok'; const reasons = [];
+    const up = (x, r) => { reasons.push(r); if (rank[x] > rank[s]) s = x; };
+    const ex = EX[id] ? EX[id][LAST] : null;
+    if (n.type === 'source') { const f = FRESH[id]; if (f && f.max_lag_min != null && f.freshness_lag_min > f.max_lag_min) up('stale', `Source data is ${fmtSpan(f.freshness_lag_min * MS.m)} old (limit ${f.max_lag_min} min)`); }
+    else if (!ex) up('notrun', 'Not built in the latest run');
+    else if (ex.status !== 'success') up('failed', 'Build failed in the latest run');
+    const tids = TESTS_OF[id] || [];
+    const ft = tids.filter(t => isBad(latestTest(t))); if (ft.length) up('failed', `${ft.length} failing test${ft.length > 1 ? 's' : ''}`);
+    const wt = tids.filter(t => latestTest(t) === 'warn'); if (wt.length) up('warn', `${wt.length} test warning${wt.length > 1 ? 's' : ''}`);
+    SERIES_LIST.filter(x => x.uid === id && seriesAnomalous(x)).forEach(x => up('warn', `${humanMetric(x.metric)} outside its expected band`));
+    const sla = SLA_BY[id]; if (sla && sla.late) up('stale', `Missed its ${sla.expected_every} schedule`);
+    incidents.filter(i => i.state !== 'resolved' && i.kind !== 'test_failure' && incAsset(i) === id)
+      .forEach(i => up(i.kind === 'silence' ? 'stale' : (i.severity === 'error' ? 'failed' : 'warn'), i.title));
+    st[id] = { status: s, reasons };
+  });
+  return st;
+}
+
+const WEIGHTS = { tests: 0.5, fresh: 0.2, sched: 0.15, anom: 0.15 };
+function computeHealth(incidents) {
+  return ['bronze', 'silver', 'gold'].map(L => {
+    const models = ASSETS.filter(n => LAYER_GROUP(n.layer) === L);
+    const ids = new Set(models.map(m => m.unique_id));
+    let pass = 0, warn = 0, fail = 0;
+    TESTS.filter(t => ids.has(testTarget(t))).forEach(t => { const s = latestTest(t.unique_id); if (s === 'pass') pass++; else if (s === 'warn') warn++; else if (s) fail++; });
+    const nt = pass + warn + fail;
+    const built = models.filter(m => EX[m.unique_id] && EX[m.unique_id][LAST]);
+    const okb = built.filter(m => EX[m.unique_id][LAST].status === 'success');
+    const slas = SLAS.filter(s => ids.has(s.unique_id));
+    const missed = slas.filter(s => s.late || incidents.some(i => i.kind === 'silence' && i.state !== 'resolved' && incAsset(i) === s.unique_id));
+    const ser = SERIES_LIST.filter(s => ids.has(s.uid)); const an = ser.filter(seriesAnomalous);
+    const comps = [
+      { key: 'tests', label: 'Tests', w: WEIGHTS.tests, v: nt ? (pass * 100 + warn * 50) / nt : null, detail: nt ? `(${pass} pass × 100 + ${warn} warn × 50 + ${fail} fail × 0) ÷ ${nt} tests` : 'No tests attached to this layer' },
+      { key: 'fresh', label: 'Freshness', w: WEIGHTS.fresh, v: built.length ? okb.length / built.length * 100 : null, detail: built.length ? `${okb.length} of ${built.length} models built successfully in the latest run` : 'No model built in the latest run' },
+      { key: 'sched', label: 'Schedules', w: WEIGHTS.sched, v: slas.length ? (slas.length - missed.length) / slas.length * 100 : null, detail: slas.length ? `${slas.length - missed.length} of ${slas.length} declared schedules met (late now or open missed-schedule alert counts as missed)` : 'No schedule declared in this layer' },
+      { key: 'anom', label: 'Anomalies', w: WEIGHTS.anom, v: ser.length ? (ser.length - an.length) / ser.length * 100 : null, detail: ser.length ? `${ser.length - an.length} of ${ser.length} monitored metrics inside their expected band` : 'No monitored metric in this layer' },
+    ];
+    const used = comps.filter(c => c.v != null); const W = sum(used.map(c => c.w));
+    const score = W ? sum(used.map(c => c.w * c.v)) / W : null;
+    return { layer: L, score, comps, W, models: models.length, tests: nt, fail };
+  });
+}
+
+/* ---------------- theme + chart helpers ---------------- */
+const Ctx = createContext(null);
+const useApp = () => useContext(Ctx);
+const pal = () => {
+  const cs = getComputedStyle(document.documentElement); const g = n => cs.getPropertyValue('--' + n).trim();
+  return { bg: g('bg'), panel: g('panel'), ink: g('ink'), ink2: g('ink-2'), ink3: g('ink-3'), line: g('line'), line2: g('line-2'), accent: g('accent'), accentSoft: g('accent-soft'), band: g('band'), bar: g('bar'),
+    fail: g('fail'), warn: g('warn'), ok: g('ok'), stale: g('stale'), muted: g('muted'), bronze: g('bronze'), silver: g('silver'), gold: g('gold'), transient: g('transient'), sources: g('sources'), snapshot: g('snapshot') };
+};
+const statusColor = (p, s) => ({ failed: p.fail, warn: p.warn, stale: p.stale, ok: p.ok, notrun: p.muted }[s] || p.muted);
+const layerColor = (p, g) => p[g] || p.muted;
+const FONT = '"Public Sans",system-ui,sans-serif';
+const base = (p, o) => Object.assign({
+  animationDuration: 250, textStyle: { fontFamily: FONT, color: p.ink2, fontSize: 11 },
+  grid: { left: 64, right: 24, top: 30, bottom: 50 },
+  tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12, fontFamily: FONT }, extraCssText: 'box-shadow:0 6px 18px rgba(0,0,0,.14);border-radius:6px;' },
+  legend: { top: 0, right: 0, textStyle: { color: p.ink2, fontSize: 11 }, itemWidth: 12, itemHeight: 8, icon: 'roundRect' },
+}, o);
+const ax = (p, name, extra) => Object.assign({
+  name, nameLocation: 'middle', nameGap: 32, nameTextStyle: { color: p.ink3, fontSize: 11 },
+  axisLine: { lineStyle: { color: p.line } }, axisTick: { show: false }, axisLabel: { color: p.ink3, fontSize: 10.5 },
+  splitLine: { lineStyle: { color: p.line2 } },
+}, extra || {});
+
+function EChart({ option, height = 260, onClick }) {
+  const ref = useRef(null), inst = useRef(null), cb = useRef(onClick);
+  cb.current = onClick;
+  useEffect(() => {
+    const c = echarts.init(ref.current, null, { renderer: 'canvas' }); inst.current = c;
+    c.on('click', e => cb.current && cb.current(e));
+    const ro = new ResizeObserver(() => c.resize()); ro.observe(ref.current);
+    return () => { ro.disconnect(); c.dispose(); inst.current = null; };
+  }, []);
+  useEffect(() => { if (inst.current) inst.current.setOption(option, true); }, [option]);
+  return <div ref={ref} style={{ height, width: '100%', cursor: onClick ? 'pointer' : 'default' }} />;
+}
+
+/* ---------------- small UI atoms ---------------- */
+const Ic = ({ d, s = 16 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>;
+const ICON = {
+  overview: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
+  incidents: <><path d="M12 3 2.5 20h19z"/><path d="M12 10v4"/><path d="M12 17h.01"/></>,
+  tests: <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
+  runs: <><path d="M4 6h9"/><path d="M8 12h12"/><path d="M6 18h8"/></>,
+  fresh: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+  schema: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M10 10v10"/></>,
+  cost: <><circle cx="12" cy="12" r="9"/><path d="M15 9.2c-.5-.8-1.6-1.3-3-1.3-1.8 0-3 .8-3 2s1.2 1.7 3 2.1 3 .9 3 2.1-1.2 2-3 2c-1.4 0-2.5-.5-3-1.3"/><path d="M12 6v1.9M12 16.1V18"/></>,
+  lineage: <><circle cx="5" cy="6" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="12" r="2.2"/><path d="M7.2 6H10l6.8 5.2M7.2 18H10l6.8-5.2"/></>,
+  models: <><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></>,
+  settings: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></>,
+  search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
+  moon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>,
+  sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
+  close: <path d="M6 6l12 12M18 6 6 18"/>,
+  chev: <path d="m9 6 6 6-6 6"/>,
+  core: <><path d="M12 2v20"/><rect x="7" y="3" width="10" height="18" rx="5"/><path d="M7 9h10M7 14h10"/></>,
+};
+const Pill = ({ tone, children }) => <span className={'pill p-' + tone}>{children}</span>;
+const StatusPill = ({ s }) => <Pill tone={STATUS_TONE[s] || 'muted'}>{STATUS_LABEL[s] || s}</Pill>;
+const SevPill = ({ s }) => <Pill tone={s === 'error' ? 'fail' : s === 'warn' ? 'warn' : 'muted'}>{s === 'error' ? 'Error' : s === 'warn' ? 'Warning' : s}</Pill>;
+const RunPill = ({ s }) => <Pill tone={s === 'success' ? 'ok' : 'fail'}>{s === 'success' ? 'Success' : 'Error'}</Pill>;
+const TestPill = ({ s }) => (s == null ? <Pill tone="muted">No result</Pill> : <Pill tone={s === 'pass' ? 'ok' : s === 'warn' ? 'warn' : 'fail'}>{s === 'pass' ? 'Pass' : s === 'warn' ? 'Warning' : s === 'error' ? 'Error' : 'Fail'}</Pill>);
+const EngineBadge = ({ e }) => <span className={'badge ' + e}>{e === 'cortex' ? 'Cortex' : 'Native'}</span>;
+const Layer = ({ l }) => { const g = LAYER_GROUP(l); return <span className="lyr"><i style={{ background: `var(--${g})` }} />{l === 'gold_analytics' ? 'Gold (analytics)' : LAYER_LABEL[g] || l}</span>; };
+
+function Spark({ data, tone = 'accent', w = 84, h = 28, type = 'line' }) {
+  const vals = data.map(v => (v == null ? null : +v)); const nums = vals.filter(v => v != null);
+  if (nums.length < 2) return null;
+  const color = `var(--${tone === 'muted' ? 'ink-3' : tone})`;
+  let min = type === 'bar' ? 0 : Math.min(...nums); const max = Math.max(...nums); const r = max - min || 1;
+  const y = v => h - 2 - (v - min) / r * (h - 5);
+  if (type === 'bar') {
+    const bw = w / vals.length;
+    return <svg width={w} height={h} className="strip" aria-hidden="true">{vals.map((v, i) => v == null ? null : <rect key={i} x={i * bw + .5} y={max === 0 ? h - 1 : y(v)} width={Math.max(1, bw - 1.2)} height={max === 0 ? 1 : h - y(v)} fill={color} opacity={v ? 1 : .35} rx="0.5" />)}</svg>;
+  }
+  const x = i => i * (w - 4) / (vals.length - 1) + 2;
+  let d = '', pen = false;
+  vals.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
+  let li = vals.length - 1; while (li > 0 && vals[li] == null) li--;
+  return <svg width={w} height={h} className="strip" aria-hidden="true"><path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" /><circle cx={x(li)} cy={y(vals[li])} r="2.2" fill={color} /></svg>;
+}
+
+function RunStrip({ arr }) {
+  const w = 4, gap = 1.5;
+  return <svg width={arr.length * (w + gap)} height={14} className="strip" aria-label="Results of the last runs">{arr.map((s, i) => <rect key={i} x={i * (w + gap)} y={s == null ? 6 : 1} width={w} height={s == null ? 2 : 12} rx="1" fill={s == null ? 'var(--line)' : s === 'pass' ? 'var(--ok)' : s === 'warn' ? 'var(--warn)' : 'var(--fail)'} opacity={s === 'pass' ? .55 : 1}><title>{fmtRun(RUNS[i].t)}: {s || 'not run'}</title></rect>)}</svg>;
+}
+
+function Kpi({ label, value, unit, sub, tone, spark, sparkType, sparkTone, help, delta }) {
+  return <div className="kpi">
+    <div className="kpi-label">{label}{help && <span className="help" title={help} tabIndex={0} aria-label={help}>?</span>}</div>
+    <div className="kpi-row"><div className={'kpi-value ' + (tone ? 't-' + tone : '')}>{value}{unit && <span className="unit">{unit}</span>}</div>{spark && <Spark data={spark} type={sparkType} tone={sparkTone || tone || 'accent'} />}</div>
+    {(sub || delta) && <div className="kpi-sub">{delta}{sub}</div>}
+  </div>;
+}
+const Delta = ({ v, goodWhenDown, fmt }) => { if (v == null || !isFinite(v)) return null; const flat = Math.abs(v) < 1e-9; const bad = !flat && (goodWhenDown ? v > 0 : v < 0); return <span className={'delta ' + (flat ? 'flat' : bad ? 'bad' : 'good')}>{v > 0 ? '+' : ''}{fmt ? fmt(v) : v}</span>; };
+
+function Seg({ options, value, onChange, label }) {
+  return <div className="fgrp">{label && <span className="l">{label}</span>}<div className="seg" role="group" aria-label={label}>{options.map(o => { const [k, l, dis] = Array.isArray(o) ? o : [o, o]; return <button key={k} className={value === k ? 'on' : ''} aria-pressed={value === k} disabled={dis} onClick={() => onChange(k)}>{l}</button>; })}</div></div>;
+}
+function Card({ title, sub, right, children, flush }) {
+  return <section className="card"><header className="card-h"><div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>{right}</header><div className={flush ? 'card-b flush' : 'card-b'}>{children}</div></section>;
+}
+function Tabs({ tabs, value, onChange }) {
+  return <div className="tabs" role="tablist">{tabs.map(t => <button key={t.key} role="tab" aria-selected={value === t.key} className={'tab' + (value === t.key ? ' on' : '')} onClick={() => onChange(t.key)}>{t.label}{t.count != null && <span className="n">{t.count}</span>}{t.extra && <span className="sev">{t.extra}</span>}</button>)}</div>;
+}
+function PageHead({ title, sub, crumbs, right }) {
+  const { go } = useApp();
+  return <div className="ph"><div>{crumbs && <div className="crumbs">{crumbs.map((c, i) => <Fragment key={i}>{i > 0 && ' / '}{c.to ? <button onClick={() => go(c.to)}>{c.label}</button> : c.label}</Fragment>)}</div>}<h1>{title}</h1>{sub && <p>{sub}</p>}</div>{right}</div>;
+}
+function DataTable({ cols, rows, onRow, sort: init, rowKey, empty, maxH, selKey }) {
+  const [sort, setSort] = useState(init || null);
+  const sorted = useMemo(() => {
+    if (!sort) return rows; const c = cols.find(x => x.key === sort.key); if (!c) return rows;
+    const f = c.sort || (r => r[c.key]);
+    return [...rows].sort((a, b) => { const x = f(a), y = f(b); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
+  }, [rows, sort]); // eslint-disable-line
+  return <div className="tbl-wrap" style={{ maxHeight: maxH }}><table className="tbl">
+    <thead><tr>{cols.map(c => <th key={c.key} className={(c.ns ? 'ns ' : '') + (c.num ? 'num' : '')} style={{ width: c.w }} aria-sort={sort && sort.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}
+      onClick={c.ns ? undefined : () => setSort(s => (s && s.key === c.key ? { key: c.key, dir: -s.dir } : { key: c.key, dir: c.desc ? -1 : 1 }))}>{c.label}{sort && sort.key === c.key && <span className="sort">{sort.dir > 0 ? '▲' : '▼'}</span>}</th>)}</tr></thead>
+    <tbody>{sorted.length ? sorted.map((r, i) => { const k = rowKey ? rowKey(r) : i; return <tr key={k} className={(onRow ? 'click ' : '') + (selKey != null && k === selKey ? 'sel' : '')} tabIndex={onRow ? 0 : undefined}
+      onClick={onRow ? () => onRow(r) : undefined} onKeyDown={onRow ? e => { if (e.key === 'Enter') onRow(r); } : undefined}>{cols.map(c => <td key={c.key} className={(c.num ? 'num ' : '') + (c.cls || '')}>{c.render ? c.render(r) : r[c.key]}</td>)}</tr>; })
+      : <tr><td colSpan={cols.length} className="empty">{empty || 'Nothing matches these filters. Clear a filter to see more rows.'}</td></tr>}</tbody>
+  </table></div>;
+}
+const NodeLink = ({ id, label }) => { const { go } = useApp(); if (!id || !NODE[id]) return <span>{label}</span>; return <button className="linkish" onClick={e => { e.stopPropagation(); go('node', id); }}>{label || NODE[id].name}</button>; };
+
+const WINDOWS = [['7', 'Last 7 days'], ['15', 'Last 15 days']];
+const runsInWindow = days => RUNS.filter(r => r.t >= AS_OF - +days * MS.d);
+
+/* ---------------- Overview ---------------- */
+function HealthStrip({ health }) {
+  const p = pal();
+  return <div className="health">{health.map((h, i) => <Fragment key={h.layer}>
+    {i > 0 && <div className="hjoin"><Ic d={ICON.chev} s={18} /></div>}
+    <div className="htile" tabIndex={0} style={{ '--lc': `var(--${h.layer})` }} aria-label={`${LAYER_LABEL[h.layer]} health ${h.score == null ? 'not available' : Math.round(h.score)} out of 100`}>
+      <div className="htop"><div className="hname">{LAYER_LABEL[h.layer]}<small>{h.models} models, {h.tests} tests</small></div>
+        <div className={'hscore ' + (h.score == null ? '' : h.score >= 95 ? 't-ok' : h.score >= 80 ? 't-warn' : 't-fail')}>{h.score == null ? 'n/a' : Math.round(h.score)}<span>/100</span></div></div>
+      <div className="hcomps">{h.comps.map(c => <div key={c.key} className="hc">{c.label}<div className="bar"><i style={{ width: (c.v == null ? 0 : c.v) + '%', background: c.v == null ? 'transparent' : c.v >= 95 ? p.ok : c.v >= 80 ? p.warn : p.fail }} /></div><b>{c.v == null ? 'n/a' : Math.round(c.v)}</b></div>)}</div>
+      <div className="hpop" role="tooltip">
+        <h4>How the {LAYER_LABEL[h.layer].toLowerCase()} score is computed</h4>
+        Each test scores 100 when it passes, 50 on a warning, 0 when it fails. The layer score is the weighted average of four parts; a part with no data is left out and the remaining weights are rescaled.
+        <div className="f">score = Σ(weight × part) ÷ Σ(weights used){'\n'}= {h.comps.filter(c => c.v != null).map(c => `${c.w} × ${c.v.toFixed(1)}`).join(' + ')}{h.W ? ` ÷ ${h.W.toFixed(2)}` : ''} = {h.score == null ? 'n/a' : h.score.toFixed(1)}</div>
+        <table><tbody>{h.comps.map(c => <tr key={c.key}><td><b>{c.label}</b> <span className="muted">({Math.round(c.w * 100)}%)</span><div className={c.v == null ? 'drop' : ''}>{c.detail}{c.v == null ? '; weight dropped' : ''}</div></td><td className="n">{c.v == null ? 'n/a' : c.v.toFixed(1)}</td></tr>)}</tbody></table>
+      </div>
+    </div></Fragment>)}</div>;
+}
+
+function Overview() {
+  const { incidents, status, health, go, theme } = useApp();
+  const [win, setWin] = useState('15'); const [layer, setLayer] = useState('all');
+  const wr = useMemo(() => runsInWindow(win), [win]);
+  const open = incidents.filter(i => i.state !== 'resolved');
+  const missed = SLAS.filter(s => s.late || incidents.some(i => i.kind === 'silence' && i.state !== 'resolved' && incAsset(i) === s.unique_id));
+  const credits = wr.map(r => r.credits); const pending = wr.filter(r => r.credits == null).length;
+  const days = [...Array(7)].map((_, i) => AS_OF - (6 - i) * MS.d);
+  const openTrend = days.map(d => incidents.filter(i => parseT(i.first_detected_at) <= d && (i.state !== 'resolved' || (i.resolvedAt || 0) > d)).length);
+  const okRuns = wr.filter(r => r.status === 'success').length;
+  const rows = open.filter(i => layer === 'all' || (incAsset(i) && LAYER_GROUP(NODE[incAsset(i)].layer) === layer));
+  const opt = useMemo(() => {
+    const p = pal();
+    return base(p, {
+      grid: { left: 60, right: 56, top: 30, bottom: 54 },
+      legend: { top: 0, right: 0, data: ['Run duration', 'Failing tests'], textStyle: { color: p.ink2, fontSize: 11 } },
+      xAxis: ax(p, 'Run start time', { type: 'category', data: wr.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
+      yAxis: [ax(p, 'Duration (seconds)', { type: 'value', nameGap: 40 }), ax(p, 'Failing tests (count)', { type: 'value', minInterval: 1, position: 'right', nameGap: 30, splitLine: { show: false } })],
+      series: [
+        { name: 'Run duration', type: 'bar', barMaxWidth: 16, color: p.bar, data: wr.map(r => ({ value: r.duration_s, inv: r.invocation_id, itemStyle: { color: r.status === 'success' ? p.bar : p.fail, borderRadius: [2, 2, 0, 0] } })) },
+        { name: 'Failing tests', type: 'line', yAxisIndex: 1, step: 'middle', symbol: 'none', color: p.ink2, lineStyle: { width: 1.5 }, data: wr.map(r => FAILS[r.idx]) },
+      ],
+    });
+  }, [wr, theme]);
+  const sevRank = s => (s === 'error' ? 0 : 1);
+  return <div className="page">
+    <PageHead title="Overview" sub={`What is broken now and how the platform ran, as of ${fmtTs(AS_OF)}. Project ${D.project}.`} />
+    <div className="kpis">
+      <Kpi label="Open incidents" value={incidents.filter(i => i.state === 'open').length} tone={incidents.some(i => i.state === 'open') ? 'fail' : 'ok'} sub={`${incidents.filter(i => i.state === 'acknowledged').length} acknowledged`} spark={openTrend} sparkTone="muted" help="Incidents not yet acknowledged. Sparkline: unresolved incidents per day, last 7 days." />
+      <Kpi label="Failing tests" value={FAILS[LAST]} tone={FAILS[LAST] ? 'fail' : 'ok'} sub={`of ${TESTED[LAST]} in the latest run`} spark={wr.map(r => FAILS[r.idx])} sparkType="bar" sparkTone="fail" help="Tests that failed or errored in the latest run. Bars: failing tests per run." />
+      <Kpi label="Successful runs" value={`${okRuns} of ${wr.length}`} tone={okRuns === wr.length ? 'ok' : 'warn'} sub={`median ${fmtSec(median(wr.map(r => r.duration_s)))}`} spark={wr.map(r => r.duration_s)} sparkTone="muted" help="Runs that ended in success in the window. Sparkline: run duration." />
+      <Kpi label="Missed schedules" value={missed.length} tone={missed.length ? 'stale' : 'ok'} sub={`of ${SLAS.length} declared schedules`} help="A declared schedule is missed when the last success is older than expected interval + grace, or a missed-schedule alert is open." />
+      <Kpi label="Credits" value={sum(credits).toFixed(2)} sub={pending ? `${pending} recent runs not yet attributed` : 'all runs attributed'} spark={credits} sparkTone="accent" help="Warehouse credits attributed to the runs in the window." />
+    </div>
+    <HealthStrip health={health} />
+    <div className="fbar">
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
+      <Seg label="Layer" options={[['all', 'All'], ['bronze', 'Bronze'], ['silver', 'Silver'], ['gold', 'Gold']]} value={layer} onChange={setLayer} />
+    </div>
+    <div className="grid2">
+      <Card title="Needs attention" sub="Unresolved incidents, errors first. Click a row to open the node." flush>
+        <DataTable rows={rows} rowKey={r => r.incident_key} onRow={r => incNode(r) ? go('node', incNode(r)) : go('incidents')}
+          sort={{ key: 'sev', dir: 1 }}
+          cols={[
+            { key: 'sev', label: 'Severity', render: r => <SevPill s={r.severity} />, sort: r => sevRank(r.severity) * 1e13 - parseT(r.first_detected_at) },
+            { key: 'title', label: 'Incident', cls: 'wrap', render: r => <div className="cell2"><span>{r.title}</span><small>{KIND_LABEL[r.kind]} on {incTarget(r)}{r.root_cause && NODE[r.root_cause] ? `; root cause ${NODE[r.root_cause].name}` : ''}</small></div> },
+            { key: 'first', label: 'First seen', render: r => fmtTs(parseT(r.first_detected_at)), sort: r => parseT(r.first_detected_at) },
+            { key: 'occurrences', label: 'Times', num: true, desc: true },
+            { key: 'state', label: 'State', render: r => r.state === 'open' ? <Pill tone="fail">Open</Pill> : <Pill tone="info">Acknowledged</Pill> },
+          ]} empty="Nothing needs attention in this layer." />
+      </Card>
+      <Card title="Runs: duration and failing tests" sub="Each bar is one run; red bars ended in error. Click a bar to open its node timeline.">
+        <EChart option={opt} height={300} onClick={e => e.data && e.data.inv && go('runs', null, { run: e.data.inv })} />
+      </Card>
+    </div>
+    <Card title="Nodes that are not OK" sub="Status from the latest run, tests, schedules and open incidents. Click a row to open the node." flush>
+      <DataTable rows={ASSETS.filter(n => status[n.unique_id].status !== 'ok' && (layer === 'all' || LAYER_GROUP(n.layer) === layer))} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)}
+        sort={{ key: 'st', dir: -1 }}
+        cols={[
+          { key: 'name', label: 'Node', render: r => <b>{r.name}</b> },
+          { key: 'layer', label: 'Layer', render: r => <Layer l={r.layer} /> },
+          { key: 'st', label: 'Status', render: r => <StatusPill s={status[r.unique_id].status} />, sort: r => ({ failed: 4, stale: 3, warn: 2, notrun: 1, ok: 0 })[status[r.unique_id].status] },
+          { key: 'why', label: 'Why', cls: 'wrap', ns: true, render: r => status[r.unique_id].reasons.join('; ') },
+        ]} empty="Every model in this layer is OK." />
+    </Card>
+  </div>;
+}
+
+/* ---------------- Incidents ---------------- */
+function Incidents() {
+  const { incidents, act, go, theme } = useApp();
+  const [tab, setTab] = useState('open'); const [kind, setKind] = useState('all'); const [sev, setSev] = useState('all'); const [q, setQ] = useState('');
+  const by = s => incidents.filter(i => i.state === s);
+  const sevTxt = a => { const e = a.filter(i => i.severity === 'error').length, w = a.filter(i => i.severity === 'warn').length; return a.length ? `${e} error, ${w} warning` : ''; };
+  const rows = by(tab).filter(i => (kind === 'all' || i.kind === kind) && (sev === 'all' || i.severity === sev) && (!q || (i.title + ' ' + i.node + ' ' + (i.channel || '')).toLowerCase().includes(q.toLowerCase())));
+  const unresolved = incidents.filter(i => i.state !== 'resolved');
+  const oldest = unresolved.length ? Math.min(...unresolved.map(i => parseT(i.first_detected_at))) : null;
+  const shown = [...rows].sort((a, b) => parseT(a.first_detected_at) - parseT(b.first_detected_at));
+  const opt = useMemo(() => {
+    const p = pal(); const start = Math.min(...incidents.map(i => parseT(i.first_detected_at))) - MS.d / 2;
+    return base(p, {
+      grid: { left: 210, right: 40, top: 10, bottom: 46 },
+      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const i = shown[e.dataIndex]; return `<b>${i.title}</b><br/>First seen ${fmtTs(parseT(i.first_detected_at))}<br/>Open for ${fmtSpan((i.resolvedAt || AS_OF) - parseT(i.first_detected_at))}<br/>${i.occurrences} occurrence(s)`; } },
+      xAxis: ax(p, 'Date (first seen to now)', { type: 'value', min: start, max: AS_OF + MS.h * 2, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => fmtDay(v) }, splitNumber: 5 }),
+      yAxis: ax(p, '', { type: 'category', inverse: true, data: shown.map(i => i.title.length > 30 ? i.title.slice(0, 29) + '…' : i.title), splitLine: { show: false } }),
+      series: [
+        { type: 'bar', stack: 'r', silent: true, itemStyle: { color: 'transparent' }, data: shown.map(i => parseT(i.first_detected_at)), barMaxWidth: 14, tooltip: { show: false } },
+        { type: 'bar', stack: 'r', barMaxWidth: 14, data: shown.map(i => ({ value: (i.resolvedAt || AS_OF) - parseT(i.first_detected_at), itemStyle: { color: i.severity === 'error' ? p.fail : p.warn, borderRadius: 3 } })), label: { show: true, position: 'right', color: p.ink3, fontSize: 10.5, formatter: e => `${shown[e.dataIndex].occurrences}×` } },
+      ],
+    });
+  }, [shown.map(i => i.incident_key + i.state).join(), theme]); // eslint-disable-line
+  return <div className="page">
+    <PageHead title="Incidents" sub="One row per issue. Acknowledge to tell the team someone is on it; resolve when it is fixed." />
+    <div className="kpis">
+      <Kpi label="Open" value={by('open').length} tone={by('open').length ? 'fail' : 'ok'} sub="not yet acknowledged" />
+      <Kpi label="Acknowledged" value={by('acknowledged').length} sub="someone is on it" />
+      <Kpi label="Errors" value={unresolved.filter(i => i.severity === 'error').length} tone="fail" sub="unresolved, severity error" />
+      <Kpi label="Warnings" value={unresolved.filter(i => i.severity === 'warn').length} tone="warn" sub="unresolved, severity warning" />
+      <Kpi label="Oldest unresolved" value={oldest ? fmtSpan(AS_OF - oldest) : '—'} sub={oldest ? `since ${fmtTs(oldest)}` : 'nothing open'} />
+    </div>
+    <Tabs value={tab} onChange={setTab} tabs={[
+      { key: 'open', label: 'Open', count: by('open').length, extra: sevTxt(by('open')) },
+      { key: 'acknowledged', label: 'Acknowledged', count: by('acknowledged').length, extra: sevTxt(by('acknowledged')) },
+      { key: 'resolved', label: 'Resolved', count: by('resolved').length },
+    ]} />
+    <div className="fbar">
+      <Seg label="Kind" options={[['all', 'All'], ...Object.entries(KIND_LABEL)]} value={kind} onChange={setKind} />
+      <Seg label="Severity" options={[['all', 'All'], ['error', 'Error'], ['warn', 'Warning']]} value={sev} onChange={setSev} />
+      <div className="fgrp"><label htmlFor="iq">Search</label><input id="iq" className="inp" placeholder="Title, node or channel" value={q} onChange={e => setQ(e.target.value)} /></div>
+    </div>
+    <Card title={`${tab === 'open' ? 'Open' : tab === 'acknowledged' ? 'Acknowledged' : 'Resolved'} incidents`} sub="Click a row to open the node; use the action button to change state." flush>
+      <DataTable rows={rows} rowKey={r => r.incident_key} onRow={r => incNode(r) ? go('node', incNode(r)) : null} sort={{ key: 'sev', dir: 1 }}
+        empty={tab === 'resolved' ? 'No resolved incidents yet. Resolve one from the Acknowledged tab when the fix is in.' : tab === 'acknowledged' ? 'Nothing acknowledged. Acknowledge an open incident to show someone is on it.' : 'No open incidents match these filters.'}
+        cols={[
+          { key: 'sev', label: 'Severity', render: r => <SevPill s={r.severity} />, sort: r => (r.severity === 'error' ? 0 : 1) * 1e13 - parseT(r.first_detected_at) },
+          { key: 'title', label: 'Incident', cls: 'wrap', render: r => <div className="cell2"><span>{r.title}</span><small>{incNode(r) ? <NodeLink id={incNode(r)} label={incTarget(r)} /> : <span title="Not in the project graph">{incTarget(r)} (not in the project graph)</span>}</small></div> },
+          { key: 'kind', label: 'Kind', render: r => KIND_LABEL[r.kind] || r.kind },
+          { key: 'first', label: 'First seen', render: r => fmtTs(parseT(r.first_detected_at)), sort: r => parseT(r.first_detected_at) },
+          { key: 'age', label: 'Open for', render: r => fmtSpan((r.resolvedAt || AS_OF) - parseT(r.first_detected_at)), sort: r => parseT(r.first_detected_at), desc: false },
+          { key: 'occurrences', label: 'Times', num: true, desc: true },
+          { key: 'channel', label: 'Channel', render: r => <span className="muted">{r.channel}</span> },
+          { key: 'ack', label: 'Acknowledged by', render: r => r.acknowledged_by || <span className="muted">Nobody</span>, sort: r => r.acknowledged_by || '' },
+          { key: 'rc', label: 'Root cause', ns: true, render: r => r.root_cause && NODE[r.root_cause] ? <div className="cell2"><NodeLink id={r.root_cause} /><small>{rcKind(r.root_cause_kind)}{incAsset(r) && <> <button className="linkish" onClick={e => { e.stopPropagation(); go('lineage', null, { focus: incAsset(r), mode: 'root' }); }}>Trace</button></>}</small></div> : r.root_cause || (incAsset(r) ? <button className="linkish" onClick={e => { e.stopPropagation(); go('lineage', null, { focus: incAsset(r), mode: 'root' }); }}>Trace in lineage</button> : <span className="muted">Not set</span>) },
+          { key: 'act', label: '', ns: true, render: r => r.state === 'open' ? <button className="btn primary" onClick={e => { e.stopPropagation(); act(r.incident_key, 'acknowledged'); }}>Acknowledge</button>
+            : r.state === 'acknowledged' ? <button className="btn" onClick={e => { e.stopPropagation(); act(r.incident_key, 'resolved'); }}>Resolve</button>
+              : <button className="btn" onClick={e => { e.stopPropagation(); act(r.incident_key, 'open'); }}>Reopen</button> },
+        ]} />
+    </Card>
+    <Card title="How long each incident has been open" sub="Bars run from first seen to now (or to resolution); the label is the number of occurrences. Red is error, amber is warning.">
+      <EChart option={opt} height={Math.max(160, 60 + shown.length * 30)} />
+    </Card>
+    <p className="note">Acknowledge and Resolve are kept in this browser tab only (static report). In the app they write to the acknowledgement table.</p>
+  </div>;
+}
+
+/* ---------------- Tests & anomalies ---------------- */
+function BandChart({ series, engine, height = 300 }) {
+  const { theme } = useApp();
+  const pts = (series && series.pts[engine]) || [];
+  const opt = useMemo(() => {
+    const p = pal();
+    return base(p, {
+      grid: { left: 70, right: 20, top: 30, bottom: 50 },
+      legend: { top: 0, right: 0, data: ['Observed', 'Expected', 'Expected band', 'Anomaly'], textStyle: { color: p.ink2, fontSize: 11 } },
+      tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 },
+        formatter: a => { const x = pts[a[0].dataIndex]; return `<b>${fmtDay(x.t)}</b><br/>Observed ${fmtNum(x.value)}<br/>Expected ${fmtNum(x.expected)}<br/>Band ${fmtNum(x.lower)} to ${fmtNum(x.upper)}<br/>${x.anomaly ? '<b style="color:' + p.fail + '">Anomaly</b>' : 'Inside the band'}${x.score != null ? '<br/>Score ' + x.score : ''}`; } },
+      xAxis: ax(p, 'Observed at (day)', { type: 'category', boundaryGap: false, data: pts.map(x => fmtDay(x.t)), splitLine: { show: false } }),
+      yAxis: ax(p, `${humanMetric(series ? series.metric : '')} (${metricUnit(series ? series.metric : '')})`, { type: 'value', scale: true, nameGap: 52, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => fmtNum(v) } }),
+      series: [
+        { name: 'Lower', type: 'line', stack: 'band', symbol: 'none', lineStyle: { opacity: 0 }, data: pts.map(x => x.lower), tooltip: { show: false } },
+        { name: 'Expected band', type: 'line', stack: 'band', symbol: 'none', lineStyle: { opacity: 0 }, areaStyle: { color: p.band, opacity: 1 }, color: p.band, data: pts.map(x => x.upper - x.lower) },
+        { name: 'Expected', type: 'line', symbol: 'none', color: p.ink3, lineStyle: { type: 'dashed', width: 1 }, data: pts.map(x => x.expected) },
+        { name: 'Observed', type: 'line', symbolSize: 4, color: p.accent, lineStyle: { width: 2 }, data: pts.map(x => x.value) },
+        { name: 'Anomaly', type: 'scatter', symbolSize: 11, color: p.fail, data: pts.map(x => (x.anomaly ? x.value : null)) },
+      ],
+    });
+  }, [series && series.key, engine, theme]); // eslint-disable-line
+  if (!pts.length) return <div className="empty-state"><b>No points for this engine</b>Pick another engine for this metric.</div>;
+  return <EChart option={opt} height={height} />;
+}
+
+function ShadowPanel({ series }) {
+  const engines = series ? Object.keys(series.pts) : [];
+  if (!series) return null;
+  if (engines.length < 2) {
+    return <div className="empty-state" style={{ textAlign: 'left', padding: '6px 2px' }}>
+      <b>Only the {engines[0] === 'cortex' ? 'Cortex' : 'native'} engine scored this metric</b>
+      Shadow scoring shows native and Cortex side by side when both score the same point.
+      Cortex is {CAP.cortex ? 'available on this account' : 'not available on this account'}; no Cortex score has been recorded for {series.relation} yet.
+      <div style={{ marginTop: 10 }} className="hstack"><EngineBadge e="native" /> {(series.pts.native || []).length} points <span className="badge cortex">Cortex</span> {(series.pts.cortex || []).length} points</div>
+    </div>;
+  }
+  const nat = series.pts.native || [], cx = series.pts.cortex || []; const byT = {}; cx.forEach(x => { byT[x.t] = x; });
+  const rows = nat.filter(x => byT[x.t]).map(x => ({ t: x.t, v: x.value, n: x, c: byT[x.t] })).reverse();
+  const agree = rows.filter(r => r.n.anomaly === r.c.anomaly).length;
+  return <div>
+    <div className="hstack" style={{ marginBottom: 8 }}><span>Engines agree on <b>{agree} of {rows.length}</b> shared points{rows.filter(r => r.n.anomaly || r.c.anomaly).length ? `; ${rows.filter(r => r.n.anomaly && r.c.anomaly).length} flagged by both, ${rows.filter(r => r.n.anomaly !== r.c.anomaly).length} by one only` : ''}. Newest first.</span></div>
+    <DataTable rows={rows} rowKey={r => r.t} maxH={240} cols={[
+      { key: 't', label: 'Day', render: r => fmtDay(r.t) },
+      { key: 'v', label: 'Observed', num: true, render: r => fmtNum(r.v) },
+      { key: 'n', label: 'Native band', render: r => `${fmtNum(r.n.lower)} to ${fmtNum(r.n.upper)}`, ns: true },
+      { key: 'nf', label: 'Native', render: r => r.n.anomaly ? <Pill tone="fail">Anomaly</Pill> : <Pill tone="ok">Normal</Pill>, ns: true },
+      { key: 'ns', label: 'Native score', num: true, desc: true, render: r => r.n.score == null ? '—' : r.n.score.toFixed(2), sort: r => r.n.score },
+      { key: 'c', label: 'Cortex band', render: r => `${fmtNum(r.c.lower)} to ${fmtNum(r.c.upper)}`, ns: true },
+      { key: 'cf', label: 'Cortex', render: r => r.c.anomaly ? <Pill tone="fail">Anomaly</Pill> : <Pill tone="ok">Normal</Pill>, ns: true },
+      { key: 'cs', label: 'Cortex score', num: true, desc: true, render: r => r.c.score == null ? '—' : r.c.score.toFixed(2), sort: r => r.c.score },
+    ]} />
+  </div>;
+}
+
+function Tests() {
+  const { go, route, nav, theme } = useApp();
+  const tab = route.q.tab || 'results';
+  const [st, setSt] = useState('all'); const [ty, setTy] = useState('all'); const [q, setQ] = useState(''); const [eng, setEng] = useState('all');
+  const [sel, setSel] = useState(route.q.series || ((SERIES_LIST.find(x => seriesAnomalous(x) && Object.keys(x.pts).length > 1) || SERIES_LIST.find(seriesAnomalous) || SERIES_LIST[0] || {}).key));
+  const [selEng, setSelEng] = useState('native');
+  const types = [...new Set(TESTS.map(t => t.test_name || 'singular'))].sort();
+  const rows = useMemo(() => TESTS.map(t => {
+    const a = TR[t.unique_id] || Array(NR).fill(null); const ran = a.filter(x => x != null).length; const f = a.filter(isBad).length; const li = latestIdx(t.unique_id);
+    return { ...t, a, last: li < 0 ? null : a[li], failRate: ran ? f / ran * 100 : null, rowsFailing: li < 0 ? null : TRF[t.unique_id][li], model: testTarget(t), type: t.test_name || 'singular' };
+  }), []);
+  const fr = rows.filter(r => (st === 'all' || (st === 'fail' ? isBad(r.last) : r.last === 'pass')) && (ty === 'all' || r.type === ty) && (!q || (r.name + ' ' + (r.model ? NODE[r.model].name : '')).toLowerCase().includes(q.toLowerCase())));
+  const passRate = 100 - sum(FAILS) / Math.max(1, sum(TESTED)) * 100;
+  const opt = useMemo(() => { const p = pal(); return base(p, {
+    grid: { left: 56, right: 20, top: 24, bottom: 54 },
+    tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: a => { const i = a[0].dataIndex; return `<b>${fmtRun(RUNS[i].t)}</b><br/>${FAILS[i]} failing of ${TESTED[i]} tests<br/>Pass rate ${pct(100 - FAILS[i] / Math.max(1, TESTED[i]) * 100)}`; } },
+    xAxis: ax(p, 'Run start time', { type: 'category', data: RUNS.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
+    yAxis: ax(p, 'Failing tests (count)', { type: 'value', minInterval: 1, nameGap: 34 }),
+    series: [{ type: 'bar', barMaxWidth: 14, color: p.fail, data: FAILS.map(v => ({ value: v, itemStyle: { color: v ? p.fail : p.line, borderRadius: [2, 2, 0, 0] } })) }],
+  }); }, [theme]);
+  const series = SERIES[sel];
+  const sl = SERIES_LIST.filter(s => (eng === 'all' || s.pts[eng]) && (!q || s.relation.toLowerCase().includes(q.toLowerCase())));
+  const engineCount = e => SERIES_LIST.filter(s => s.pts[e]).length;
+  return <div className="page">
+    <PageHead title="Tests & anomalies" sub="Test results across the last 30 runs, and monitored metrics with their expected band." />
+    <div className="kpis">
+      <Kpi label="Tests" value={TESTS.length} sub={`${types.length} test types`} />
+      <Kpi label="Failing now" value={FAILS[LAST]} tone={FAILS[LAST] ? 'fail' : 'ok'} sub="in the latest run" spark={FAILS} sparkType="bar" sparkTone="fail" />
+      <Kpi label="Pass rate" value={pct(passRate)} sub={`${sum(FAILS)} failures in ${NR} runs`} spark={RUNS.map((r, i) => 100 - FAILS[i] / Math.max(1, TESTED[i]) * 100)} sparkTone="ok" />
+      <Kpi label="Monitored metrics" value={SERIES_LIST.length} sub={`native ${engineCount('native')}, Cortex ${engineCount('cortex')}`} />
+      <Kpi label="Anomalies now" value={SERIES_LIST.filter(seriesAnomalous).length} tone={SERIES_LIST.some(seriesAnomalous) ? 'fail' : 'ok'} sub={`${D.metrics.filter(m => m.anomaly).length} anomalous points in 30 days`} />
+    </div>
+    <Tabs value={tab} onChange={k => nav('tests', null, { tab: k })} tabs={[{ key: 'results', label: 'Test results', count: TESTS.length }, { key: 'anomalies', label: 'Anomaly detection', count: SERIES_LIST.length }]} />
+    {tab === 'results' ? <>
+      <div className="fbar">
+        <Seg label="Status" options={[['all', 'All'], ['fail', 'Failing'], ['pass', 'Passing']]} value={st} onChange={setSt} />
+        <div className="fgrp"><label htmlFor="tty">Test type</label><select id="tty" className="inp" value={ty} onChange={e => setTy(e.target.value)}><option value="all">All types</option>{types.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div className="fgrp"><label htmlFor="tq">Search</label><input id="tq" className="inp" placeholder="Test or model name" value={q} onChange={e => setQ(e.target.value)} /></div>
+        <span className="muted">{fr.length} of {rows.length} tests</span>
+      </div>
+      <Card title="Failing tests per run" sub="Count of tests that failed or errored in each of the last 30 runs.">
+        <EChart option={opt} height={220} />
+      </Card>
+      <Card title="Test results" sub="Failing first. Click a row to open the test." flush>
+        <DataTable rows={fr} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} maxH={560} sort={{ key: 'last', dir: 1 }}
+          cols={[
+            { key: 'last', label: 'Status', render: r => <TestPill s={r.last} />, sort: r => (isBad(r.last) ? 0 : r.last === 'warn' ? 1 : 2) },
+            { key: 'name', label: 'Test', render: r => <span title={r.name}>{r.name.length > 52 ? r.name.slice(0, 51) + '…' : r.name}</span> },
+            { key: 'type', label: 'Type' },
+            { key: 'model', label: 'Model', render: r => r.model ? <NodeLink id={r.model} /> : <span className="muted">—</span>, sort: r => (r.model ? NODE[r.model].name : '') },
+            { key: 'column', label: 'Column', render: r => r.column || <span className="muted">—</span> },
+            { key: 'strip', label: 'Last 30 runs', ns: true, render: r => <RunStrip arr={r.a} /> },
+            { key: 'failRate', label: 'Fail rate', num: true, desc: true, render: r => pct(r.failRate) },
+            { key: 'rowsFailing', label: 'Failing rows', num: true, desc: true, render: r => r.rowsFailing ? <b className="t-fail">{r.rowsFailing}</b> : <span className="muted">0</span> },
+            { key: 'rc', label: 'Root cause', ns: true, render: r => isBad(r.last) && TRC[r.unique_id] && NODE[TRC[r.unique_id].id] ? <div className="cell2"><NodeLink id={TRC[r.unique_id].id} /><small>{rcKind(TRC[r.unique_id].kind)}</small></div> : <span className="muted">—</span> },
+          ]} />
+      </Card>
+    </> : <>
+      <div className="fbar">
+        <Seg label="Engine" options={[['all', 'All'], ['native', 'Native'], ['cortex', `Cortex${engineCount('cortex') ? '' : ' (none yet)'}`]]} value={eng} onChange={setEng} />
+        <div className="fgrp"><label htmlFor="aq">Search</label><input id="aq" className="inp" placeholder="Table name" value={q} onChange={e => setQ(e.target.value)} /></div>
+      </div>
+      <div className="grid2">
+        <Card title={series ? `${humanMetric(series.metric)} of ${series.relation}` : 'Pick a metric'} sub="Observed value against the expected value and its band, daily, last 31 days. A red dot is a point outside the band."
+          right={series && (Object.keys(series.pts).length > 1 ? <Seg label="Engine" options={Object.keys(series.pts).map(e => [e, e === 'cortex' ? 'Cortex' : 'Native'])} value={series.pts[selEng] ? selEng : Object.keys(series.pts)[0]} onChange={setSelEng} /> : <EngineBadge e={Object.keys(series.pts)[0]} />)}>
+          <BandChart series={series} engine={series && series.pts[selEng] ? selEng : series ? Object.keys(series.pts)[0] : 'native'} />
+        </Card>
+        <Card title="Shadow scoring" sub="Native and Cortex scores for the same points, side by side.">
+          <ShadowPanel series={series} />
+        </Card>
+      </div>
+      <Card title="Monitored metrics" sub="Click a row to chart it. Anomalies first." flush>
+        <DataTable rows={sl} rowKey={r => r.key} selKey={sel} onRow={r => { setSel(r.key); setSelEng(Object.keys(r.pts)[0]); }} sort={{ key: 'an', dir: -1 }}
+          empty={eng === 'cortex' ? 'Cortex has not scored any metric yet. Cortex scores appear here once the Cortex engine runs alongside native scoring.' : undefined}
+          cols={[
+            { key: 'an', label: 'Status', render: r => seriesAnomalous(r) ? <Pill tone="fail">Anomaly</Pill> : <Pill tone="ok">In band</Pill>, sort: r => (seriesAnomalous(r) ? 1 : 0) },
+            { key: 'relation', label: 'Table', render: r => <NodeLink id={r.uid} label={r.relation} /> },
+            { key: 'metric', label: 'Metric', render: r => humanMetric(r.metric) },
+            { key: 'eng', label: 'Engine', ns: true, render: r => <span className="hstack">{Object.keys(r.pts).map(e => <EngineBadge key={e} e={e} />)}</span> },
+            { key: 'v', label: 'Latest', num: true, render: r => fmtNum(seriesLatest(r).value), sort: r => seriesLatest(r).value },
+            { key: 'band', label: 'Expected band', ns: true, render: r => { const x = seriesLatest(r); return `${fmtNum(x.lower)} to ${fmtNum(x.upper)}`; } },
+            { key: 'dev', label: 'vs expected', num: true, render: r => { const x = seriesLatest(r); const d = (x.value - x.expected) / x.expected * 100; return `${d > 0 ? '+' : ''}${d.toFixed(1)}%`; }, sort: r => { const x = seriesLatest(r); return Math.abs((x.value - x.expected) / x.expected); } },
+            { key: 'sp', label: 'Last 31 days', ns: true, render: r => <Spark data={(r.pts.native || Object.values(r.pts)[0]).map(x => x.value)} tone="accent" w={96} h={22} /> },
+          ]} />
+      </Card>
+    </>}
+  </div>;
+}
+
+/* ---------------- Runs ---------------- */
+function Gantt({ run, filterLayer }) {
+  const { theme, go } = useApp();
+  const ex = (EX_RUN[run.invocation_id] || []).filter(e => filterLayer === 'all' || LAYER_GROUP(NODE[e.unique_id].layer) === filterLayer);
+  const opt = useMemo(() => {
+    const p = pal();
+    return base(p, {
+      grid: { left: 180, right: 30, top: 10, bottom: 46 },
+      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const x = ex[e.dataIndex]; const n = NODE[x.unique_id]; return `<b>${n.name}</b><br/>${LAYER_LABEL[LAYER_GROUP(n.layer)]}, ${n.materialization || n.type}<br/>Starts at +${((x.t - run.t) / 1000).toFixed(1)} s<br/>Took ${fmtSec(x.execution_time_s)}<br/>Credits ${fmtCr(x.credits)}${x.status !== 'success' ? '<br/><b style="color:' + p.fail + '">Error</b>' : ''}`; } },
+      xAxis: ax(p, 'Seconds since run start', { type: 'value', min: 0 }),
+      yAxis: ax(p, '', { type: 'category', inverse: true, data: ex.map(x => NODE[x.unique_id].name), splitLine: { show: false }, axisLabel: { color: p.ink2, fontSize: 10.5 } }),
+      series: [
+        { type: 'bar', stack: 'g', silent: true, itemStyle: { color: 'transparent' }, data: ex.map(x => (x.t - run.t) / 1000), tooltip: { show: false } },
+        { type: 'bar', stack: 'g', barCategoryGap: '28%', data: ex.map(x => ({ value: x.execution_time_s, uid: x.unique_id, itemStyle: { color: x.status === 'success' ? layerColor(p, LAYER_GROUP(NODE[x.unique_id].layer)) : p.fail, borderRadius: 2, borderColor: x.status === 'success' ? 'transparent' : p.fail, borderWidth: x.status === 'success' ? 0 : 2 } })) },
+      ],
+    });
+  }, [run.invocation_id, filterLayer, theme]); // eslint-disable-line
+  if (!ex.length) return <div className="empty-state"><b>No node ran in this layer</b>Pick another layer.</div>;
+  return <EChart option={opt} height={60 + ex.length * 17} onClick={e => e.data && e.data.uid && go('node', e.data.uid)} />;
+}
+
+function Runs() {
+  const { route, go, nav } = useApp();
+  const [win, setWin] = useState('15'); const [st, setSt] = useState('all'); const [lay, setLay] = useState('all'); const [tab, setTab] = useState('runs');
+  const runId = route.q.run || RUNS[LAST].invocation_id; const run = RUNS[RUN_IDX[runId]] || RUNS[LAST];
+  const wr = runsInWindow(win); const fr = wr.filter(r => st === 'all' || r.status === st);
+  const lastEx = (EX_RUN[RUNS[LAST].invocation_id] || []).slice().sort((a, b) => b.execution_time_s - a.execution_time_s);
+  const slow = ASSETS.filter(n => EX[n.unique_id]).map(n => { const a = EX[n.unique_id].map(x => (x ? x.execution_time_s : null)); const recent = a.slice(-4).filter(v => v != null); const before = a.slice(0, -4).filter(v => v != null);
+    const rm = median(recent), bm = median(before); return { ...n, a, latest: a[LAST], med: median(a), change: rm != null && bm ? rm / bm : null, credits: sum(EX[n.unique_id].map(x => (x ? x.credits : 0))) }; });
+  return <div className="page">
+    <PageHead title="Runs" sub="Every build in the window, with its node timeline. Pick a run in the table to draw its timeline." />
+    <div className="kpis">
+      <Kpi label="Runs" value={wr.length} sub={`${win === '7' ? 'last 7 days' : 'last 15 days'}, target ${RUNS[LAST].target}`} />
+      <Kpi label="Runs ended in error" value={wr.filter(r => r.status !== 'success').length} tone={wr.some(r => r.status !== 'success') ? 'fail' : 'ok'} spark={wr.map(r => r.nodes_failed)} sparkType="bar" sparkTone="fail" sub="bars: failed nodes per run" />
+      <Kpi label="Median duration" value={fmtSec(median(wr.map(r => r.duration_s)))} spark={wr.map(r => r.duration_s)} sparkTone="muted" delta={<Delta v={RUNS[LAST].duration_s - median(wr.map(r => r.duration_s))} goodWhenDown fmt={v => v.toFixed(1) + ' s'} />} sub=" latest vs median" />
+      <Kpi label="Credits" value={sum(wr.map(r => r.credits)).toFixed(3)} spark={wr.map(r => r.credits)} sub={`${wr.filter(r => r.credits == null).length} runs not yet attributed`} />
+      <Kpi label="Slowest model, latest run" value={lastEx[0] ? fmtSec(lastEx[0].execution_time_s) : '—'} sub={lastEx[0] ? NODE[lastEx[0].unique_id].name : ''} />
+    </div>
+    <div className="fbar">
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
+      <Seg label="Status" options={[['all', 'All'], ['success', 'Success'], ['error', 'Error']]} value={st} onChange={setSt} />
+      <Seg label="Timeline layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
+    </div>
+    <Card title={`Node timeline, run of ${fmtTs(run.t)}`} sub={`Each bar is one node, coloured by layer; red outline means the build failed. ${run.nodes_total} nodes in the run including tests, ${fmtSec(run.duration_s)} total. Click a bar to open the node.`}
+      right={<div className="hstack"><RunPill s={run.status} /><span className="muted mono">{run.invocation_id}</span></div>}>
+      <div className="hstack" style={{ marginBottom: 4, fontSize: 11.5 }}>{LAYER_ORDER.map(l => <span key={l} className="lyr"><i style={{ background: `var(--${l})` }} />{LAYER_LABEL[l]}</span>)}</div>
+      <Gantt run={run} filterLayer={lay} />
+    </Card>
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'runs', label: 'Run list', count: fr.length }, { key: 'slow', label: 'Slowest models', count: slow.length }]} />
+    {tab === 'runs' ? <Card title="Run list" sub="Newest first. Click a row to draw its timeline above." flush>
+      <DataTable rows={fr} rowKey={r => r.invocation_id} selKey={run.invocation_id} onRow={r => { nav('runs', null, { run: r.invocation_id }); document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' }); }} sort={{ key: 't', dir: -1 }}
+        cols={[
+          { key: 't', label: 'Started', render: r => fmtTs(r.t) },
+          { key: 'status', label: 'Status', render: r => <RunPill s={r.status} /> },
+          { key: 'command', label: 'Command' },
+          { key: 'duration_s', label: 'Duration', num: true, desc: true, render: r => fmtSec(r.duration_s) },
+          { key: 'credits', label: 'Credits', num: true, desc: true, render: r => r.credits == null ? <span className="muted">Not yet attributed</span> : fmtCr(r.credits) },
+          { key: 'nodes_failed', label: 'Failed nodes', num: true, desc: true, render: r => r.nodes_failed ? <b className="t-fail">{r.nodes_failed}</b> : <span className="muted">0</span> },
+          { key: 'ft', label: 'Failing tests', num: true, desc: true, render: r => FAILS[r.idx] ? <b className="t-fail">{FAILS[r.idx]}</b> : <span className="muted">0</span>, sort: r => FAILS[r.idx] },
+          { key: 'nodes_total', label: 'Nodes', num: true },
+          { key: 'invocation_id', label: 'Run id', render: r => <span className="mono muted">{r.invocation_id}</span> },
+        ]} />
+    </Card> : <Card title="Slowest models" sub="Median build time over the last 30 runs; change compares the last 4 runs to the runs before. Click a row to open the model." flush>
+      <DataTable rows={slow} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 'med', dir: -1 }} maxH={520}
+        cols={[
+          { key: 'name', label: 'Model', render: r => <b>{r.name}</b> },
+          { key: 'layer', label: 'Layer', render: r => <Layer l={r.layer} /> },
+          { key: 'materialization', label: 'Materialization' },
+          { key: 'med', label: 'Median', num: true, desc: true, render: r => fmtSec(r.med) },
+          { key: 'latest', label: 'Latest', num: true, desc: true, render: r => fmtSec(r.latest) },
+          { key: 'change', label: 'Change', num: true, desc: true, render: r => r.change == null ? '—' : <span className={r.change > 1.5 ? 't-fail' : r.change > 1.15 ? 't-warn' : ''}>{r.change.toFixed(2)}×</span> },
+          { key: 'sp', label: 'Build time, 30 runs', ns: true, render: r => <Spark data={r.a} w={110} h={22} tone={r.change > 1.5 ? 'fail' : 'muted'} /> },
+        ]} />
+    </Card>}
+  </div>;
+}
+
+/* ---------------- Lineage (the one custom component) ---------------- */
+const NODE_W = 196, NODE_H = 48;
+function layoutGraph(ids) {
+  const g = new dagre.graphlib.Graph(); g.setGraph({ rankdir: 'LR', nodesep: 14, ranksep: 64, marginx: 20, marginy: 20 }); g.setDefaultEdgeLabel(() => ({}));
+  const set = new Set(ids); const edges = [];
+  ids.forEach(id => g.setNode(id, { width: NODE_W, height: NODE_H }));
+  ids.forEach(id => (PARENTS[id] || []).forEach(p => { if (set.has(p)) { g.setEdge(p, id); edges.push([p, id]); } }));
+  dagre.layout(g);
+  const pos = {}; ids.forEach(id => { const n = g.node(id); pos[id] = { x: n.x - NODE_W / 2, y: n.y - NODE_H / 2 }; });
+  return { pos, edges };
+}
+const walk = (id, map) => { const out = new Set(); const st = [id]; while (st.length) { const x = st.pop(); (map[x] || []).forEach(p => { if (!out.has(p)) { out.add(p); st.push(p); } }); } return out; };
+const ancestors = id => walk(id, PARENTS);
+const descendants = id => walk(id, CHILDREN);
+const hood = (id, hops) => { const out = new Set([id]); let f = [id]; for (let h = 0; h < hops; h++) { const nx = []; f.forEach(x => [...(PARENTS[x] || []), ...(CHILDREN[x] || [])].forEach(y => { if (!out.has(y)) { out.add(y); nx.push(y); } })); f = nx; } return [...out]; };
+function rootCause(id, status) {
+  const bad = x => status[x] && ['failed', 'warn', 'stale'].includes(status[x].status);
+  const anc = ancestors(id); const chain = [...anc, id].filter(bad);
+  const roots = chain.filter(x => ![...ancestors(x)].some(bad));
+  const path = new Set([...anc, id]); const dec = declaredRoot(id);
+  if (dec) { path.add(dec.id); return { path, roots: [dec.id], impacted: descendants(id), declared: dec }; }
+  return { path, roots: roots.length ? roots : [id], impacted: descendants(id) };
+}
+function IceNode({ data }) {
+  return <div className={`ice-node s-${data.status}${data.dim ? ' dim' : ''}${data.hl ? ' hl' : ''}${data.root ? ' root' : ''}${data.impacted ? ' impacted' : ''}${data.sel ? ' sel' : ''}`} title={`${data.name}: ${STATUS_LABEL[data.status]}`}>
+    <Handle type="target" position={Position.Left} isConnectable={false} />
+    <span className="bar" />{data.root && <span className="tag r">Root cause</span>}{data.impacted && !data.root && <span className="tag i">Affected</span>}
+    <div className="nm">{data.name}</div><span className="dot" />
+    <div className="meta"><i style={{ background: `var(--${data.group})` }} />{LAYER_LABEL[data.group]}{data.badge && <span className={'nb' + (data.fail ? ' f' : '')}>{data.badge}</span>}</div>
+    <Handle type="source" position={Position.Right} isConnectable={false} />
+  </div>;
+}
+const nodeTypes = { ice: IceNode };
+function FlowCtl({ fitKey, centerOn, pos }) {
+  const rf = useReactFlow();
+  useEffect(() => { const t = setTimeout(() => rf.fitView({ padding: 0.12, duration: 300 }), 30); return () => clearTimeout(t); }, [fitKey]); // eslint-disable-line
+  useEffect(() => { if (centerOn && centerOn.id && pos[centerOn.id]) rf.setCenter(pos[centerOn.id].x + NODE_W / 2, pos[centerOn.id].y + NODE_H / 2, { zoom: 1.15, duration: 450 }); }, [centerOn]); // eslint-disable-line
+  return null;
+}
+function LineageCanvas({ ids, focus, mode, onSelect, compact, centerOn }) {
+  const { status, theme } = useApp();
+  const key = ids.join(',');
+  const { pos, edges } = useMemo(() => layoutGraph(ids), [key]); // eslint-disable-line
+  const hl = useMemo(() => {
+    if (!focus || mode === 'none' || !ids.includes(focus)) return null;
+    if (mode === 'root') { const rc = rootCause(focus, status); return { set: rc.path, root: new Set(rc.roots), impacted: rc.impacted, mode, declared: rc.declared }; }
+    const set = new Set([focus]);
+    if (mode === 'up' || mode === 'both') ancestors(focus).forEach(x => set.add(x));
+    if (mode === 'down' || mode === 'both') descendants(focus).forEach(x => set.add(x));
+    return { set, root: new Set(), impacted: new Set(), mode };
+  }, [focus, mode, status, key]); // eslint-disable-line
+  const p = useMemo(() => pal(), [theme]);
+  const nodes = useMemo(() => ids.map(id => {
+    const n = NODE[id]; const tids = TESTS_OF[id] || []; const ft = tids.filter(t => isBad(latestTest(t))).length;
+    const imp = !!(hl && hl.impacted.has(id));
+    return { id, type: 'ice', position: pos[id], draggable: false, connectable: false,
+      data: { name: n.name, status: status[id] ? status[id].status : 'ok', group: LAYER_GROUP(n.layer), fail: ft > 0,
+        badge: ft ? `${ft} failing test${ft > 1 ? 's' : ''}` : n.type === 'source' && FRESH[id] ? `data ${fmtSpan(FRESH[id].freshness_lag_min * MS.m)} old` : tids.length ? `${tids.length} tests` : n.type,
+        dim: !!(hl && !hl.set.has(id) && !imp), hl: !!(hl && hl.set.has(id) && hl.mode !== 'root'), root: !!(hl && hl.root.has(id)), impacted: imp, sel: focus === id } };
+  }), [key, pos, hl, status, focus]); // eslint-disable-line
+  const rfEdges = useMemo(() => edges.map(([s, t]) => {
+    const on = !!(hl && hl.set.has(s) && hl.set.has(t));
+    const imp = !!(hl && hl.mode === 'root' && hl.impacted.has(t) && (hl.impacted.has(s) || s === focus));
+    const col = on ? (hl.mode === 'root' ? p.fail : p.accent) : imp ? p.warn : p.ink3;
+    return { id: s + '>' + t, source: s, target: t, animated: on && hl.mode === 'root',
+      style: { stroke: col, strokeWidth: on || imp ? 2 : 1.1, opacity: hl && !on && !imp ? 0.2 : on || imp ? 1 : 0.55, strokeDasharray: imp ? '5 4' : undefined },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: col } };
+  }).concat(hl && hl.declared && ids.includes(hl.declared.id) && hl.declared.id !== focus ? [{ id: 'rc-link', source: hl.declared.id, target: focus, animated: true, label: `root cause: ${rcKind(hl.declared.kind).toLowerCase() || 'traced'}`,
+    labelStyle: { fill: p.fail, fontWeight: 600, fontSize: 11 }, labelBgStyle: { fill: p.panel }, labelBgPadding: [4, 2],
+    style: { stroke: p.fail, strokeWidth: 2, strokeDasharray: '6 4' }, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: p.fail } }] : []), [edges, hl, p, focus, ids]);
+  return <ReactFlowView nodes={nodes} edges={rfEdges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.12 }} minZoom={0.15} maxZoom={2}
+    nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
+    onNodeClick={(e, n) => onSelect(n.id)} onPaneClick={() => onSelect(null)}>
+    <Background gap={18} size={1} color={p.line} />
+    {!compact && <MiniMap pannable zoomable nodeColor={n => statusColor(p, n.data.status)} nodeStrokeWidth={0} maskColor={theme === 'dark' ? 'rgba(10,14,20,.6)' : 'rgba(240,243,247,.65)'} style={{ width: 170, height: 110 }} />}
+    <Controls showInteractive={false} position={compact ? 'top-right' : 'bottom-left'} />
+    <FlowCtl fitKey={key} centerOn={centerOn} pos={pos} />
+  </ReactFlowView>;
+}
+
+function NodePanel({ id, mode, setMode, onClose }) {
+  const { status, incidents, go } = useApp();
+  const n = NODE[id]; const s = status[id]; const ex = EX[id] ? EX[id][LAST] : null; const tids = TESTS_OF[id] || [];
+  const failing = tids.filter(t => isBad(latestTest(t)));
+  const incs = incidents.filter(i => i.state !== 'resolved' && incAsset(i) === id);
+  const rc = mode === 'root' ? rootCause(id, status) : null;
+  return <div className="lpanel" role="dialog" aria-label={`Details of ${n.name}`}>
+    <button className="iconbtn x" onClick={onClose} aria-label="Close panel"><Ic d={ICON.close} s={14} /></button>
+    <h4>{n.name}</h4>
+    <div className="hstack" style={{ marginTop: 6 }}><StatusPill s={s.status} /><Layer l={n.layer} /></div>
+    {s.reasons.length > 0 && <div className="reasons">{s.reasons.map((r, i) => <span key={i}>{r}</span>)}</div>}
+    <dl>
+      <dt>Type</dt><dd>{n.type}{n.materialization && n.materialization !== n.type ? `, ${n.materialization}` : ''}</dd>
+      <dt>Latest build</dt><dd>{ex ? `${fmtSec(ex.execution_time_s)}, ${ex.status}` : n.type === 'source' ? 'Not built (source)' : 'Not run'}</dd>
+      <dt>Credits, latest</dt><dd>{ex ? (ex.credits == null ? 'Not yet attributed' : fmtCr(ex.credits)) : '—'}</dd>
+      <dt>Tests</dt><dd>{tids.length ? `${tids.length - failing.length} of ${tids.length} passing` : 'None'}</dd>
+      {FRESH[id] && <><dt>Source data age</dt><dd>{fmtSpan(FRESH[id].freshness_lag_min * MS.m)}{FRESH[id].max_lag_min != null ? ` (limit ${FRESH[id].max_lag_min} min)` : ''}</dd></>}
+      {SLA_BY[id] && <><dt>Schedule</dt><dd>every {SLA_BY[id].expected_every}, {SLA_BY[id].late ? 'late' : 'on time'}</dd></>}
+      <dt>Upstream / downstream</dt><dd>{ancestors(id).size} / {descendants(id).size}</dd>
+    </dl>
+    {failing.length > 0 && <div className="sec"><b>Failing tests</b><ul>{failing.map(t => <li key={t}><button className="linkish" onClick={() => go('node', t)}>{NODE[t].name}</button> ({TRF[t][latestIdx(t)]} rows)</li>)}</ul></div>}
+    {incs.length > 0 && <div className="sec"><b>Open incidents</b><ul>{incs.map(i => <li key={i.incident_key}>{i.title}</li>)}</ul></div>}
+    {rc && <div className="rc-box">{rc.declared ? <>icecore traced this failure to <b>{NODE[rc.declared.id].name}</b> ({rcKind(rc.declared.kind).toLowerCase() || 'traced cause'}). It is not a direct parent in the lineage, so the dashed red link shows the attribution.</> : rc.roots.length === 1 && rc.roots[0] === id
+      ? <>No upstream node is failing, late or warning. The problem starts at <b>{n.name}</b>: check its own logic or the rows it receives.</>
+      : <>First failing node upstream: <b>{rc.roots.map(r => NODE[r].name).join(', ')}</b>.</>}
+      {' '}{rc.impacted.size ? <>Affected downstream: {[...rc.impacted].map(x => NODE[x].name).join(', ')}.</> : 'Nothing downstream is affected.'}</div>}
+    <div className="acts">
+      <button className="btn primary" onClick={() => go('node', id)}>Open node page</button>
+      <div className="seg" role="group" aria-label="Highlight">{[['up', 'Upstream'], ['down', 'Downstream'], ['both', 'Both'], ['root', 'Root cause']].map(([k, l]) => <button key={k} className={mode === k ? 'on' : ''} aria-pressed={mode === k} onClick={() => setMode(mode === k ? 'none' : k)}>{l}</button>)}</div>
+    </div>
+  </div>;
+}
+
+function Lineage() {
+  const { status, route, nav } = useApp();
+  const [groups, setGroups] = useState(new Set(LAYER_ORDER));
+  const [q, setQ] = useState(''); const [centerOn, setCenterOn] = useState(null);
+  const focus = route.q.focus || null; const mode = route.q.mode || (focus ? 'both' : 'none');
+  const setFocus = (id, m) => nav('lineage', null, { focus: id || undefined, mode: id ? (m || (mode === 'none' ? 'both' : mode)) : undefined });
+  const ids = useMemo(() => ASSETS.filter(n => groups.has(LAYER_GROUP(n.layer))).map(n => n.unique_id), [groups]);
+  const counts = {}; ASSETS.forEach(n => { const s = status[n.unique_id].status; counts[s] = (counts[s] || 0) + 1; });
+  const failingNow = ASSETS.filter(n => status[n.unique_id].status === 'failed');
+  const affected = new Set(); failingNow.forEach(n => descendants(n.unique_id).forEach(x => affected.add(x)));
+  const toggle = g => setGroups(s => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n.size ? n : new Set(LAYER_ORDER); });
+  const matches = q ? ASSETS.filter(n => n.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : [];
+  const pick = id => { const g = LAYER_GROUP(NODE[id].layer); if (!groups.has(g)) setGroups(s => new Set([...s, g])); setFocus(id, mode === 'none' ? 'both' : mode); setCenterOn({ id, n: Date.now() }); setQ(''); };
+  return <div className="page" style={{ paddingBottom: 20 }}>
+    <PageHead title="Lineage" sub="Models and sources, left to right. Click a node for details and to highlight what feeds it, what it feeds, or the root-cause path of a failure." />
+    <div className="kpis">
+      <Kpi label="Nodes" value={ASSETS.length} sub={`${PARENTS && sum(ASSETS.map(n => PARENTS[n.unique_id].length))} dependencies`} />
+      <Kpi label="Failed" value={counts.failed || 0} tone={counts.failed ? 'fail' : 'ok'} sub={failingNow.map(n => n.name).join(', ') || 'none'} />
+      <Kpi label="Late or stale" value={counts.stale || 0} tone={counts.stale ? 'stale' : 'ok'} sub="missed schedule or old source data" />
+      <Kpi label="Affected downstream" value={affected.size} tone={affected.size ? 'warn' : 'ok'} sub="nodes fed by a failed node" />
+    </div>
+    <div className="fbar lin-tools">
+      <div className="fgrp"><span className="l">Layers</span><div className="seg" role="group" aria-label="Layers">{LAYER_ORDER.map(g => <button key={g} className={groups.has(g) ? 'on' : ''} aria-pressed={groups.has(g)} onClick={() => toggle(g)}>{LAYER_LABEL[g]}</button>)}</div></div>
+      <div className="fgrp gsearch" style={{ width: 240 }}><Ic d={ICON.search} s={14} /><input className="inp" style={{ width: '100%', paddingLeft: 28 }} placeholder="Find a node" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && matches[0]) pick(matches[0].unique_id); }} aria-label="Find a node in the lineage" />
+        {matches.length > 0 && <div className="res">{matches.map(m => <button key={m.unique_id} onClick={() => pick(m.unique_id)}><span>{m.name}</span><StatusPill s={status[m.unique_id].status} /></button>)}</div>}</div>
+      <Seg label="Highlight" options={[['none', 'Off'], ['up', 'Upstream', !focus], ['down', 'Downstream', !focus], ['both', 'Both', !focus], ['root', 'Root cause', !focus]]} value={mode} onChange={m => nav('lineage', null, { focus: focus || undefined, mode: m })} />
+    </div>
+    <div className="lin-wrap">
+      <div className="legend" aria-label="Status legend">
+        {['failed', 'warn', 'stale', 'ok', 'notrun'].map(s => <div key={s} className="row"><i style={{ background: `var(--${STATUS_TONE[s] === 'muted' ? 'muted' : STATUS_TONE[s]})` }} />{STATUS_LABEL[s]}<b>{counts[s] || 0}</b></div>)}
+        {failingNow.length > 0 && <div className="fl"><span className="muted">Trace root cause</span>{failingNow.map(n => <button key={n.unique_id} onClick={() => { pick(n.unique_id); nav('lineage', null, { focus: n.unique_id, mode: 'root' }); }}>{n.name}</button>)}</div>}
+      </div>
+      <LineageCanvas ids={ids} focus={focus} mode={mode} onSelect={id => setFocus(id)} centerOn={centerOn} />
+      {focus && NODE[focus] && <NodePanel id={focus} mode={mode} setMode={m => nav('lineage', null, { focus, mode: m })} onClose={() => setFocus(null)} />}
+    </div>
+  </div>;
+}
+
+/* ---------------- Cost ---------------- */
+function Cost() {
+  const { go, theme } = useApp();
+  const [win, setWin] = useState('15'); const [lay, setLay] = useState('all');
+  const wr = runsInWindow(win); const wi = wr.map(r => r.idx);
+  const attributed = wr.filter(r => r.credits != null);
+  const half = Math.floor(attributed.length / 2);
+  const firstHalf = sum(attributed.slice(0, half).map(r => r.credits)), secondHalf = sum(attributed.slice(half).map(r => r.credits));
+  const rows = ASSETS.filter(n => EX[n.unique_id] && (lay === 'all' || LAYER_GROUP(n.layer) === lay)).map(n => {
+    const a = wi.map(i => (EX[n.unique_id][i] ? EX[n.unique_id][i].credits : null)); const known = a.filter(v => v != null);
+    const recent = known.slice(-4), before = known.slice(0, -4);
+    const rAvg = recent.length ? sum(recent) / recent.length : null, bAvg = before.length ? sum(before) / before.length : null;
+    return { ...n, a, total: sum(known), avg: known.length ? sum(known) / known.length : null, change: rAvg != null && bAvg ? rAvg / bAvg : null };
+  });
+  const grand = sum(rows.map(r => r.total));
+  const top = [...rows].filter(r => r.change != null).sort((a, b) => b.change - a.change)[0];
+  const opt = useMemo(() => {
+    const p = pal(); const groups = LAYER_ORDER.filter(g => lay === 'all' || g === lay);
+    return base(p, {
+      grid: { left: 64, right: 20, top: 34, bottom: 54 },
+      legend: { top: 0, right: 0, textStyle: { color: p.ink2, fontSize: 11 } },
+      tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, valueFormatter: v => (v == null ? 'not yet attributed' : v.toFixed(4)) },
+      xAxis: ax(p, 'Run start time', { type: 'category', data: wr.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
+      yAxis: ax(p, 'Credits per run', { type: 'value', nameGap: 46, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => v.toFixed(3) } }),
+      series: groups.map(g => ({ name: LAYER_LABEL[g], type: 'bar', stack: 'c', barMaxWidth: 18, color: layerColor(p, g),
+        data: wr.map(r => { const xs = (EX_RUN[r.invocation_id] || []).filter(e => LAYER_GROUP(NODE[e.unique_id].layer) === g); if (r.credits == null && xs.every(e => e.credits == null)) return null; return +sum(xs.map(e => e.credits)).toFixed(5); }) })),
+    });
+  }, [win, lay, theme]); // eslint-disable-line
+  return <div className="page">
+    <PageHead title="Cost" sub="Warehouse credits per run and per model. Recent runs may not be attributed yet; they show as gaps." />
+    <div className="kpis">
+      <Kpi label="Credits" value={sum(wr.map(r => r.credits)).toFixed(3)} sub={win === '7' ? 'last 7 days' : 'last 15 days'} spark={wr.map(r => r.credits)} />
+      <Kpi label="Average per run" value={attributed.length ? (sum(attributed.map(r => r.credits)) / attributed.length).toFixed(4) : '—'} sub={`${attributed.length} attributed runs`} />
+      <Kpi label="Second half vs first half" value={firstHalf ? `${((secondHalf / firstHalf - 1) * 100).toFixed(1)}%` : '—'} tone={secondHalf > firstHalf * 1.05 ? 'warn' : undefined} sub="credits, attributed runs of the window" />
+      <Kpi label="Biggest increase" value={top ? `${top.change.toFixed(1)}×` : '—'} tone={top && top.change > 1.5 ? 'fail' : undefined} sub={top ? `${top.name}, last 4 runs vs before` : ''} spark={top ? top.a : null} sparkTone="fail" />
+      <Kpi label="Runs not yet attributed" value={wr.filter(r => r.credits == null).length} sub="credits arrive later" />
+    </div>
+    <div className="fbar">
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
+      <Seg label="Layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
+    </div>
+    <Card title="Credits per run, by layer" sub="Stacked by layer. Runs without bars are not attributed yet.">
+      <EChart option={opt} height={280} onClick={e => { const r = wr[e.dataIndex]; if (r) go('runs', null, { run: r.invocation_id }); }} />
+    </Card>
+    <Card title="Credits per model" sub="Largest increase first: average of the last 4 attributed runs against the runs before. Click a row to open the model." flush>
+      <DataTable rows={rows} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 'change', dir: -1 }} maxH={520}
+        cols={[
+          { key: 'name', label: 'Model', render: r => <b>{r.name}</b> },
+          { key: 'layer', label: 'Layer', render: r => <Layer l={r.layer} /> },
+          { key: 'total', label: 'Credits', num: true, desc: true, render: r => r.total.toFixed(4) },
+          { key: 'share', label: 'Share', num: true, desc: true, sort: r => r.total, render: r => grand ? pct(r.total / grand * 100) : '—' },
+          { key: 'avg', label: 'Per run', num: true, desc: true, render: r => fmtCr(r.avg) },
+          { key: 'change', label: 'Change', num: true, desc: true, render: r => r.change == null ? '—' : <span className={r.change > 1.5 ? 't-fail' : r.change > 1.15 ? 't-warn' : ''}><b>{r.change.toFixed(2)}×</b></span> },
+          { key: 'sp', label: 'Credits per run', ns: true, render: r => <Spark data={r.a} w={110} h={22} tone={r.change > 1.5 ? 'fail' : 'muted'} /> },
+        ]} />
+    </Card>
+  </div>;
+}
+
+/* ---------------- Schedules & freshness ---------------- */
+function Freshness() {
+  const { incidents, go, theme } = useApp();
+  const [tab, setTab] = useState('sched');
+  const silences = incidents.filter(i => i.kind === 'silence' && i.state !== 'resolved');
+  const late = SLAS.filter(s => s.late);
+  const src = D.source_freshness.map(f => ({ ...f, over: f.max_lag_min != null && f.freshness_lag_min > f.max_lag_min }));
+  const limits = [...new Set(src.map(f => f.max_lag_min).filter(v => v != null))];
+  const optS = useMemo(() => { const p = pal(); return base(p, {
+    grid: { left: 170, right: 70, top: 10, bottom: 46 },
+    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const s = SLAS[e.dataIndex]; return `<b>${s.name}</b><br/>Last success ${fmtTs(s.last)}<br/>Allowed ${s.expected_every} + ${s.grace} grace<br/>${s.late ? 'Late by ' + fmtSpan(AS_OF - s.due) : 'Due in ' + fmtSpan(s.due - AS_OF)}`; } },
+    xAxis: ax(p, 'Time since last success (% of allowed interval + grace)', { type: 'value', min: 0, max: v => Math.max(140, Math.ceil(v.max / 20) * 20), axisLabel: { color: p.ink3, fontSize: 10.5, formatter: '{value}%' } }),
+    yAxis: ax(p, '', { type: 'category', inverse: true, data: SLAS.map(s => s.name), splitLine: { show: false }, axisLabel: { color: p.ink2 } }),
+    series: [{ type: 'bar', barMaxWidth: 14, data: SLAS.map(s => ({ value: +(s.used * 100).toFixed(1), itemStyle: { color: s.late ? p.stale : p.ok, borderRadius: 2 } })),
+      label: { show: true, position: 'right', color: p.ink3, fontSize: 10.5, formatter: e => fmtSpan(AS_OF - SLAS[e.dataIndex].last) },
+      markLine: { symbol: 'none', silent: true, lineStyle: { color: p.ink2, type: 'dashed' }, label: { formatter: 'Due', color: p.ink2, fontSize: 10.5 }, data: [{ xAxis: 100 }] } }],
+  }); }, [theme]);
+  const optF = useMemo(() => { const p = pal(); return base(p, {
+    grid: { left: 170, right: 40, top: 10, bottom: 46 },
+    tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => `<b>${src[e.dataIndex].name}</b><br/>Newest data is ${src[e.dataIndex].freshness_lag_min} min old<br/>Limit ${src[e.dataIndex].max_lag_min == null ? 'not declared' : src[e.dataIndex].max_lag_min + ' min'}` },
+    xAxis: ax(p, 'Age of newest source data (minutes, log scale)', { type: 'log', min: 1, logBase: 10 }),
+    yAxis: ax(p, '', { type: 'category', inverse: true, data: src.map(s => s.name), splitLine: { show: false }, axisLabel: { color: p.ink2 } }),
+    series: [{ type: 'bar', barMaxWidth: 14, data: src.map(s => ({ value: s.freshness_lag_min, itemStyle: { color: s.over ? p.stale : p.ok, borderRadius: 2 } })), label: { show: true, position: 'right', color: p.ink3, formatter: '{c} min' },
+      markLine: limits.length === 1 ? { symbol: 'none', silent: true, lineStyle: { color: p.ink2, type: 'dashed' }, label: { formatter: `Limit ${limits[0]} min`, color: p.ink2, fontSize: 10.5 }, data: [{ xAxis: limits[0] }] } : undefined }],
+  }); }, [theme]); // eslint-disable-line
+  return <div className="page">
+    <PageHead title="Schedules & freshness" sub={`Declared schedules against the last success, missed-schedule alerts, and how old the newest source data is against each source's limit. Checked at ${fmtTs(AS_OF)}.`} />
+    <div className="kpis">
+      <Kpi label="Declared schedules" value={SLAS.length} sub={[...new Set(SLAS.map(s => `every ${s.expected_every}`))].join(', ')} />
+      <Kpi label="Late now" value={late.length} tone={late.length ? 'stale' : 'ok'} sub={late.map(s => s.name).join(', ') || 'all on time'} />
+      <Kpi label="Missed-schedule alerts" value={silences.length} tone={silences.length ? 'fail' : 'ok'} sub={silences.map(i => incTarget(i)).join(', ') || 'none open'} />
+      <Kpi label="Oldest source data" value={fmtSpan(Math.max(...D.source_freshness.map(f => f.freshness_lag_min)) * MS.m)} sub={`${src.filter(s => s.over).length} of ${src.length} sources over their limit`} tone={src.some(s => s.over) ? 'stale' : 'ok'} spark={(SERIES_LIST.find(x => x.metric === 'freshness_lag_minutes') || { pts: {} }).pts.native ? SERIES_LIST.find(x => x.metric === 'freshness_lag_minutes').pts.native.map(x => x.value) : null} sparkTone="stale" />
+    </div>
+    <div className="fbar">
+      <Seg label="View" options={[['sched', 'Schedules'], ['src', 'Source freshness']]} value={tab} onChange={setTab} />
+    </div>
+    {tab === 'sched' ? <>
+      <Card title="Time since last success" sub="100% is the declared interval plus grace; a bar past the dashed line is late. Label: time since last success.">
+        <EChart option={optS} height={70 + SLAS.length * 30} onClick={e => go('node', SLAS[e.dataIndex].unique_id)} />
+      </Card>
+      <Card title="Schedules" sub="Late first. Click a row to open the model." flush>
+        <DataTable rows={SLAS} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 'st', dir: -1 }}
+          cols={[
+            { key: 'name', label: 'Model', render: r => <b>{r.name}</b> },
+            { key: 'st', label: 'Status', render: r => r.late ? <Pill tone="stale">Late</Pill> : <Pill tone="ok">On time</Pill>, sort: r => r.used },
+            { key: 'expected_every', label: 'Expected every' },
+            { key: 'grace', label: 'Grace' },
+            { key: 'last', label: 'Last success', render: r => fmtTs(r.last) },
+            { key: 'due', label: 'Due by', render: r => fmtTs(r.due) },
+            { key: 'gap', label: 'Late by / due in', render: r => r.late ? <b className="t-stale">late by {fmtSpan(AS_OF - r.due)}</b> : `in ${fmtSpan(r.due - AS_OF)}`, sort: r => AS_OF - r.due },
+            { key: 'alert', label: 'Missed-schedule alert', render: r => { const i = silences.find(x => incAsset(x) === r.unique_id); return i ? <span>{i.acknowledged_by ? <Pill tone="info">Acknowledged by {i.acknowledged_by}</Pill> : <Pill tone="fail">Open</Pill>}</span> : <span className="muted">None</span>; }, ns: true },
+          ]} />
+      </Card>
+    </> : <>
+      <Card title="Age of newest source data" sub="Minutes since the newest row landed in each source, log scale. Purple bars are over the source's declared limit.">
+        <EChart option={optF} height={70 + src.length * 32} onClick={e => go('node', src[e.dataIndex].unique_id)} />
+      </Card>
+      <Card title="Source freshness" sub="Click a row to open the source." flush>
+        <DataTable rows={src} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 'freshness_lag_min', dir: -1 }}
+          cols={[
+            { key: 'name', label: 'Source', render: r => <b>{r.name}</b> },
+            { key: 'st', label: 'Status', render: r => r.over ? <Pill tone="stale">Stale</Pill> : <Pill tone="ok">Fresh</Pill>, sort: r => r.freshness_lag_min },
+            { key: 'freshness_lag_min', label: 'Data age', num: true, desc: true, render: r => r.over ? <b className="t-stale">{fmtSpan(r.freshness_lag_min * MS.m)}</b> : `${r.freshness_lag_min} min` },
+            { key: 'max_lag_min', label: 'Limit', num: true, render: r => r.max_lag_min == null ? <span className="muted">Not declared</span> : `${r.max_lag_min} min` },
+            { key: 'an', label: 'Lag trend', ns: true, render: r => { const x = SERIES_LIST.find(z => z.uid === r.unique_id); return x ? <Spark data={Object.values(x.pts)[0].map(v => v.value)} w={100} h={20} tone={seriesAnomalous(x) ? 'stale' : 'muted'} /> : <span className="muted">—</span>; } },
+            { key: 'tests', label: 'Tests', num: true, render: r => (TESTS_OF[r.unique_id] || []).length },
+          ]} />
+      </Card>
+    </>}
+  </div>;
+}
+
+/* ---------------- Schema changes ---------------- */
+function Schema() {
+  const { theme } = useApp();
+  const [kind, setKind] = useState('all'); const [q, setQ] = useState('');
+  const rows = SCHEMA.filter(c => (kind === 'all' || c.change === kind) && (!q || (c.relation + ' ' + c.column).toLowerCase().includes(q.toLowerCase())));
+  const days = [...Array(15)].map((_, i) => { const d = new Date(AS_OF - (14 - i) * MS.d); d.setHours(0, 0, 0, 0); return d.getTime(); });
+  const opt = useMemo(() => { const p = pal(); const col = { added: p.ok, removed: p.fail, type_changed: p.warn };
+    return base(p, {
+      grid: { left: 56, right: 20, top: 30, bottom: 54 },
+      legend: { top: 0, right: 0, textStyle: { color: p.ink2, fontSize: 11 } },
+      xAxis: ax(p, 'Day detected', { type: 'category', data: days.map(fmtDay), splitLine: { show: false }, nameGap: 34 }),
+      yAxis: ax(p, 'Changes (count)', { type: 'value', minInterval: 1, nameGap: 34 }),
+      series: Object.keys(CHANGE_LABEL).map(k => ({ name: CHANGE_LABEL[k], type: 'bar', stack: 's', barMaxWidth: 18, color: col[k],
+        data: days.map(d => SCHEMA.filter(c => c.change === k && c.t >= d && c.t < d + MS.d).length) })),
+    }); }, [theme]); // eslint-disable-line
+  return <div className="page">
+    <PageHead title="Schema changes" sub="Columns added, removed or changed type, per table, as detected between runs." />
+    <div className="kpis">
+      <Kpi label="Changes" value={SCHEMA.length} sub="last 15 days" spark={days.map(d => SCHEMA.filter(c => c.t >= d && c.t < d + MS.d).length)} sparkType="bar" />
+      <Kpi label="Columns added" value={SCHEMA.filter(c => c.change === 'added').length} />
+      <Kpi label="Columns removed" value={SCHEMA.filter(c => c.change === 'removed').length} tone={SCHEMA.some(c => c.change === 'removed') ? 'fail' : undefined} />
+      <Kpi label="Type changes" value={SCHEMA.filter(c => c.change === 'type_changed').length} tone={SCHEMA.some(c => c.change === 'type_changed') ? 'warn' : undefined} />
+      <Kpi label="Tables affected" value={new Set(SCHEMA.map(c => c.relation)).size} />
+    </div>
+    <div className="fbar">
+      <Seg label="Change" options={[['all', 'All'], ...Object.entries(CHANGE_LABEL)]} value={kind} onChange={setKind} />
+      <div className="fgrp"><label htmlFor="sq">Search</label><input id="sq" className="inp" placeholder="Table or column" value={q} onChange={e => setQ(e.target.value)} /></div>
+    </div>
+    <Card title="Schema changes per day" sub="Stacked by kind of change, last 15 days.">
+      <EChart option={opt} height={230} />
+    </Card>
+    <Card title="Detected changes" sub="Newest first. Click a table name to open it; tables outside the project graph are not linked." flush>
+      <DataTable rows={rows} rowKey={r => r.relation + r.column + r.t} sort={{ key: 't', dir: -1 }}
+        cols={[
+          { key: 't', label: 'Detected', render: r => fmtTs(r.t) },
+          { key: 'relation', label: 'Table', render: r => BY_NAME[r.relation] ? <NodeLink id={BY_NAME[r.relation]} /> : <span title="Not in the project graph">{r.relation}</span> },
+          { key: 'column', label: 'Column', render: r => <span className="mono">{r.column}</span> },
+          { key: 'change', label: 'Change', render: r => <Pill tone={r.change === 'added' ? 'ok' : r.change === 'removed' ? 'fail' : 'warn'}>{CHANGE_LABEL[r.change] || r.change}</Pill> },
+          { key: 'det', label: 'Details', ns: true, render: r => r.change === 'type_changed' ? <span className="mono">{r.from} to {r.to}</span> : <span className="mono">{r.type || ''}</span> },
+        ]} />
+    </Card>
+  </div>;
+}
+
+/* ---------------- Models (catalog entry to node pages) ---------------- */
+function Models() {
+  const { status, go, theme } = useApp();
+  const [lay, setLay] = useState('all'); const [st, setSt] = useState('all'); const [q, setQ] = useState('');
+  const rows = ASSETS.filter(n => (lay === 'all' || LAYER_GROUP(n.layer) === lay) && (st === 'all' || status[n.unique_id].status === st) && (!q || n.name.toLowerCase().includes(q.toLowerCase())));
+  const opt = useMemo(() => { const p = pal(); const ss = ['failed', 'warn', 'stale', 'notrun', 'ok'];
+    return base(p, {
+      grid: { left: 120, right: 20, top: 30, bottom: 46 },
+      legend: { top: 0, right: 0, textStyle: { color: p.ink2, fontSize: 11 } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 } },
+      xAxis: ax(p, 'Nodes (count)', { type: 'value', minInterval: 1 }),
+      yAxis: ax(p, '', { type: 'category', data: LAYER_ORDER.map(l => LAYER_LABEL[l]), inverse: true, splitLine: { show: false }, axisLabel: { color: p.ink2 } }),
+      series: ss.map(s => ({ name: STATUS_LABEL[s], type: 'bar', stack: 'x', barMaxWidth: 16, color: statusColor(p, s),
+        data: LAYER_ORDER.map(l => ASSETS.filter(n => LAYER_GROUP(n.layer) === l && status[n.unique_id].status === s).length) })),
+    }); }, [status, theme]);
+  return <div className="page">
+    <PageHead title="Models & sources" sub="Every model, seed, snapshot and source in the project. Click a row for its node page." />
+    <div className="kpis">
+      <Kpi label="Models" value={ASSETS.filter(n => n.type === 'model').length} sub={`${ASSETS.filter(n => n.materialization === 'incremental').length} incremental, ${ASSETS.filter(n => n.materialization === 'table').length} tables`} />
+      <Kpi label="Sources" value={ASSETS.filter(n => n.type === 'source').length} sub={`${ASSETS.filter(n => n.type === 'seed').length} seeds, ${ASSETS.filter(n => n.type === 'snapshot').length} snapshot`} />
+      <Kpi label="Tests" value={TESTS.length} sub={`${(sum(ASSETS.map(n => (TESTS_OF[n.unique_id] || []).length)) / ASSETS.length).toFixed(1)} per node on average`} />
+      <Kpi label="Not OK" value={ASSETS.filter(n => status[n.unique_id].status !== 'ok').length} tone="warn" sub="failed, warning, late or not run" />
+    </div>
+    <div className="fbar">
+      <Seg label="Layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
+      <Seg label="Status" options={[['all', 'All'], ...['failed', 'warn', 'stale', 'ok'].map(s => [s, STATUS_LABEL[s]])]} value={st} onChange={setSt} />
+      <div className="fgrp"><label htmlFor="mq">Search</label><input id="mq" className="inp" placeholder="Name" value={q} onChange={e => setQ(e.target.value)} /></div>
+    </div>
+    <Card title="Status by layer" sub="Count of nodes per layer and status.">
+      <EChart option={opt} height={230} />
+    </Card>
+    <Card title="All nodes" sub="Problems first. Click a row for the node page." flush>
+      <DataTable rows={rows} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 'st', dir: -1 }} maxH={600}
+        cols={[
+          { key: 'name', label: 'Name', render: r => <b>{r.name}</b> },
+          { key: 'type', label: 'Type' },
+          { key: 'layer', label: 'Layer', render: r => <Layer l={r.layer} />, sort: r => LAYER_ORDER.indexOf(LAYER_GROUP(r.layer)) },
+          { key: 'st', label: 'Status', render: r => <StatusPill s={status[r.unique_id].status} />, sort: r => ({ failed: 4, stale: 3, warn: 2, notrun: 1, ok: 0 })[status[r.unique_id].status] },
+          { key: 'tests', label: 'Tests passing', num: true, render: r => { const t = TESTS_OF[r.unique_id] || []; const f = t.filter(x => isBad(latestTest(x))).length; return t.length ? <span className={f ? 't-fail' : ''}>{t.length - f} / {t.length}</span> : <span className="muted">—</span>; }, sort: r => (TESTS_OF[r.unique_id] || []).length },
+          { key: 'dur', label: 'Latest build', num: true, desc: true, render: r => fmtSec(EX[r.unique_id] && EX[r.unique_id][LAST] ? EX[r.unique_id][LAST].execution_time_s : null), sort: r => (EX[r.unique_id] && EX[r.unique_id][LAST] ? EX[r.unique_id][LAST].execution_time_s : null) },
+          { key: 'cr', label: 'Credits, 30 runs', num: true, desc: true, render: r => EX[r.unique_id] ? sum(EX[r.unique_id].map(x => (x ? x.credits : 0))).toFixed(4) : '—', sort: r => (EX[r.unique_id] ? sum(EX[r.unique_id].map(x => (x ? x.credits : 0))) : null) },
+          { key: 'sp', label: 'Build time trend', ns: true, render: r => EX[r.unique_id] ? <Spark data={EX[r.unique_id].map(x => (x ? x.execution_time_s : null))} w={100} h={20} tone="muted" /> : null },
+        ]} />
+    </Card>
+  </div>;
+}
+
+/* ---------------- Node page ---------------- */
+function NodePage({ id }) {
+  const { status, incidents, go, theme } = useApp();
+  const n = NODE[id];
+  const [tab, setTab] = useState('history');
+  const [ser, setSer] = useState(null);
+  useEffect(() => { setTab('history'); setSer(null); }, [id]);
+  const histOpt = useMemo(() => {
+    if (!n) return null; const p = pal();
+    if (n.type === 'test') {
+      const a = TR[id] || [], f = TRF[id] || [];
+      return base(p, { grid: { left: 60, right: 20, top: 24, bottom: 54 },
+        tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: x => { const i = x[0].dataIndex; return `<b>${fmtRun(RUNS[i].t)}</b><br/>${a[i] || 'not run'}${f[i] ? `, ${f[i]} failing rows` : ''}`; } },
+        xAxis: ax(p, 'Run start time', { type: 'category', data: RUNS.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
+        yAxis: ax(p, 'Failing rows (count)', { type: 'value', minInterval: 1, nameGap: 40 }),
+        series: [{ type: 'bar', barMaxWidth: 14, data: RUNS.map((r, i) => ({ value: a[i] == null ? null : (f[i] || 0), itemStyle: { color: isBad(a[i]) ? p.fail : p.ok, borderRadius: [2, 2, 0, 0] } })) }] });
+    }
+    const ex = EX[id] || [];
+    return base(p, { grid: { left: 60, right: 60, top: 30, bottom: 54 },
+      legend: { top: 0, right: 0, data: ['Build time', 'Credits'], textStyle: { color: p.ink2, fontSize: 11 } },
+      xAxis: ax(p, 'Run start time', { type: 'category', data: RUNS.map(r => fmtRun(r.t)), splitLine: { show: false }, nameGap: 34 }),
+      yAxis: [ax(p, 'Build time (seconds)', { type: 'value', nameGap: 40 }), ax(p, 'Credits', { type: 'value', position: 'right', nameGap: 46, splitLine: { show: false }, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => v.toFixed(3) } })],
+      series: [
+        { name: 'Build time', type: 'bar', barMaxWidth: 14, color: p.bar, data: ex.map(x => (x ? { value: x.execution_time_s, itemStyle: { color: x.status === 'success' ? p.bar : p.fail, borderRadius: [2, 2, 0, 0] } } : null)) },
+        { name: 'Credits', type: 'line', yAxisIndex: 1, color: p.accent, symbolSize: 4, connectNulls: false, data: ex.map(x => (x ? x.credits : null)) },
+      ] });
+  }, [id, theme]); // eslint-disable-line
+  if (!n) return <div className="page"><PageHead title="Node not found" sub="This node is not in the project graph. Pick one from Models & sources." /></div>;
+  const isTest = n.type === 'test';
+  const target = isTest ? testTarget(n) : id;
+  const s = status[target] || { status: 'ok', reasons: [] };
+  const tids = TESTS_OF[id] || [];
+  const failing = tids.filter(t => isBad(latestTest(t)));
+  const incs = incidents.filter(i => i.state !== 'resolved' && (incNode(i) === id || incAsset(i) === id));
+  const sers = SERIES_LIST.filter(x => x.uid === id); const curSer = SERIES[ser] || sers[0];
+  const schema = SCHEMA.filter(c => c.relation === n.name);
+  const ex = EX[id] || []; const lastEx = ex[LAST];
+  const tabs = isTest ? [{ key: 'history', label: 'Result history' }, { key: 'lineage', label: 'Lineage' }]
+    : [{ key: 'history', label: 'Build history' }, { key: 'tests', label: 'Tests', count: tids.length }, { key: 'metrics', label: 'Metrics', count: sers.length }, { key: 'schema', label: 'Schema history', count: schema.length }, { key: 'lineage', label: 'Lineage' }];
+  const tst = isTest ? latestTest(id) : null; const tarr = isTest ? (TR[id] || []) : [];
+  return <div className="page">
+    <PageHead crumbs={[{ label: isTest ? 'Tests & anomalies' : 'Models & sources', to: isTest ? 'tests' : 'models' }, { label: n.name }]} title={n.name}
+      sub={<span className="mono">{n.unique_id}</span>}
+      right={<div className="hstack">{isTest ? <TestPill s={tst} /> : <StatusPill s={s.status} />}<Layer l={isTest && target ? NODE[target].layer : n.layer} /><span className="badge">{n.type}{n.materialization && n.materialization !== n.type ? `, ${n.materialization}` : ''}</span>
+        <button className="btn" onClick={() => go('lineage', null, { focus: target || id, mode: (isTest ? isBad(tst) : s.status !== 'ok') ? 'root' : 'both' })}>Show in lineage</button></div>} />
+    {!isTest && s.reasons.length > 0 && <div className="reasons" style={{ margin: '-6px 0 14px' }}>{s.reasons.map((r, i) => <span key={i}>{r}</span>)}</div>}
+    {isTest ? <div className="kpis">
+      <Kpi label="Latest result" value={tst ? (isBad(tst) ? 'Fail' : tst === 'pass' ? 'Pass' : tst) : '—'} tone={isBad(tst) ? 'fail' : 'ok'} sub={latestIdx(id) >= 0 ? fmtTs(RUNS[latestIdx(id)].t) : ''} />
+      <Kpi label="Failing rows" value={latestIdx(id) >= 0 ? TRF[id][latestIdx(id)] : '—'} tone={isBad(tst) ? 'fail' : undefined} spark={TRF[id] || []} sparkType="bar" sparkTone="fail" />
+      <Kpi label="Failing since" value={(() => { let i = tarr.length - 1; if (!isBad(tarr[i])) return '—'; while (i > 0 && isBad(tarr[i - 1])) i--; return fmtTs(RUNS[i].t); })()} sub={`${tarr.filter(isBad).length} failures in ${tarr.filter(x => x != null).length} runs`} />
+      {isBad(tst) && TRC[id] && NODE[TRC[id].id] ? <Kpi label="Traced root cause" value={<button className="linkish" style={{ fontSize: 15, fontWeight: 650 }} onClick={() => go('node', TRC[id].id)}>{NODE[TRC[id].id].name}</button>} tone="stale" sub={rcKind(TRC[id].kind)} />
+        : <Kpi label="Test type" value={n.test_name || 'singular'} sub={n.column ? `column ${n.column}` : 'no column'} />}
+      <Kpi label="Model" value={target ? NODE[target].name : '—'} sub={target ? STATUS_LABEL[s.status] : ''} />
+    </div> : <div className="kpis">
+      <Kpi label="Latest build" value={lastEx ? fmtSec(lastEx.execution_time_s) : n.type === 'source' ? 'Source' : 'Not run'} tone={lastEx && lastEx.status !== 'success' ? 'fail' : undefined} spark={ex.map(x => (x ? x.execution_time_s : null))} sparkTone="muted" sub={lastEx ? `median ${fmtSec(median(ex.map(x => (x ? x.execution_time_s : null))))}` : FRESH[id] ? `data ${FRESH[id].freshness_lag_min} min old` : ''} />
+      <Kpi label="Credits per run" value={lastEx ? (lastEx.credits == null ? 'Pending' : fmtCr(lastEx.credits)) : '—'} spark={ex.map(x => (x ? x.credits : null))} sub={ex.length ? `${sum(ex.map(x => (x ? x.credits : 0))).toFixed(4)} over 30 runs` : ''} />
+      <Kpi label="Tests passing" value={tids.length ? `${tids.length - failing.length} of ${tids.length}` : 'None'} tone={failing.length ? 'fail' : tids.length ? 'ok' : undefined} />
+      <Kpi label="Open incidents" value={incs.length} tone={incs.length ? 'warn' : 'ok'} sub={incs.map(i => KIND_LABEL[i.kind]).join(', ')} />
+      {SLA_BY[id] && <Kpi label="Schedule" value={SLA_BY[id].late ? 'Late' : 'On time'} tone={SLA_BY[id].late ? 'stale' : 'ok'} sub={`every ${SLA_BY[id].expected_every}, last ${fmtTs(SLA_BY[id].last)}`} />}
+    </div>}
+    <Tabs value={tab} onChange={setTab} tabs={tabs} />
+    {tab === 'history' && <>
+      <Card title={isTest ? 'Failing rows per run' : 'Build time and credits per run'} sub={isTest ? 'Green bars passed; red bars failed, height is the number of failing rows.' : 'Red bars are failed builds. Credits of the newest runs may not be attributed yet.'}>
+        {(isTest || ex.length) ? <EChart option={histOpt} height={240} /> : <div className="empty-state"><b>No builds recorded</b>{n.type === 'source' ? 'Sources are not built; see Schedules & freshness for their data age.' : 'This node did not run in the window.'}</div>}
+      </Card>
+      {isTest ? <Card title="Results" flush><DataTable rows={RUNS.filter((r, i) => tarr[i] != null)} rowKey={r => r.invocation_id} onRow={r => go('runs', null, { run: r.invocation_id })} sort={{ key: 't', dir: -1 }}
+        cols={[{ key: 't', label: 'Run', render: r => fmtTs(r.t) }, { key: 's', label: 'Result', render: r => <TestPill s={tarr[r.idx]} />, sort: r => tarr[r.idx] }, { key: 'f', label: 'Failing rows', num: true, render: r => TRF[id][r.idx] || 0, sort: r => TRF[id][r.idx] }, { key: 'inv', label: 'Run id', render: r => <span className="mono muted">{r.invocation_id}</span> }]} /></Card>
+        : ex.length > 0 && <Card title="Builds" sub="Click a row to open the run timeline." flush><DataTable rows={ex.filter(Boolean)} rowKey={r => r.invocation_id} onRow={r => go('runs', null, { run: r.invocation_id })} sort={{ key: 't', dir: -1 }} maxH={380}
+          cols={[{ key: 't', label: 'Run', render: r => fmtTs(RUNS[r.i].t), sort: r => r.t }, { key: 'status', label: 'Status', render: r => <RunPill s={r.status} /> }, { key: 'execution_time_s', label: 'Build time', num: true, desc: true, render: r => fmtSec(r.execution_time_s) }, { key: 'credits', label: 'Credits', num: true, desc: true, render: r => r.credits == null ? <span className="muted">Not yet attributed</span> : fmtCr(r.credits) }]} /></Card>}
+    </>}
+    {tab === 'tests' && <Card title="Tests on this node" sub="Click a row to open the test." flush>
+      <DataTable rows={tids.map(t => NODE[t])} rowKey={r => r.unique_id} onRow={r => go('node', r.unique_id)} sort={{ key: 's', dir: 1 }} empty="No test is attached to this node. Add tests to cover it."
+        cols={[{ key: 's', label: 'Status', render: r => <TestPill s={latestTest(r.unique_id)} />, sort: r => (isBad(latestTest(r.unique_id)) ? 0 : 1) }, { key: 'name', label: 'Test' }, { key: 'test_name', label: 'Type', render: r => r.test_name || 'singular' }, { key: 'column', label: 'Column', render: r => r.column || <span className="muted">—</span> }, { key: 'strip', label: 'Last 30 runs', ns: true, render: r => <RunStrip arr={TR[r.unique_id] || []} /> }]} />
+    </Card>}
+    {tab === 'metrics' && (sers.length ? <div className="grid2">
+      <Card title={`${humanMetric(curSer.metric)} of ${n.name}`} sub="Observed against expected and its band. A red dot is a point outside the band." right={<div className="hstack">{sers.length > 1 && <select className="inp" value={curSer.key} onChange={e => setSer(e.target.value)}>{sers.map(x => <option key={x.key} value={x.key}>{humanMetric(x.metric)}</option>)}</select>}{Object.keys(curSer.pts).map(e => <EngineBadge key={e} e={e} />)}</div>}>
+        <BandChart series={curSer} engine={Object.keys(curSer.pts)[0]} />
+      </Card>
+      <Card title="Shadow scoring" sub="Native and Cortex side by side."><ShadowPanel series={curSer} /></Card>
+    </div> : <Card title="Metrics"><div className="empty-state"><b>No metric is monitored on {n.name}</b>{incs.some(i => i.kind === 'anomaly') ? 'An anomaly alert names this node, but no metric series was recorded for it in this window.' : 'Monitored metrics such as row count appear here with their expected band.'}</div></Card>)}
+    {tab === 'schema' && <Card title="Schema history" flush>
+      <DataTable rows={schema} rowKey={r => r.column + r.t} empty="No schema change detected on this table in the window."
+        cols={[{ key: 't', label: 'Detected', render: r => fmtTs(r.t) }, { key: 'column', label: 'Column', render: r => <span className="mono">{r.column}</span> }, { key: 'change', label: 'Change', render: r => <Pill tone={r.change === 'added' ? 'ok' : r.change === 'removed' ? 'fail' : 'warn'}>{CHANGE_LABEL[r.change]}</Pill> }, { key: 'd', label: 'Details', ns: true, render: r => r.change === 'type_changed' ? `${r.from} to ${r.to}` : r.type }]} />
+    </Card>}
+    {tab === 'lineage' && <Card title="Lineage neighbourhood" sub="Two steps up and down from this node. Click a node to open it." flush right={<button className="btn" onClick={() => go('lineage', null, { focus: target || id, mode: 'both' })}>Open full lineage</button>}>
+      {target ? <div className="lin-wrap mini"><LineageCanvas compact ids={hood(target, 2)} focus={target} mode="both" onSelect={x => x && go('node', x)} /></div> : <div className="empty-state">This test has no model in the graph.</div>}
+    </Card>}
+  </div>;
+}
+
+/* ---------------- Settings ---------------- */
+function Settings() {
+  const { incidents } = useApp();
+  const channels = {}; incidents.forEach(i => { channels[i.channel] = (channels[i.channel] || 0) + 1; });
+  return <div className="page">
+    <PageHead title="Settings & about" sub="What this account can do, the versions in use, and where alerts go." />
+    <div className="kpis">
+      <Kpi label="Edition" value={CAP.edition || '—'} />
+      <Kpi label="icecore version" value={CAP.icecore_version || '—'} />
+      <Kpi label="Cortex anomaly engine" value={CAP.cortex ? 'Available' : 'Not available'} tone={CAP.cortex ? 'ok' : 'warn'} sub={CAP.cortex ? 'can shadow-score metrics' : 'native engine only'} />
+      <Kpi label="Alert channels" value={Object.keys(channels).length} />
+    </div>
+    <div className="grid2 even">
+      <Card title="Capabilities" flush><div className="kv">
+        <div>Project</div><div>{D.project}</div>
+        <div>Edition</div><div>{CAP.edition}</div>
+        <div>Event table</div><div className="mono">{CAP.event_table}</div>
+        <div>Cortex</div><div>{CAP.cortex ? 'Available' : 'Not available'}</div>
+        <div>icecore version</div><div>{CAP.icecore_version}</div>
+        <div>dbt versions</div><div>{(CAP.dbt_versions || []).join('; ')}</div>
+        <div>Report generated</div><div>{fmtTs(parseT(D.generated_at))}</div>
+        <div>Latest run</div><div>{fmtTs(RUNS[LAST].t)}</div>
+      </div></Card>
+      <Card title="Alert channels" sub="Channels that received incidents in the window." flush>
+        <DataTable rows={Object.entries(channels).map(([c, n]) => ({ c, n }))} rowKey={r => r.c} sort={{ key: 'n', dir: -1 }} cols={[{ key: 'c', label: 'Channel' }, { key: 'n', label: 'Incidents', num: true, desc: true }]} />
+      </Card>
+    </div>
+    <Card title="Health score" sub="Shown per layer on the Overview; the same formula appears when you hover a layer tile.">
+      <div style={{ maxWidth: '76ch', color: 'var(--ink-2)' }}>
+        <p style={{ marginTop: 0 }}>Each test scores 100 when it passes, 50 on a warning and 0 when it fails. The layer score is a weighted average:</p>
+        <p className="mono" style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6 }}>score = (0.50 × tests + 0.20 × freshness + 0.15 × schedules + 0.15 × anomalies) ÷ weights used</p>
+        <p>Freshness is the share of the layer's models built successfully in the latest run. Schedules is the share of declared schedules met. Anomalies is the share of monitored metrics inside their expected band. A part with no data is left out and the other weights are rescaled. Gold includes gold analytics models.</p>
+      </div>
+    </Card>
+  </div>;
+}
+
+/* ---------------- shell ---------------- */
+function parseHash() {
+  const h = location.hash.replace(/^#\/?/, ''); const [path, qs] = h.split('?'); const parts = (path || '').split('/').filter(Boolean);
+  const q = {}; new URLSearchParams(qs || '').forEach((v, k) => { q[k] = v; });
+  return { page: parts[0] || 'overview', arg: parts.slice(1).map(decodeURIComponent).join('/'), q };
+}
+const hashFor = (page, arg, q) => { let h = '#/' + page + (arg ? '/' + encodeURIComponent(arg) : ''); if (q) { const s = new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== '')).toString(); if (s) h += '?' + s; } return h; };
+
+function GlobalSearch() {
+  const { go, status } = useApp();
+  const [q, setQ] = useState(''); const [i, setI] = useState(0);
+  const res = q ? D.nodes.filter(n => n.name.toLowerCase().includes(q.toLowerCase())).sort((a, b) => (a.type === 'test') - (b.type === 'test') || a.name.length - b.name.length).slice(0, 10) : [];
+  const pick = n => { go('node', n.unique_id); setQ(''); };
+  return <div className="gsearch">
+    <Ic d={ICON.search} s={14} />
+    <input placeholder="Search models, sources, tests" value={q} aria-label="Search nodes" onChange={e => { setQ(e.target.value); setI(0); }}
+      onKeyDown={e => { if (e.key === 'ArrowDown') { setI(x => Math.min(x + 1, res.length - 1)); e.preventDefault(); } else if (e.key === 'ArrowUp') { setI(x => Math.max(x - 1, 0)); e.preventDefault(); } else if (e.key === 'Enter' && res[i]) pick(res[i]); else if (e.key === 'Escape') setQ(''); }} />
+    {q && <div className="res" role="listbox">{res.length ? res.map((n, k) => <button key={n.unique_id} className={k === i ? 'on' : ''} role="option" aria-selected={k === i} onMouseDown={e => { e.preventDefault(); pick(n); }}>
+      <span>{n.name}</span><span className="muted">{n.type === 'test' ? <TestPill s={latestTest(n.unique_id)} /> : <StatusPill s={status[n.unique_id].status} />}</span></button>)
+      : <div className="muted" style={{ padding: 8 }}>No node named like “{q}”.</div>}</div>}
+  </div>;
+}
+
+function App() {
+  const [route, setRoute] = useState(parseHash());
+  const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'light');
+  const [incidents, setIncidents] = useState(() => D.incidents.map(i => ({ ...i, state: i.acknowledged_by ? 'acknowledged' : 'open' })));
+  const [toast, setToast] = useState(null);
+  useEffect(() => { const f = () => { setRoute(parseHash()); }; window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f); }, []);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3200); return () => clearTimeout(t); }, [toast]);
+  const go = (page, arg, q) => { location.hash = hashFor(page, arg, q); const m = document.querySelector('.main'); if (m && page !== route.page) m.scrollTop = 0; };
+  const nav = (page, arg, q) => { history.replaceState(null, '', hashFor(page, arg, q)); setRoute(parseHash()); };
+  const toggleTheme = () => { const t = theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('icecore-theme', t); } catch (e) { } setTheme(t); };
+  const act = (key, state) => {
+    setIncidents(list => list.map(i => i.incident_key !== key ? i : { ...i, state, acknowledged_by: state === 'acknowledged' ? (i.acknowledged_by || 'you') : state === 'open' ? null : i.acknowledged_by, resolvedAt: state === 'resolved' ? AS_OF : null }));
+    const i = incidents.find(x => x.incident_key === key);
+    setToast(`${state === 'acknowledged' ? 'Acknowledged' : state === 'resolved' ? 'Resolved' : 'Reopened'}: ${i ? i.title : key}`);
+  };
+  const status = useMemo(() => computeStatus(incidents), [incidents]);
+  const health = useMemo(() => computeHealth(incidents), [incidents]);
+  const ctx = { route, go, nav, theme, incidents, act, status, health };
+  const openN = incidents.filter(i => i.state === 'open').length;
+  const late = SLAS.filter(s => s.late).length + incidents.filter(i => i.kind === 'silence' && i.state !== 'resolved' && !(SLA_BY[incAsset(i)] || {}).late).length;
+  const items = [
+    ['overview', 'Overview', ICON.overview],
+    ['incidents', 'Incidents', ICON.incidents, openN, 'fail'],
+    ['tests', 'Tests & anomalies', ICON.tests, FAILS[LAST] || null, 'fail'],
+    ['runs', 'Runs', ICON.runs, RUNS[LAST].status !== 'success' ? '!' : null, 'fail'],
+    ['freshness', 'Schedules & freshness', ICON.fresh, late || null, 'stale'],
+    ['schema', 'Schema changes', ICON.schema, SCHEMA.length || null, 'warn'],
+    ['cost', 'Cost', ICON.cost],
+    null,
+    ['lineage', 'Lineage', ICON.lineage],
+    ['models', 'Models & sources', ICON.models, ASSETS.length, ''],
+    null,
+    ['settings', 'Settings & about', ICON.settings],
+  ];
+  const active = route.page === 'node' ? (NODE[route.arg] && NODE[route.arg].type === 'test' ? 'tests' : 'models') : route.page;
+  let page;
+  switch (route.page) {
+    case 'incidents': page = <Incidents />; break;
+    case 'tests': page = <Tests />; break;
+    case 'runs': page = <Runs />; break;
+    case 'lineage': page = <Lineage />; break;
+    case 'cost': page = <Cost />; break;
+    case 'freshness': page = <Freshness />; break;
+    case 'schema': page = <Schema />; break;
+    case 'models': page = <Models />; break;
+    case 'node': page = <NodePage id={route.arg} />; break;
+    case 'settings': page = <Settings />; break;
+    default: page = <Overview />;
+  }
+  return <Ctx.Provider value={ctx}>
+    <div className="app">
+      <header className="top">
+        <div className="brand"><Ic d={ICON.core} s={18} />icecore</div>
+        <div className="proj"><b>{D.project}</b><span className="env">{RUNS[LAST].target}</span></div>
+        <div className="grow" />
+        <GlobalSearch />
+        <span className="asof" title="Latest data in this report">Data as of {fmtTs(AS_OF)}</span>
+        <button className="iconbtn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Light theme' : 'Dark theme'}><Ic d={theme === 'dark' ? ICON.sun : ICON.moon} s={15} /></button>
+      </header>
+      <nav className="side" aria-label="Sections">
+        {items.map((it, k) => it ? <button key={it[0]} className={'nav' + (active === it[0] ? ' on' : '')} aria-current={active === it[0] ? 'page' : undefined} onClick={() => go(it[0])}>
+          <Ic d={it[2]} />{it[1]}{it[3] != null && <span className={'cnt ' + (it[4] || '')}>{it[3]}</span>}</button> : <hr key={'h' + k} />)}
+        <div className="foot">Static report of {fmtTs(parseT(D.generated_at))}. Acknowledgements are kept in this tab only.</div>
+      </nav>
+      <main className="main" key={route.page + '/' + route.arg}>{page}</main>
+    </div>
+    {toast && <div className="toast" role="status">{toast}</div>}
+  </Ctx.Provider>;
+}
+
+try { const t = localStorage.getItem('icecore-theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) { }
+if (!D) { document.getElementById('root').innerHTML = '<p style="padding:24px">icecore-mock-data.js did not load. Keep it next to this file.</p>'; }
+else ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -10,14 +10,14 @@ Known gaps, shown on the page instead of invented:
 """
 from __future__ import annotations
 
-NOT_RECORDED = "not exposed by the views"
+NOT_RECORDED = "not recorded yet"
 ICECORE_VERSION_NOTE = (
-    "INVOCATIONS carries dbt's version per run but not icecore's. The icecore version shown above is the one "
-    "recorded by the latest setup or doctor run (CAPABILITIES)."
+    "INVOCATIONS carries dbt's version per run but not icecore's yet (story ee1ee2c5). The icecore version in "
+    "the capabilities is the one recorded by the latest setup or doctor run."
 )
 CHANNEL_NOTE = (
     "Channels are those named in `meta.alerts.channel` (SLA_DECLARED) or used by silence verdicts. The last "
-    "notification time lives in `icecore.notified` records, which no view exposes yet, so it cannot be shown here."
+    "notification time needs the NOTIFICATIONS view (story ee1ee2c5), so it reads \"not recorded yet\" until then."
 )
 EMPTY_MESSAGE = (
     "No capabilities recorded yet. Run `dbt run-operation icecore.setup` (or `icecore.doctor`) so icecore detects "

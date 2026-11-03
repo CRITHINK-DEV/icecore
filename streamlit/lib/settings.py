@@ -4,6 +4,7 @@ The value lives in st.session_state for the browser session. Only plain Snowflak
 identifiers (SCHEMA or DATABASE.SCHEMA, unquoted) are accepted, so the name can be
 pasted into a query safely; they are upper-cased like Snowflake does.
 """
+import os
 import re
 
 import streamlit as st
@@ -20,14 +21,18 @@ _SCHEMA_RE = re.compile(rf"^{_IDENT}(\.{_IDENT})?$")
 def _current_database() -> str | None:
     """The active Snowpark session's database, or None outside Snowflake."""
     try:
-        from snowflake.snowpark.context import get_active_session
+        from lib import queries
 
-        return get_active_session().get_current_database()
+        return queries.get_session().get_current_database()
     except Exception:
         return None
 
 
 def default_views_schema() -> str:
+    """ICECORE_VIEWS_SCHEMA when set (a local run), else <session database>.ICECORE_OBS, else ICECORE_OBS."""
+    configured = normalize(os.environ.get("ICECORE_VIEWS_SCHEMA", ""))
+    if configured:
+        return configured
     database = (_current_database() or "").strip('"')
     if database and re.fullmatch(_IDENT, database):
         return f"{database.upper()}.{DEFAULT_SCHEMA_NAME}"

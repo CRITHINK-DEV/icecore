@@ -19,6 +19,7 @@ its empty state instead of failing on a view that does not exist.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from datetime import date, datetime
 from typing import Any, Callable, MutableMapping, TypedDict
@@ -293,14 +294,75 @@ def _as_row(row: Any) -> dict:
     return {str(k).lower(): v for k, v in data.items()}
 
 
-def default_layer() -> QueryLayer:
-    """The layer of the running page: the active Snowpark session, the chosen views schema, st.session_state."""
-    import streamlit as st
+# --- the session: Snowflake's own inside Streamlit in Snowflake, one built from the environment on a laptop ------
+
+LOCAL_SESSION_KEY = "icecore_local_session"
+_local: dict[str, Any] = {}  # one Snowpark session per app process (module state survives Streamlit reruns)
+_local_lock = threading.Lock()
+
+
+def session_params(env: MutableMapping | None = None) -> dict | None:
+    """Connection parameters for a local run, chosen from the environment; None when nothing is configured.
+
+    Order: SNOWFLAKE_CONNECTION_NAME (an entry of connections.toml, which the Snowflake library reads itself: this
+    code never opens that file); else SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER with a key pair
+    (SNOWFLAKE_PRIVATE_KEY_PATH, optional SNOWFLAKE_PRIVATE_KEY_PASSPHRASE) or, without a key, the browser login
+    (externalbrowser). SNOWFLAKE_ROLE, _WAREHOUSE and _DATABASE are optional. Pure: no network, nothing printed.
+    """
+    import os
+
+    env = os.environ if env is None else env
+
+    def get(name: str) -> str | None:
+        return (env.get(name) or "").strip() or None
+
+    if get("SNOWFLAKE_CONNECTION_NAME"):
+        params: dict = {"connection_name": get("SNOWFLAKE_CONNECTION_NAME")}
+    elif get("SNOWFLAKE_ACCOUNT") and get("SNOWFLAKE_USER"):
+        params = {"account": get("SNOWFLAKE_ACCOUNT"), "user": get("SNOWFLAKE_USER")}
+        if get("SNOWFLAKE_PRIVATE_KEY_PATH"):
+            params["private_key_file"] = get("SNOWFLAKE_PRIVATE_KEY_PATH")
+            if get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"):
+                params["private_key_file_pwd"] = get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
+        else:
+            params["authenticator"] = "externalbrowser"
+    else:
+        return None
+    for key, name in (("role", "SNOWFLAKE_ROLE"), ("warehouse", "SNOWFLAKE_WAREHOUSE"), ("database", "SNOWFLAKE_DATABASE")):
+        if get(name):
+            params[key] = get(name)
+    params["client_session_keep_alive"] = True  # the app stays open for hours; without it the session expires (~4 h idle)
+    return params
+
+
+def get_session(env: MutableMapping | None = None, store: dict | None = None) -> Any:
+    """The active Snowpark session in Snowflake; on a laptop, one session built from the environment and kept.
+
+    With no active session and no configuration, re-raises the lookup error: pages show their empty state.
+    """
+    from snowflake.snowpark import Session
     from snowflake.snowpark.context import get_active_session
+
+    try:
+        return get_active_session()
+    except Exception:
+        params = session_params(env)
+        if params is None:
+            raise
+        store = _local if store is None else store
+        with _local_lock:  # Streamlit reruns can overlap: build one session, not one per rerun
+            if LOCAL_SESSION_KEY not in store:
+                store[LOCAL_SESSION_KEY] = Session.builder.configs(params).create()
+        return store[LOCAL_SESSION_KEY]
+
+
+def default_layer() -> QueryLayer:
+    """The layer of the running page: the session (see get_session), the chosen views schema, st.session_state."""
+    import streamlit as st
 
     from lib import settings
 
-    return QueryLayer(get_active_session(), settings.views_schema(),
+    return QueryLayer(get_session(), settings.views_schema(),
                       cache=st.session_state.setdefault(CACHE_STATE_KEY, {}))
 
 

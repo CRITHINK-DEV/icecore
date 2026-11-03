@@ -6,6 +6,7 @@ the version pinned in streamlit/environment.yml (conftest needs dbt, hence --noc
     python3.13 -m venv .venv && .venv/bin/pip install streamlit==1.50.0 pytest pyyaml
     cd integration_tests && ../.venv/bin/pytest --noconftest tests/test_app_shell.py
 """
+import os
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,8 @@ EXPECTED_PAGES = [
 def app_on_path(monkeypatch):
     """`streamlit run` (and Streamlit in Snowflake) puts the app directory on sys.path; AppTest does not."""
     monkeypatch.syspath_prepend(str(APP_DIR))
+    for name in [n for n in os.environ if n.startswith("SNOWFLAKE_")] + ["ICECORE_VIEWS_SCHEMA"]:
+        monkeypatch.delenv(name, raising=False)  # a local-run environment must not make the shell connect
 
 
 def run_app(page: str | None = None, at: AppTest | None = None) -> AppTest:

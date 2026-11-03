@@ -1,55 +1,59 @@
-"""Runs: invocation list, status, duration, credits; drill to the node timeline."""
+"""Runs: the runs of the window, the selected run's Gantt and its slowest nodes."""
+from datetime import datetime, timedelta, timezone
+
 import streamlit as st
 
-from lib import charts, queries, runs_logic as logic
-from lib.ui import empty_state, page_header
+from lib import charts, console, queries
+from lib.pages import runs as logic
 
-page_header("Runs", "Is the platform healthy today, what got slower.", ["invocations", "node_executions"])
+console.page("Runs", "Is the platform healthy today, what got slower.", ["invocations", "node_executions"])
 
-range_label = st.sidebar.selectbox("Date range", list(logic.RANGES), index=1, key="runs_range")
-try:
-    runs = queries.invocations(since=logic.since_for(range_label))
-except Exception as exc:  # no session or views not created yet: show the empty state, not a crash
-    empty_state(logic.ENABLE_TELEMETRY_HELP)
-    st.caption(f"Could not read the runs: {exc}")
-    st.stop()
+filters = console.filter_bar("runs", layers=None)
+since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=filters.days)
 
+all_runs, error = console.guarded(lambda: queries.invocations(since=since, limit=queries.MAX_LIMIT))
+if error or not all_runs:
+    console.empty(logic.EMPTY_MESSAGE, error)
+runs = logic.filter_by_status(all_runs, filters.statuses)
 if not runs:
-    empty_state(logic.ENABLE_TELEMETRY_HELP)
-    st.stop()
+    console.empty("No runs match these filters. Clear a filter or widen the window.")
 
-c1, c2, c3 = st.columns(3)
-project = c1.selectbox("Project", [None] + logic.distinct(runs, "project"), format_func=lambda v: v or "All")
-target = c2.selectbox("Target", [None] + logic.distinct(runs, "target"), format_func=lambda v: v or "All")
-statuses = c3.multiselect("Status", logic.distinct(runs, "status"))
-runs = logic.filter_runs(runs, project, target, statuses)
+console.kpi_row(logic.tiles(runs))
+st.caption(logic.CREDITS_CAPTION)
+note = console.truncation_note(all_runs, queries.MAX_LIMIT)
+if note:
+    st.caption(note)
 
-if not runs:
-    empty_state("No runs match these filters. Clear a filter or widen the date range.")
-    st.stop()
+st.altair_chart(charts.runs_chart(runs), use_container_width=True)
 
-t = logic.totals(runs)
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Runs", t["runs"])
-m2.metric("Failed", t["failed"])
-m3.metric("Credits", f"{t['credits']:.4f}")
-m4.metric("Total duration (s)", f"{t['total_duration_s']:.0f}")
+st.subheader("Runs")
+picked = console.table(
+    logic.runs_table(runs),
+    {"started_at": st.column_config.DatetimeColumn("Started"),
+     "duration_s": st.column_config.NumberColumn("Duration (s)", format="%.1f"),
+     "nodes_failed": st.column_config.NumberColumn("Failed nodes"),
+     "nodes_total": st.column_config.NumberColumn("Nodes")},
+    key="runs_table", node_column=None)
+if picked and st.query_params.get("run") != picked["invocation_id"]:
+    st.query_params["run"] = picked["invocation_id"]
 
-st.dataframe(logic.run_table(runs), use_container_width=True, hide_index=True)
-
-st.subheader("Run detail")
-by_label = {logic.run_label(r): r for r in runs}
-chosen = by_label[st.selectbox("Run", list(by_label))]
-try:
-    nodes = queries.node_executions(invocation_id=chosen["invocation_id"], limit=queries.MAX_LIMIT)
-except Exception as exc:
-    empty_state("Could not read the node timings for this run.")
-    st.caption(f"{exc}")
-    st.stop()
-bars = charts.timeline_bars(nodes)
-if bars:
-    st.altair_chart(charts.timeline_chart(bars), use_container_width=True)
-    st.caption("Slowest nodes")
-    st.dataframe(logic.slowest_nodes(nodes), use_container_width=True, hide_index=True)
+run = logic.selected_run(runs, st.query_params.get("run"))
+started = run["started_at"]
+st.subheader(f"Run {started.strftime('%Y-%m-%d %H:%M:%S') if hasattr(started, 'strftime') else started}")
+st.caption(f"`{run['invocation_id']}`")
+nodes, node_error = console.guarded(
+    lambda: queries.node_executions(invocation_id=run["invocation_id"], since=since, limit=queries.MAX_LIMIT))
+if node_error:
+    st.caption(f"Reading the node timings failed: {node_error}")
+elif not any(n.get("started_at") for n in nodes):
+    st.info("This run has no node timing records yet. They arrive shortly after the run ends.",
+            icon=":material/info:")
 else:
-    empty_state("This run has no node timing records yet. Node timings arrive shortly after the run ends.")
+    st.altair_chart(charts.gantt(nodes), use_container_width=True)
+    st.subheader("Slowest nodes")
+    console.table(
+        logic.slowest_nodes(nodes, 10),
+        {"execution_time_s": st.column_config.NumberColumn("Seconds", format="%.1f"),
+         "rows_affected": st.column_config.NumberColumn("Rows"),
+         "unique_id": None},
+        key="runs_slowest", limit=None)

@@ -66,7 +66,7 @@ st.caption(f"{console.md(s['unique_id'])} · {console.md(s['type'])}"
            + (f" · {console.md(s['materialization'])}" if s["materialization"] else "")
            + (f" · layer {console.md(s['layer'])}" if s["layer"] else "")
            + (f" · {console.md(console.short_name(relation))}" if relation else ""),
-           help=f"Relation: {relation}" if relation else None)
+           help=f"Relation: {console.md(relation)}" if relation else None)
 
 def _ago(ts):
     """'12 min ago' for a UTC timestamp string; a dash when unknown."""
@@ -86,7 +86,7 @@ console.kpi_row([
     console.Tile("Status", label(s["status"]), help="The status of the latest run of this node."),
     console.Tile("Tests passing", f"{s['tests_passing']}/{s['tests_total']}" if s["tests_total"] else "—",
                  help="Latest result of each test on this node."),
-    console.Tile("Last run", _ago(s["last_run"]), help=f"Start of the latest run: {(s['last_run'] or '—')[:19]} UTC."),
+    console.Tile("Last run", _ago(s["last_run"]), help=f"Start of the latest run: {console.md((s['last_run'] or '—')[:19])} UTC."),
     console.Tile("Credits", f"{s['credits_total']:.3f}" if s["credits_total"] is not None else "—",
                  help="Credits attributed to this node in the window; not recorded yet when empty."),
     console.Tile("Freshness lag", f"{lag / 60:.0f} min" if lag is not None else "—",

@@ -123,7 +123,8 @@ def test_every_merged_view_is_marked_merged_and_the_others_are_not():
 
 
 def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
-    assert sorted(rendered_views) == sorted(MERGED + ["ALERTS_FEED"])  # ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
+    # SCHEMA_COLUMNS feeds the Elementary compat view only; the app does not read it. ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
+    assert sorted(v for v in rendered_views if v != "SCHEMA_COLUMNS") == sorted(MERGED + ["ALERTS_FEED"])
 
 
 @pytest.mark.parametrize("view", MERGED)

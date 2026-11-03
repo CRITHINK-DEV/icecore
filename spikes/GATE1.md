@@ -192,7 +192,12 @@ role (whether a view owned by another role can pass that access through is unmea
    `proc.rollback`). The same test gives the story's acceptance criterion: a record emitted in a rolled-back transaction is
    present when the event table is read.
 4. **The temporary-table privilege for `edr report` is unmeasured** (S4.md, consequence 3).
-5. Behaviour on dbt Fusion, dbt Cloud and `EXECUTE DBT PROJECT` is not measured (S1.md, open point 4).
+5. Behaviour on dbt Fusion and dbt Cloud is not measured (S1.md, open point 4); Fusion is deferred by the owner (2 Nov 2026).
+   **`EXECUTE DBT PROJECT` is measured (2 Nov 2026, `S13-dbt-projects.md`, `results/s13.json`).** Both hooks run, both `CALL`s
+   succeed with no extra grant, and the views fill with the same counts as a local build (1 / 182 / 151 / 34 rows). Hub packages
+   cannot install without an external access integration. `dbt.runtime` is now `snowflake_native` there.
+   **Limits:** one build of one pilot project, dbt 1.9.4, and the job's role also owns the procedures. A second role, a TASK
+   schedule and commands other than build and compile were not measured.
 6. **Span nesting across CALLs is unmeasured.** Each `CALL` is its own trace. Whether node spans written in a later
    `ICECORE_EMIT_RUN` `CALL` can name the invocation span as their parent was not tested.
 7. **Levels below the database: measured (1 Nov 2026, story "narrowest telemetry levels").** The owner granted `MODIFY LOG LEVEL`
@@ -231,7 +236,11 @@ role (whether a view owned by another role can pass that access through is unmea
    Python runtime of `ICECORE_EMIT_RUN` adds 3 log lines of its own per `CALL` (`python_runtime_logs` in the results file). (e) Setting any level on a schema or procedure needs the two account privileges, so on
    most accounts `setup` will print the statement for an admin. `set_telemetry_levels` now proposes the `ALTER SCHEMA` statement,
    and `doctor` checks the levels effective on the schema (`SHOW PARAMETERS ... IN SCHEMA`).
-8. **The identity of native dbt Projects records** (their own view predicate) is to be defined and measured.
+8. **Defined and measured (2 Nov 2026, `S13-dbt-projects.md`).** Native dbt Projects records carry `snow.executable.type =
+   DBT_PROJECT`, `snow.executable.name` = the project object, and the object's database and schema; node spans are scope
+   `dbt.runner`, named by node unique id. They hold no dbt invocation id, so joining them to an icecore invocation is open.
+   `base_events` keeps all icecore records of a native run and excludes the native ones, as designed. Views over native records
+   are not built.
 9. **Reading `SNOWFLAKE.TELEMETRY.EVENTS_VIEW` through an icecore view owned by another role is unmeasured.** No spike read
    `EVENTS_VIEW` through a view; the readers' table in "What setup creates" assumes `EVENTS_VIEWER` is needed. Granting it gives
    direct access to all account telemetry, which sits badly with "views are the only interface". The sandbox has one role, so

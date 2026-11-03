@@ -136,6 +136,19 @@ One row per detected column change, from `icecore.schema_change` span events. Th
 | `node_unique_id` | text | The node | `dbt.node.unique_id` |
 | `emit_query_id` | text | Query id of the writing `CALL` | `snow.query.id` in `RESOURCE_ATTRIBUTES` |
 
+## `SCHEMA_COLUMNS`
+
+One row per column per `icecore.schema_changes` run: the full column state of each monitored table, not only what changed. It reads the `icecore.schema_signature` span events, which a wide table splits into chunks (`dbt.schema.chunk_index`, `dbt.schema.chunk_count`) so that no record is cut at `payload_cap_kb`. Only complete snapshots appear: while a chunk has not landed, that run's snapshot is left out rather than shown with columns missing. It feeds the Elementary-compatible view `schema_columns_snapshot`.
+
+| Column | Type | Meaning | Source key |
+| --- | --- | --- | --- |
+| `relation` | text | The quoted `"DB"."SCHEMA"."NAME"` | `dbt.node.relation` |
+| `COLUMN` | text | Column name | `dbt.schema.columns` (name) |
+| `data_type` | text | Column type | `dbt.schema.columns` (data_type) |
+| `snapshot_at` | time | When the run's first chunk was written | event `TIMESTAMP` |
+| `is_new` | boolean | True when the table's previous complete snapshot did not have the column. False on a table's first snapshot | computed |
+| `invocation_id` | text | The dbt run | `dbt.invocation_id` |
+
 ## `SILENCE_EVENTS`
 
 One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. `icecore.setup` creates the task suspended. The `silence_task_resume` var resumes it. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.

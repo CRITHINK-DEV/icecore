@@ -61,7 +61,7 @@ All data is in `RECORD_ATTRIBUTES`. Keys with the `dbt.` prefix are facts about 
 | Key | Type | Value |
 | --- | --- | --- |
 | `dbt.invocation_id` | string | dbt's invocation id. It groups a run (see [Traces](#traces)) |
-| `dbt.runtime` | string | `fusion` for dbt 2.x, `cloud` when a `DBT_CLOUD_*` variable is set, else `core`. `snowflake_native` is not detected yet |
+| `dbt.runtime` | string | `fusion` for dbt 2.x, `cloud` when a `DBT_CLOUD_*` variable is set, `snowflake_native` inside `EXECUTE DBT PROJECT` (a heuristic on paths Snowflake does not document; if they change, the value falls back to `core`), else `core` |
 | `dbt.command` | string | `build`, `run`, `test`, `freshness` for `dbt source freshness`, ... (S3.md, finding 2) |
 | `dbt.target`, `dbt.project` | string | Target name, root project name |
 | `icecore.version` | string | Installed package version, or `unknown` |
@@ -89,7 +89,7 @@ The metric names written today are `freshness_lag_seconds` and `row_count`.
 
 ### Not written yet
 
-The design also names keys for schema changes (`dbt.schema.*`), cost (`dbt.cost.*`), root cause (`dbt.root_cause.*`), failed-row samples (`dbt.sample.*`) and acknowledgements (`icecore.ack.*`). No merged code writes them. They are **coming**. The `SCHEMA_CHANGES` view exists and stays empty until its emitter is merged.
+The design also names keys for schema changes (`dbt.schema.*`), cost (`dbt.cost.*`), root cause (`dbt.root_cause.*`), failed-row samples (`dbt.sample.*`) and acknowledgements (`icecore.ack.*`). No merged code writes them. They are **coming**. `schema_changes` also writes `icecore.schema_signature` records (`dbt.schema.columns`, a JSON list of `{name, data_type}`, split in chunks under the payload cap: `dbt.schema.chunk_index` is the 0-based chunk and `dbt.schema.chunk_count` the number of chunks of that snapshot). The `SCHEMA_CHANGES` view exists and stays empty until its emitter is merged.
 
 ### Schema version
 

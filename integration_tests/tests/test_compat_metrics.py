@@ -3,9 +3,9 @@
 Offline, the contract: each view's columns, their order and their types equal Elementary's own definition, parsed from
 the package pinned in macros/compat/ELEMENTARY_VERSION (empty_data_monitoring_metrics, empty_schema_columns_snapshot in
 its empty_table.sql). Neither relation is one `edr report` reads, so spike S4 has no types for them: the package is the
-contract. The views select only from the core views METRICS and SCHEMA_CHANGES. Sandbox: the views are created, the
-described types equal Elementary's, row counts match the core views (schema_columns_snapshot leaves out `removed`
-changes, which leave no column state), and the values are as documented.
+contract. The views select only from the core views METRICS and SCHEMA_COLUMNS. Sandbox: the views are created, the
+described types equal Elementary's, row counts match the core views (schema_columns_snapshot reads the full column state),
+and the values are as documented.
 """
 import json
 import time
@@ -34,7 +34,7 @@ def test_columns_equal_elementarys_definition_in_name_order_and_type(elementary_
     assert len(expected) == {"metrics": 15, "snapshot": 8}[key]
 
 
-@pytest.mark.parametrize("key,core", [("metrics", "METRICS"), ("snapshot", "SCHEMA_CHANGES")])
+@pytest.mark.parametrize("key,core", [("metrics", "METRICS"), ("snapshot", "SCHEMA_COLUMNS")])
 def test_view_selects_only_from_its_core_view_and_casts_every_column(key, core):
     out = run_macro("it_compat_metrics", {})[key]
     assert f'from "DB"."OBS"."{core}" as t' in out["sql"]
@@ -51,8 +51,37 @@ def test_unfillable_columns_are_typed_nulls():
     assert [c["name"] for c in out["snapshot"]["columns"] if c["expr"] is None] == []
 
 
-def test_snapshot_leaves_out_removed_columns():
-    assert "t.change_kind in ('added', 'type_changed')" in run_macro("it_compat_metrics", {})["snapshot"]["sql"]
+def test_snapshot_selects_the_full_column_state_not_the_change_log():
+    sql = run_macro("it_compat_metrics", {})["snapshot"]["sql"]
+    assert 'from "DB"."OBS"."SCHEMA_COLUMNS" as t' in sql and "SCHEMA_CHANGES" not in sql and "change_kind" not in sql
+
+
+def test_schema_columns_view_reads_signature_chunks_once_per_invocation_and_relation():
+    sql = run_macro("it_schema_columns_view", {})
+    assert "record_name = 'icecore.schema_signature'" in sql and "lateral flatten" in sql
+    assert "partition by node_relation, invocation_id" in sql and "dbt.schema.chunk_index" in sql
+
+
+def columns(n, width=20):
+    return [{"name": f"COLUMN_{i:04d}_" + "X" * width, "data_type": "VARCHAR(16777216)"} for i in range(n)]
+
+
+def test_signature_chunks_leave_room_for_the_other_attributes():
+    cols = columns(100)
+    chunks = run_macro("it_signature_chunks", {"columns": cols, "cap_bytes": 1024, "overhead": 600})
+    assert [c for chunk in chunks for c in chunk] == cols
+    assert all(len(json.dumps(json.dumps(chunk, separators=(",", ":")))) <= 1024 - 600 for chunk in chunks if len(chunk) > 1)
+
+
+@pytest.mark.parametrize("n,cap_kb", [(0, 64), (3, 64), (400, 1), (2000, 64)])
+def test_signature_chunks_keep_every_column_in_order_and_under_the_cap(n, cap_kb):
+    cols = columns(n)
+    chunks = run_macro("it_signature_chunks", {"columns": cols, "cap_bytes": cap_kb * 1024})
+    assert [c for chunk in chunks for c in chunk] == cols  # no column lost, order kept
+    assert len(chunks) >= 1 and (n == 0 or all(chunks))
+    assert len(chunks) > 1 if n >= 400 else len(chunks) == 1
+    for chunk in chunks:  # as an attribute string: JSON inside JSON, the way the payload cap measures it
+        assert len(json.dumps(json.dumps(chunk, separators=(",", ":")))) <= cap_kb * 1024
 
 
 def test_compat_list_holds_all_three_elementary_views():
@@ -86,13 +115,8 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
             {"kind": "metric", "attributes": {**attrs, "dbt.metric.name": "row_count", "dbt.metric.value": 120}},
             {"kind": "metric", "attributes": {**attrs, "dbt.metric.name": "null_rate", "dbt.metric.value": 0.25,
                                               "dbt.metric.column": "amount", "dbt.metric.dimension": "country=FR"}},
-            {"kind": "schema_change", "attributes": {**attrs, "dbt.schema.change_kind": "added",
-                                                     "dbt.schema.column": "email", "dbt.schema.to_type": "TEXT"}},
-            {"kind": "schema_change", "attributes": {**attrs, "dbt.schema.change_kind": "type_changed",
-                                                     "dbt.schema.column": "amount", "dbt.schema.from_type": "NUMBER",
-                                                     "dbt.schema.to_type": "FLOAT"}},
-            {"kind": "schema_change", "attributes": {**attrs, "dbt.schema.change_kind": "removed",
-                                                     "dbt.schema.column": "legacy", "dbt.schema.from_type": "TEXT"}},
+            {"kind": "schema_signature", "attributes": {**attrs, "dbt.schema.columns": json.dumps([
+                {"name": "amount", "data_type": "NUMBER(38,0)"}, {"name": "legacy", "data_type": "TEXT"}])}},
         ]
         try:
             run_macro("it_compat_emit_events", {"events": events}, obs_vars)
@@ -102,11 +126,11 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
                 core_metrics = sf.cursor().execute(
                     f'select count(*) from "{DATABASE}"."{obs}"."METRICS" where relation = %s', (relation,)).fetchone()[0]
                 core_changes = sf.cursor().execute(
-                    f'select count(*) from "{DATABASE}"."{obs}"."SCHEMA_CHANGES" where relation = %s', (relation,)).fetchone()[0]
-                if (core_metrics, core_changes) == (2, 3) or time.monotonic() > deadline:
+                    f'select count(*) from "{DATABASE}"."{obs}"."SCHEMA_COLUMNS" where relation = %s', (relation,)).fetchone()[0]
+                if (core_metrics, core_changes) == (2, 2) or time.monotonic() > deadline:
                     break
                 time.sleep(5)
-            assert (core_metrics, core_changes) == (2, 3)
+            assert (core_metrics, core_changes) == (2, 2)
 
             created = run_macro("it_create_compat_views", {"schema": obs}, obs_vars)
             assert {f'"{DATABASE}"."{compat}"."{n}"' for n in [
@@ -129,17 +153,17 @@ def test_views_have_elementarys_types_the_core_row_counts_and_documented_values(
 
             snapshot = {r["column_name"]: r for r in rows_of(
                 sf, f'select * from "{DATABASE}"."{compat}"."SCHEMA_COLUMNS_SNAPSHOT" where full_table_name = %s', (full_name,))}
-            assert sorted(snapshot) == ["amount", "email"]  # `legacy` was removed: no column state
-            assert snapshot["email"]["is_new"] is True and snapshot["email"]["data_type"] == "TEXT"
-            assert snapshot["amount"]["is_new"] is False and snapshot["amount"]["data_type"] == "FLOAT"
-            assert snapshot["email"]["full_column_name"] == f"{full_name}.EMAIL".upper() and snapshot["email"]["column_state_id"]
-            assert snapshot["email"]["detected_at"] == snapshot["email"]["created_at"]
+            assert sorted(snapshot) == ["amount", "legacy"]  # every column of the snapshot
+            assert snapshot["legacy"]["is_new"] is False and snapshot["legacy"]["data_type"] == "TEXT"
+            assert snapshot["amount"]["data_type"] == "NUMBER(38,0)"
+            assert snapshot["amount"]["full_column_name"] == f"{full_name}.AMOUNT".upper() and snapshot["amount"]["column_state_id"]
+            assert snapshot["amount"]["detected_at"] == snapshot["amount"]["created_at"]
 
             counts = sf.cursor().execute(
                 f'select (select count(*) from "{DATABASE}"."{compat}"."DATA_MONITORING_METRICS"), '
                 f'(select count(*) from "{DATABASE}"."{obs}"."METRICS"), '
                 f'(select count(*) from "{DATABASE}"."{compat}"."SCHEMA_COLUMNS_SNAPSHOT"), '
-                f'(select count(*) from "{DATABASE}"."{obs}"."SCHEMA_CHANGES" where change_kind <> \'removed\')').fetchone()
+                f'(select count(*) from "{DATABASE}"."{obs}"."SCHEMA_COLUMNS")').fetchone()
             assert counts[0] == counts[1] and counts[2] == counts[3]
         finally:
             sf.cursor().execute(f'drop schema if exists "{DATABASE}"."{compat}" cascade')

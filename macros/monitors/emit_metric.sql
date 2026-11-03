@@ -50,10 +50,10 @@
   {%- do icecore._icecore_put(attrs, 'dbt.metric.column', none if column is none else column | string) -%}
   {%- do icecore._icecore_put(attrs, 'dbt.metric.dimension', none if dimension is none else dimension | string) -%}
   {%- for key, extra in (attributes or {}).items() -%}
-    {%- if (key | string)[:11] == 'dbt.window.' -%}
+    {%- if (key | string)[:11] == 'dbt.window.' or key == 'dbt.node.unique_id' -%}
       {%- do icecore._icecore_put(attrs, key, extra) -%}
     {%- else -%}
-      {%- do log('icecore: warning: emit_metric: attribute ' ~ key ~ ' is ignored: only dbt.window.* keys are accepted', info=True) -%}
+      {%- do log('icecore: warning: emit_metric: attribute ' ~ key ~ ' is ignored: only dbt.window.* keys and dbt.node.unique_id are accepted', info=True) -%}
     {%- endif -%}
   {%- endfor -%}
   {%- set get = icecore._icecore_get -%}

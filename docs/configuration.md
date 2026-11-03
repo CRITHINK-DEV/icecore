@@ -64,16 +64,26 @@ If you give `setup` another schema with its `schema` argument, set this var to t
 
 ### Monitor and anomaly settings
 
-The tests do not score anomalies yet. These keys are read today by the scoring macros `icecore.score` and `icecore.native__score`, and by the metadata and history readers.
+The five monitor tests (`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) score each metric they compute against the test's own history, write the result with the metric (`METRICS.anomaly_*`), and report an anomaly. A series with fewer than 7 points in the last 30 days (after the history delay) is not scored: the test passes on that account and logs `insufficient history`.
+
+**Severity.** An anomaly **warns by default**: the test ends with status `warn` (dbt prints WARN, `TEST_RESULTS.status` is `warn`), and the metric, the `icecore.anomaly` event, `METRICS` and `ALERTS_FEED` carry it. It fails the test when var `anomaly_severity` is `error`. This uses dbt's own thresholds: each monitor test sets `config(severity='error', warn_if='>=1', error_if=...)` and returns failing rows, one row for all the anomalies of the run and at least two for a hard threshold you wrote (`max_lag`, `min_rows`, `max_rows`, `bounds`). `error_if` is `>=2` with `anomaly_severity: warn` (an anomaly warns, a hard breach fails) and `>=1` with `error` (an anomaly fails). Config you write on the test in your project (`severity`, `warn_if`, `error_if`) wins over the test's own definition: `severity: warn` makes everything warn, `error_if: ">=1"` makes an anomaly fail. This was checked on dbt 1.8.
+
+**History is per test.** Each test stamps its metrics with its own `unique_id` and reads only those points, so two tests on the same column never share points. A test starts with no history after upgrading: it scores from its 7th run.
+
+Each test takes these arguments, which override the vars below for that test only: `engine`, `sensitivity`, `min_consecutive`, `lookback_days` (default 30), `min_points` (default 7) and `shadow_engine`. Example: `data_tests: [icecore.volume: {engine: native, sensitivity: high}]`.
+
+**Cost per test.** Native engine: one query reads and scores all the test's metrics (`freshness`, `volume`, `column_anomaly`: 1; `all_columns_anomaly`, `dimension_anomaly`: `ceil(metrics / 25)`). With `auto` or `cortex`, a series of 14 or more days is also tried with Cortex: 2 queries per metric when the relation's model scores. The model is per relation, so when it cannot score (no model, stale, error) the first metric pays the failed calls (2 to 5 queries) and the rest of the relation's metrics fall back to native without calling; one info line says why. Set `engine: native` on a test, or `anomaly_engine: native`, to never try Cortex. A shadow engine adds one native query per metric (or the Cortex calls). The native band of a constant series whose median and spread are both 0 is zero-width (a null rate that was always 0): any move off 0 is an anomaly; set `anomaly_mad_floor_abs` to tolerate it.
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why at debug level only: run dbt with `--debug` to see it. | Cost: none today. |
+| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. `native` scores with the native engine. `cortex` and `auto` try the per-table Cortex model when a series has 14 or more days of history and fall back to native, with the reason logged once per relation, when it cannot score. | Cost: see above. `auto` on an account without a model costs the failed Cortex calls once per relation per test. |
+| `anomaly_severity` | `warn` | string | `warn` or `error`. `error` makes an anomaly fail the five monitor tests; `warn` makes it a dbt warning. | None. |
 | `anomaly_sensitivity` | `medium` | string | `low`, `medium` or `high`. Sets the band width to 4, 3 or 2 median absolute deviations. | None. |
 | `anomaly_min_consecutive` | `1` | integer | How many points in a row must be outside the band. At least 1. | None. |
 | `anomaly_mad_floor_pct` | `0.01` | number | Smallest band half-width as a share of the expected value. | None. |
 | `anomaly_mad_floor_abs` | `0` | number | Smallest band half-width as an absolute value. | None. |
-| `shadow_engine` | `none` | string | Recorded on each run's start and end records. Shadow scoring is **coming**. | None. |
+| `shadow_engine` | `none` | string | `none`, `native` or `cortex`. Scores each metric a second time with that engine and writes an `icecore.shadow` event next to the metric. The primary verdict is never changed. Also recorded on each run's start and end records. | Cost: one more query per metric. |
+| `monitor_score` | `true` | boolean | `false` stops the five monitor tests from scoring and from failing on an anomaly: they only record metrics, as before. | Cost: none when false. |
 | `history_delay_minutes` | `1` | number | Metric history leaves out the newest minutes, because of ingestion lag. Spike S3 measured a p95 lag of about 8 s and a worst case of 20 s. | None. |
 | `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |

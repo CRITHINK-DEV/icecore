@@ -69,7 +69,8 @@ def e2e(dbt, sf):
                    (s.base + mod(n.n, 5) - 2)::float as value,
                    null::varchar as anomaly_engine, null::float as anomaly_expected, null::float as anomaly_lower,
                    null::float as anomaly_upper, null::float as anomaly_score, null::boolean as anomaly_is_anomaly,
-                   null::varchar as invocation_id, s.test_id as node_unique_id, null::varchar as emit_query_id
+                   null::varchar as invocation_id, s.test_id as node_unique_id, null::varchar as emit_query_id,
+                   null::float as threshold
             from (select seq4() as n from table(generator(rowcount => 30))) n
             join ({rows_sql}) s on n.n < s.points""")
         real = call_macro("metrics_view_sql", obs_schema=schema)

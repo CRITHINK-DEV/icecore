@@ -13,7 +13,9 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 APP_DIR = Path(__file__).resolve().parents[2] / "streamlit"
 APP = str(APP_DIR / "streamlit_app.py")
-DATA = {"project": "demo", "nodes": [], "errors": []}
+KEY = "a" * 32
+DATA = {"project": "demo", "nodes": [], "errors": [],
+        "incidents": [{"incident_key": KEY, "state": "open", "acknowledged_by": None}]}
 
 
 @pytest.fixture(autouse=True)
@@ -108,3 +110,23 @@ def test_page_is_wide_and_hides_the_streamlit_chrome():
     assert 'layout="wide"' in text
     for hidden in ("stHeader", "stToolbar", "stSidebar"):
         assert hidden in text
+
+
+def test_ack_shows_the_incident_acknowledged_until_a_build_does(monkeypatch):
+    at, calls = run(monkeypatch, actions=[{"action": "ack", "incident_key": KEY, "nonce": "1"}])
+    assert not at.exception
+    shown = calls.renders[-1]["data"]["incidents"][0]
+    assert (shown["state"], shown["acknowledged_by"]) == ("acknowledged", "you")   # no session here: "you"
+    assert DATA["incidents"][0]["state"] == "open"                                  # the cached object is not changed
+    at.run()
+    assert calls.renders[-1]["data"]["incidents"][0]["state"] == "acknowledged"    # still patched on the next run
+    assert at.session_state["icecore_console_pending_acks"] == {KEY: "you"}
+    # a later build shows it acknowledged: the patch ends
+    calls_build = lambda: {**DATA, "incidents": [{"incident_key": KEY, "state": "acknowledged", "acknowledged_by": "jane"}]}
+    from lib import console_data
+    monkeypatch.setattr(console_data, "build", lambda days=30, layer=None, now=None: calls_build())
+    import streamlit as st
+    st.cache_data.clear()
+    at.run()
+    assert calls.renders[-1]["data"]["incidents"][0]["acknowledged_by"] == "jane"
+    assert at.session_state["icecore_console_pending_acks"] == {}

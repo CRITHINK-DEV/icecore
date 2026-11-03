@@ -9,6 +9,7 @@ import streamlit as st
 
 from lib import ack, console_component, console_data, settings
 
+PENDING_KEY = "icecore_console_pending_acks"   # incident_key -> user, until a build shows it acknowledged
 FETCH_DAYS = 30        # the browser filters the window (7/15/30 days), so the server always reads the widest one
 CACHE_TTL_S = 300
 NOTICE_KEY = "icecore_console_notice"
@@ -36,9 +37,35 @@ def _build(days: int, views_schema: str) -> dict:
     return console_data.build(days=days)
 
 
+def _current_user() -> str:
+    try:
+        from lib import queries
+        return str(queries.default_layer().session.sql("select current_user()").collect()[0][0])
+    except Exception:
+        return "you"
+
+
+def _with_pending_acks(data: dict) -> dict:
+    """The views lag the acknowledgement by a few seconds (event-table delay): until a build shows an incident
+    acknowledged, show it acknowledged by its user. The cached object is copied, never changed."""
+    pending = st.session_state.get(PENDING_KEY) or {}
+    if not pending:
+        return data
+    incidents, still = [], {}
+    for inc in data.get("incidents") or []:
+        key = inc.get("incident_key")
+        if key in pending and not inc.get("acknowledged_by"):  # a build that shows it acknowledged ends the patch
+            still[key] = pending[key]
+            if inc.get("state") == "open":
+                inc = {**inc, "state": "acknowledged", "acknowledged_by": pending[key]}
+        incidents.append(inc)
+    st.session_state[PENDING_KEY] = still
+    return {**data, "incidents": incidents}
+
+
 def _data() -> dict:
     try:
-        return _build(FETCH_DAYS, settings.views_schema())
+        return _with_pending_acks(_build(FETCH_DAYS, settings.views_schema()))
     except Exception as exc:  # the component still renders, with the error in its data-quality list
         return {**EMPTY, "errors": [{"view": "app", "error": str(exc)}]}
 
@@ -50,6 +77,9 @@ def _handle(action: dict | None) -> None:
     if kind == "ack":
         result = ack.acknowledge(action.get("incident_key"))
         _build.clear()
+        if result.ok:
+            st.session_state[PENDING_KEY] = {**(st.session_state.get(PENDING_KEY) or {}),
+                                             action.get("incident_key"): _current_user()}
         st.session_state[NOTICE_KEY] = result.message
         st.rerun()
     elif kind == "refresh":

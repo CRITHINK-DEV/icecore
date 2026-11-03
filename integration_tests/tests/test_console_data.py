@@ -362,3 +362,21 @@ def test_a_tests_own_metric_keeps_the_test_id():
          "observed_at": T0, "value": 2}]
     got = sorted(m["unique_id"] for m in console_data.build(layer=layer_for(rows))["metrics"])
     assert got == sorted([t1, t2, "model.shop.orders"])  # three series, not one
+
+
+def test_incident_relations_read_as_node_names():
+    from lib import console_data
+    rows = small_rows()
+    rel = '"DB"."S"."ORDERS"'
+    rows["ALERTS_FEED"][1].update(node_key=f"{rel}|row_count||", title=f"metric row_count of {rel} is anomalous (value 10)")
+    rows["ALERTS_FEED"].append({"incident_key": "k4", "kind": "schema_change", "node_key": f"{rel}|N", "severity": "warn",
+                                "title": f"column N of {rel} added", "first_detected_at": T0, "occurrences": 1})
+    rows["ALERTS_FEED"].append({"incident_key": "k5", "kind": "anomaly", "node_key": '"DB"."S"."UNKNOWN"|row_count||',
+                                "severity": "warn", "title": 'metric of "DB"."S"."UNKNOWN"', "first_detected_at": T0,
+                                "occurrences": 1})
+    inc = {i["incident_key"]: i for i in console_data.build(layer=layer_for(rows))["incidents"]}
+    assert inc["k2"]["node"] == "orders|row_count||" and rel not in inc["k2"]["title"]
+    assert inc["k2"]["title"] == "metric row_count of orders is anomalous (value 10)"
+    assert inc["k2"]["node_unique_id"] == "model.shop.orders"
+    assert (inc["k4"]["node"], inc["k4"]["title"]) == ("orders|N", "column N of orders added")
+    assert inc["k5"]["node"] == '"DB"."S"."UNKNOWN"|row_count||' and inc["k5"]["node_unique_id"] is None  # no match: raw

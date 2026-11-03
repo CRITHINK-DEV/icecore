@@ -228,7 +228,8 @@ def _incident_node(inc: dict, resolve) -> str | None:
     return resolve(relation)
 
 
-def _incidents_out(feed, tests, execs, mets, declared, resolve, now) -> list[dict]:
+def _incidents_out(feed, tests, execs, mets, declared, resolve, now, names=None) -> list[dict]:
+    names = names or {}
     tests_by_id: dict[str, list[dict]] = {}
     for r in tests:
         tests_by_id.setdefault(r.get("test_unique_id"), []).append(r)
@@ -252,19 +253,29 @@ def _incidents_out(feed, tests, execs, mets, declared, resolve, now) -> list[dic
             now=now)
         latest_test = max(tests_by_id.get(key, []), key=lambda r: _dt(r.get("executed_at")) or datetime.min,
                           default=None) if kind == "test_failure" else None
+        node_uid = _incident_node(inc, resolve)
+        shown, title = key or None, inc.get("title")
+        if kind not in ("test_failure", "silence") and node_uid and names.get(node_uid):
+            # a relation ("DB"."SCHEMA"."TABLE") reads as the node's name; the raw text stays when nothing matches
+            relation = key.split("|")[0]
+            shown = names[node_uid] + key[len(relation):]
+            title = title.replace(relation, names[node_uid]) if isinstance(title, str) and relation else title
+        root = inc.get("root_cause_unique_id") or (latest_test or {}).get("root_cause_unique_id")
+        if root and names and root not in names and resolve(root):
+            root = resolve(root)
         out.append({
             "incident_key": inc.get("incident_key"),
             "kind": kind,
-            "node": key or None,
-            "title": inc.get("title"),
+            "node": shown,
+            "title": title,
             "severity": inc.get("severity"),
             "first_detected_at": _iso(inc.get("first_detected_at")),
             "occurrences": _int(inc.get("occurrences")),
             "acknowledged_by": inc.get("acknowledged_by"),
-            "root_cause": inc.get("root_cause_unique_id") or (latest_test or {}).get("root_cause_unique_id"),
+            "root_cause": root,
             "channel": channels.get(key) if kind == "silence" else None,
             "root_cause_kind": inc.get("root_cause_kind") or (latest_test or {}).get("root_cause_kind"),
-            "node_unique_id": _incident_node(inc, resolve),
+            "node_unique_id": node_uid,
             "state": "open" if st == "stale" else st,
         })
     return out
@@ -374,7 +385,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
         "last_success_at": _iso(last_ok[r["unique_id"]]) if r["unique_id"] in last_ok else None,
     } for r in sorted((d for d in declared if d.get("unique_id")), key=lambda d: d["unique_id"])]
 
-    incidents_out = _incidents_out(feed, tests, execs, mets, declared, resolve, now or generated or ref)
+    incidents_out = _incidents_out(feed, tests, execs, mets, declared, resolve, now or generated or ref, names)
 
     cap = caps[0] if caps else {}
     versions = list(dict.fromkeys(str(r["dbt_version"]) for r in reversed(_by_time(inv, "started_at"))

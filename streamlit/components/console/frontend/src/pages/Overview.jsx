@@ -1,6 +1,6 @@
 import React, { useState, useMemo, Fragment } from 'react';
 import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median } from '../lib/format.js';
-import { D, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, KIND_LABEL, incNode, incAsset, incTarget } from '../lib/model.js';
+import { D, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, MODEL_KEYS, KIND_LABEL, incNode, incAsset, incTarget } from '../lib/model.js';
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
 import { Ic, ICON, Pill, StatusPill, SevPill, Layer, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
@@ -59,7 +59,7 @@ export function Overview() {
     <HealthStrip health={health} />
     <div className="fbar">
       <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
-      <Seg label="Layer" options={[['all', 'All'], ['bronze', 'Bronze'], ['silver', 'Silver'], ['gold', 'Gold']]} value={layer} onChange={setLayer} />
+      <Seg label="Layer" options={[['all', 'All'], ...MODEL_KEYS.map(k => [k, LAYER_LABEL[k]])]} value={layer} onChange={setLayer} />
     </div>
     <div className="grid2">
       <Card title="Needs attention" sub="Unresolved incidents, errors first. Click a row to open the node." flush>

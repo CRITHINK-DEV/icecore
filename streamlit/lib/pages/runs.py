@@ -40,6 +40,7 @@ def filter_by_status(runs: list[Row], statuses: list[str]) -> list[Row]:
 
 def tiles(runs: list[Row]) -> list[Tile]:
     """Runs, failed, median duration, credits ("pending" while no run has its credits yet)."""
+    runs = sorted(runs, key=lambda r: str(r.get("started_at")))  # oldest first, so sparklines read left to right
     failed = [r for r in runs if normalise(r.get("status")) == "failed"]
     durations = [float(r["duration_s"]) for r in runs if r.get("duration_s") is not None]
     known = [float(r["credits"]) for r in runs if r.get("credits") is not None]
@@ -51,9 +52,11 @@ def tiles(runs: list[Row]) -> list[Tile]:
     else:
         credits = f"{sum(known):.3f}"
     return [
-        Tile("Runs", len(runs)),
-        Tile("Failed", len(failed), series=[float(r.get("nodes_failed") or 0) for r in runs], chart="bar"),
-        Tile("Median duration", _fmt_duration(median(durations)) if durations else None, series=durations or None),
+        Tile("Runs", len(runs), help="Runs started in the window, after the status filter."),
+        Tile("Failed", len(failed), series=[float(r.get("nodes_failed") or 0) for r in runs], chart="bar",
+             help="Runs that ended in error. Bars: failed nodes per run, oldest first."),
+        Tile("Median duration", _fmt_duration(median(durations)) if durations else None, series=durations or None,
+             help="Median run duration in the window. Sparkline: duration per run, oldest first."),
         Tile("Credits", credits, delta=f"{pending} pending" if known and pending else None,
              help=CREDITS_CAPTION),
     ]

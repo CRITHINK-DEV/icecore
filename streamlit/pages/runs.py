@@ -38,7 +38,8 @@ if picked and st.query_params.get("run") != picked["invocation_id"]:
     st.query_params["run"] = picked["invocation_id"]
 
 run = logic.selected_run(runs, st.query_params.get("run"))
-st.subheader(f"Run {run['started_at']}")
+started = run["started_at"]
+st.subheader(f"Run {started.strftime('%Y-%m-%d %H:%M:%S') if hasattr(started, 'strftime') else started}")
 st.caption(f"`{run['invocation_id']}`")
 nodes, node_error = console.guarded(
     lambda: queries.node_executions(invocation_id=run["invocation_id"], since=since, limit=queries.MAX_LIMIT))

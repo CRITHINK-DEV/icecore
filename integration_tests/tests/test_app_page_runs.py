@@ -122,12 +122,34 @@ def test_runs_page_empty_window(monkeypatch):
 
 
 def test_runs_page_renders_tiles_and_selected_run(monkeypatch):
+    from lib import queries
+
+    asked = []
     _patch(monkeypatch, RUNS, NODES)
+    monkeypatch.setattr(queries, "node_executions", lambda *a, **k: asked.append(k.get("invocation_id")) or NODES)
     at = _run()
     assert not at.exception, [e.value for e in at.exception]
     assert [m.label for m in at.metric] == ["Runs", "Failed", "Median duration", "Credits"]
     assert [m.value for m in at.metric][:2] == ["2", "1"]
     assert any("hours after" in c.value for c in at.caption)
+    assert asked[-1] == "b2"  # newest run by default
+    assert [s.value for s in at.subheader] == ["Runs", f"Run {RUNS[1]['started_at'].strftime('%Y-%m-%d %H:%M:%S')}",
+                                               "Slowest nodes"]
+    assert any("`b2`" in c.value for c in at.caption)
+    assert len(at.get("arrow_vega_lite_chart")) == 2  # runs chart and Gantt
+    assert len(at.dataframe) == 2  # runs table and slowest nodes
+    assert len(at.dataframe[1].value) == 10
     at.query_params["run"] = "a1"
     at.run()
     assert not at.exception
+    assert asked[-1] == "a1" and any("`a1`" in c.value for c in at.caption)
+    assert len(at.get("arrow_vega_lite_chart")) == 2 and len(at.dataframe) == 2
+
+
+def test_tile_sparklines_oldest_first():
+    from lib.pages import runs as logic
+
+    t = {x.label: x for x in logic.tiles(RUNS)}  # RUNS is oldest-first; reverse it to mimic the newest-first read
+    rev = {x.label: x for x in logic.tiles(list(reversed(RUNS)))}
+    assert rev["Median duration"].series == t["Median duration"].series == [60.0, 30.0]
+    assert rev["Failed"].series == [0.0, 1.0]

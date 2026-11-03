@@ -29,6 +29,7 @@ vars:
     anomaly_mad_floor_abs: 0
     shadow_engine: none
     payload_cap_kb: 64
+    layers: {}                          # {folder: layer}: renames the first folder under models/ in dbt.node.layer (UC7)
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
     silence_task_schedule: 5 MINUTE      # schedule of the silence task (UC6)

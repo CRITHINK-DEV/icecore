@@ -33,6 +33,7 @@ These keys control what the `start_run` and `end_run` hooks write.
 | `node_results` | `true` | boolean | `end_run` writes one record per node result: status, rows affected, execution time, message, test failures. | Cost: one row per node per run. Privacy: carries `dbt.result.message`, see `result_message`. |
 | `query_events` | `true` | boolean | `end_run` adds one `icecore.query` event with the Snowflake query id to each node's span. | Cost: one row per node query per run. The query id is what cost attribution joins on later. |
 | `lineage` | `true` | boolean | `end_run` writes the project's dependency edges (parent and child unique ids, between models, seeds, snapshots and sources) as log records. The whole graph is sent every run, not only the selected nodes. Edges that do not fit under `payload_cap_kb` are split over as many records as needed, and none is dropped. A graph with no edges writes no record. | Cost: at least one row per run, one more for each payload cap of edges. Privacy: unique ids only, no data. |
+| `layers` | `{}` | mapping | Renames the layer of models. A model's layer is the first folder under `models/` (`models/bronze/orders.sql` is `bronze`). `layers: {brz: bronze}` makes a model in `models/brz` read as `bronze`; a folder not in the mapping is its own layer. Seeds, snapshots and sources have the resource type as layer (`seed`, `snapshot`, `source`). A model directly in `models/`, with no folder, has no layer. The mapping is applied when the record is written (`dbt.node.layer`), so a record keeps the layer it had then. | None. Folder and layer names are written to the event table. |
 | `result_message` | `redacted` | string | How much of dbt's result message reaches the event table: `redacted`, `full` or `none`. An unknown value reads as `redacted`. | Privacy, see below. |
 | `payload_cap_kb` | `64` | number | Largest size of one record's attributes. A longer string is cut and the record gets `icecore.truncated = true`. Clamped to 1 to 256. | Cost: the high end of the cost estimate. Snowflake silently drops a record of about 1 MB (spike S2). |
 
@@ -229,7 +230,7 @@ Reads the last committed change of the relation (`SYSTEM$LAST_CHANGE_COMMIT_TIME
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
-| `max_lag` | none | number or string | Largest accepted lag. A number is seconds. A string is a number with a unit `s`, `m`, `h` or `d`: `30m`, `2h`, `1d`, `1.5h`. Spaces and case are ignored. Combined units such as `1h30m` are not accepted. A negative number, a boolean or any other text is a compile error. Without it the test records the metric and always passes. |
+| `max_lag` | none | number or string | Largest accepted lag. A number is seconds. A string is a number with a unit `s`, `m`, `h` or `d`: `30m`, `2h`, `1d`, `1.5h`. Spaces and case are ignored. Combined units such as `1h30m` are not accepted. A negative number, a boolean or any other text is a compile error. Without it the test records the metric and always passes. The limit in seconds is written on the metric as `icecore.metric.threshold` and read as `METRICS.threshold`. |
 
 ### `icecore.volume`
 

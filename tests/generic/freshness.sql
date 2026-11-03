@@ -36,7 +36,7 @@
       {%- set breach = max_lag_seconds is not none and lag_seconds > max_lag_seconds -%}
       {#- UC3 scoring hook: icecore.score(<history of freshness_lag_seconds>, lag_seconds) plugs in here and its
           result goes to emit_metric as `anomaly=`. Not called at this stage (engine none). -#}
-      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds) -%}
+      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, threshold=max_lag_seconds) -%}
     {%- endif -%}
   {%- endif -%}
 

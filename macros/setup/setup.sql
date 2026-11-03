@@ -136,15 +136,16 @@
     {%- set parts = [] -%}
     {%- for task in t['tasks'] -%}
       {%- do parts.append(task['name'] ~ ': ' ~ ((task['task'] ~ (' (resumed)' if task['resumed'] else ' (suspended)')) if task['status'] == 'ok'
-          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else ('not created, var alerts is false' if not icecore._icecore_flag('alerts', false) else 'not created, no model declares meta.sla'))) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
+          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else ('not created, var alerts is false' if not icecore._icecore_control_enabled('silence_task_resume') else 'not created, no model declares meta.sla'))) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
     {%- endfor -%}
     {%- for statement in t['printed'] -%}
       {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
     {%- endfor -%}
     {{ return(parts | join('; ')) }}
   {%- elif name == 'create_alerts' -%}
-    {%- if not icecore._icecore_flag('alerts', false) -%}
-      {{ return('var alerts is false: no alert created (set vars: icecore: alerts: true to create the alerts and the silence task and resume them)') }}
+    {%- if not icecore._icecore_control_enabled('alert_resume') -%}
+      {%- set stale = icecore._icecore_warn_unmanaged(state['schema'], 'ALERT') -%}
+      {{ return('var alerts is false: no alert created, ' ~ (stale | length) ~ ' existing left untouched (set vars: icecore: alerts: true to create the alerts and the silence task and resume them)') }}
     {%- endif -%}
     {%- set made = icecore.create_alerts(state['schema']) -%}
     {%- do state.update({'alerts': made}) -%}

@@ -2,8 +2,9 @@
     A story that adds a task adds an entry here; setup calls only create_tasks. Each entry is
     {name, create}: `create` names a macro that takes (schema, capabilities) and returns {task, status, resumed, printed},
     status ok, skipped or the guarded error. Tasks are created suspended unless their own var resumes them.
-    The silence task is created only when var alerts is true (then resumed unless silence_task_resume is false);
-    the Cortex task does not depend on it. -#}
+    The silence task is created when var alerts is true or silence_task_resume is true, and resumed unless
+    silence_task_resume is false; an existing one that is not asked for is reported with its SUSPEND and DROP
+    statements. The Cortex task does not depend on `alerts` (it has its own conditions). -#}
 
 {% macro create_tasks(schema=none, capabilities=none) %}
   {%- set out = {'tasks': [], 'printed': []} -%}
@@ -14,10 +15,11 @@
     {%- if entry['name'] == 'cortex_refresh' -%}
       {%- set result = icecore.create_refresh_cortex_task(schema=schema, capabilities=capabilities) -%}
     {%- elif entry['name'] == 'silence' -%}
-      {%- if icecore._icecore_flag('alerts', false) -%}
+      {%- if icecore._icecore_control_enabled('silence_task_resume') -%}
         {%- set result = icecore.create_silence_task(schema=schema) -%}
       {%- else -%}
-        {#- var alerts false: no silence task (it feeds the alerts) -#}
+        {#- not asked for: no silence task, and an existing one is reported, never touched -#}
+        {%- do icecore._icecore_warn_unmanaged(schema, 'TASK') -%}
         {%- set result = {'task': none, 'status': 'skipped', 'resumed': false, 'printed': []} -%}
       {%- endif -%}
     {%- else -%}

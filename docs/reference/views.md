@@ -150,7 +150,7 @@ One row per column per `icecore.schema_changes` run: the full column state of ea
 
 ## `SILENCE_EVENTS`
 
-One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. With `alerts: true`, `icecore.setup` creates the task and resumes it (it uses warehouse time on every schedule period); with `alerts: false` it creates no task. `silence_task_resume: false` keeps it suspended. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.
+One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. With `alerts: true` (or `silence_task_resume: true`), `icecore.setup` creates the task and resumes it (it uses warehouse time on every schedule period); with `alerts: false` it creates no task. `silence_task_resume: false` keeps it suspended. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.
 
 `expected_at` and `last_success_at` are the verdict's own values, UTC to the second, on Snowflake's clock: they come from the `recorded_at` of the node's results. `detected_at` is the `TIMESTAMP` of the verdict record.
 

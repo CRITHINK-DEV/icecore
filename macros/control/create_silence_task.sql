@@ -8,8 +8,9 @@
     collect_sla_config() (the dbt graph) or the `entries` argument. Without any meta.sla nothing is created and a line
     says so.
 
-    CREATE OR REPLACE TASK (a task has no COPY GRANTS: a re-run resets the task's grants). A task that was resumed
-    before the re-run is resumed again and a line says so: setup never silently suspends it.
+    CREATE OR REPLACE TASK (a task has no COPY GRANTS: a re-run resets the task's grants) leaves the task suspended;
+    setup resumes it again when its var asks for it. A task that was running and whose var now says false stays
+    suspended, and a line says so (the same as alerts).
     The task is created SUSPENDED, so creating it never starts spending credits without consent; var
     icecore.silence_task_resume: true resumes it (when it is not set, the var icecore.alerts decides; false keeps it
     suspended even with alerts: true). A resumed task uses warehouse time on every schedule period. Resuming and EXECUTE TASK need the EXECUTE TASK privilege on the
@@ -56,20 +57,20 @@
   {%- endif -%}
   {%- do out.update({'task': task, 'status': status}) -%}
   {%- if status != 'ok' -%}
-    {%- do out['printed'].append('GRANT CREATE TASK, CREATE PROCEDURE ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ target.role) -%}
+    {%- do out['printed'].append('GRANT CREATE TASK, CREATE PROCEDURE ON SCHEMA ' ~ icecore.obs_schema(schema) ~ ' TO ROLE ' ~ icecore._icecore_identifier(target.role)) -%}
     {%- do log('icecore: warning: could not create ' ~ task ~ ' (' ~ status ~ '); an admin must run: ' ~ out['printed'][-1], info=True) -%}
     {{ return(out) }}
   {%- endif -%}
   {%- set want_resume = resume is sameas true or (resume | string | lower) == 'true' -%}
   {%- if was_started and not want_resume -%}
-    {%- do log('icecore: ' ~ task ~ ' was resumed before this run: keeping it resumed (it was recreated; set silence_task_resume to make this explicit)', info=True) -%}
+    {%- do log('icecore: ' ~ task ~ ' was resumed before this run: it was recreated and stays suspended because its var says false', info=True) -%}
   {%- endif -%}
-  {%- if want_resume or was_started -%}
+  {%- if want_resume -%}
     {%- set resumed = icecore._icecore_guarded_ddl('ALTER TASK ' ~ task ~ ' RESUME') -%}
     {%- if resumed == 'ok' -%}
       {%- do out.update({'resumed': true}) -%}
     {%- else -%}
-      {%- do out['printed'].append('GRANT EXECUTE TASK ON ACCOUNT TO ROLE ' ~ target.role) -%}
+      {%- do out['printed'].append('GRANT EXECUTE TASK ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(target.role)) -%}
       {%- do log('icecore: warning: could not resume ' ~ task ~ ' (' ~ resumed ~ '); it stays suspended. An admin must run: '
           ~ out['printed'][-1], info=True) -%}
     {%- endif -%}

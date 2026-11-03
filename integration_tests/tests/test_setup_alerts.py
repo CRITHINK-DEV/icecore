@@ -82,3 +82,57 @@ def test_alerts_false_creates_no_alert_and_no_silence_task(sf, fresh_schema):
         assert step["status"] == "done" and "alerts is false" in step["detail"]
     finally:
         _cleanup(sf, schema)
+
+
+@pytest.mark.sandbox
+def test_alert_resume_true_creates_and_resumes_the_alerts_even_with_alerts_false(sf, fresh_schema):
+    schema = fresh_schema
+    try:
+        _setup(schema, {"alerts": False, "alert_resume": True, "alert_channels": CHANNELS})
+        assert {a["state"] for a in _show(sf, "alerts", schema)} == {"started"}
+        assert "ICECORE_SILENCE" not in {t["name"] for t in _show(sf, "tasks", schema)}
+    finally:
+        _cleanup(sf, schema)
+
+
+@pytest.mark.sandbox
+def test_silence_task_resume_true_creates_and_resumes_the_task_even_with_alerts_false(sf, fresh_schema):
+    schema = fresh_schema
+    try:
+        _setup(schema, {"alerts": False, "silence_task_resume": True, "alert_channels": CHANNELS})
+        assert _show(sf, "alerts", schema) == []
+        assert {t["name"]: t["state"] for t in _show(sf, "tasks", schema)}["ICECORE_SILENCE"] == "started"
+    finally:
+        _cleanup(sf, schema)
+
+
+@pytest.mark.sandbox
+def test_a_running_task_whose_var_now_says_false_is_recreated_suspended(sf, fresh_schema):
+    schema = fresh_schema
+    try:
+        _setup(schema, {"alerts": True, "alert_channels": CHANNELS})
+        assert {t["name"]: t["state"] for t in _show(sf, "tasks", schema)}["ICECORE_SILENCE"] == "started"
+        _setup(schema, {"alerts": True, "alert_channels": CHANNELS, "silence_task_resume": False, "alert_resume": False})
+        assert {t["name"]: t["state"] for t in _show(sf, "tasks", schema)}["ICECORE_SILENCE"] == "suspended"
+        assert {a["state"] for a in _show(sf, "alerts", schema)} == {"suspended"}
+    finally:
+        _cleanup(sf, schema)
+
+
+@pytest.mark.sandbox
+def test_alerts_false_after_an_earlier_setup_warns_per_object_and_touches_nothing(sf, fresh_schema):
+    schema = fresh_schema
+    try:
+        _setup(schema, {"alerts": True, "alert_channels": CHANNELS})
+        before = ({(a["name"], a["state"], a["created_on"]) for a in _show(sf, "alerts", schema)},
+                  {(t["name"], t["state"], t["created_on"]) for t in _show(sf, "tasks", schema) if t["name"] == "ICECORE_SILENCE"})
+        _, logs = _setup(schema, {"alerts": False, "alert_channels": CHANNELS})
+        text = "\n".join(logs)
+        for name in ("ICECORE_SILENCE", "ICECORE_ALERT_CHAT", "ICECORE_ALERT_EMAIL"):
+            assert f"{name} exists and is started" in text, text
+        assert text.count(" SUSPEND;") == 3 and text.count("DROP ") >= 3
+        after = ({(a["name"], a["state"], a["created_on"]) for a in _show(sf, "alerts", schema)},
+                 {(t["name"], t["state"], t["created_on"]) for t in _show(sf, "tasks", schema) if t["name"] == "ICECORE_SILENCE"})
+        assert after == before
+    finally:
+        _cleanup(sf, schema)

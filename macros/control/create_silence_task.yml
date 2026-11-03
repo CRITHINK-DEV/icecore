@@ -6,12 +6,13 @@ macros:
       Creates the procedure `ICECORE_SILENCE_CHECK` (static code) and the Snowflake task `ICECORE_SILENCE` in the obs schema, the
       `create_tasks` step of `setup`. The task body is `render_silence_task_sql` over the entries of `collect_sla_config`; with no `meta.sla` nothing is created and a
       line says so. `CREATE OR REPLACE TASK` (a task has no COPY GRANTS, so a re-run resets its grants and leaves it
-      suspended). The task is created suspended, so creating it never starts spending credits without consent; set
-      the var `icecore.silence_task_resume` to true to resume it. Resuming, and `EXECUTE TASK`, need the EXECUTE
+      suspended). The task is created suspended, so creating it never starts spending credits without consent; it is
+      resumed when `icecore.silence_task_resume` is true, or when it is unset and `icecore.alerts` is true (false keeps
+      it suspended; a task that was running and whose var says false is recreated suspended). Resuming, and `EXECUTE TASK`, need the EXECUTE
       TASK privilege on the account; when resuming fails the macro logs and returns the statement for an admin,
       `GRANT EXECUTE TASK ON ACCOUNT TO ROLE <role>`, and the task stays suspended. A role that cannot create the task
       gets the CREATE TASK grant printed. Vars, defaults in the package `dbt_project.yml`: `silence_task_schedule`
-      (5 MINUTE), `silence_task_warehouse` (default the target's warehouse), `silence_task_resume` (false). Returns
+      (5 MINUTE), `silence_task_warehouse` (default the target's warehouse), `silence_task_resume` (null: follows `alerts`). Returns
       `{task, status, resumed, printed}` where status is ok, skipped or the error of the create.
     arguments:
       - name: schema

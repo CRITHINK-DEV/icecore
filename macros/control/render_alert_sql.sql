@@ -23,12 +23,15 @@
                   then one CALL of ICECORE_NOTIFIED(incident_key, channel) per incident (never an INSERT, never ICECORE_EMIT, which
                   refuses `icecore.notified`), so the incident is not sent again inside the dedup window. The alerts' owner
                   role needs USAGE on ICECORE_NOTIFIED; the dbt role must not have it. At most 50 incidents per run.
-    Alerts are created SUSPENDED (Snowflake's default) and resumed only with consent: the var icecore.alert_resume
-    (true or false) when set, otherwise the var icecore.alerts. Both default to not resuming (alerts: false). A
+    Alerts are created only when var icecore.alerts is true or var icecore.alert_resume is true, and are resumed only
+    with consent: alert_resume (true or false) when set, otherwise alerts (alerts: false is the default). false keeps
+    a created alert suspended. A
     resumed alert runs on its warehouse every schedule period and costs the owner warehouse time. Resuming needs
     EXECUTE ALERT on the account: when it fails the grant is printed and the alert stays suspended. CREATE OR REPLACE
-    ALERT suspends an alert, so a re-run of setup resumes it again under the same rule (one alert per channel, never a
-    duplicate: the name is fixed by the channel).
+    ALERT suspends an alert and resets its grants (the dedup state is not affected: it lives in the event table), so
+    a re-run of setup resumes it again under the same rule (one alert per channel, never a duplicate: the name is
+    fixed by the channel). An alert of an earlier setup that the vars no longer ask for is never touched: setup
+    prints its state and the SUSPEND and DROP statements (_icecore_warn_unmanaged).
     The alert text is constant: node ids from meta, the channel, the integration and the recipients enter only as one
     PARSE_JSON string literal of a JSON config object (condition and action each have one), read inside the text.
     Notification integrations need an admin: create_alerts prints the CREATE NOTIFICATION INTEGRATION statements and
@@ -59,7 +62,7 @@
         {%- if r == 'ok' -%}
           {%- set resumed = true -%}
         {%- else -%}
-          {%- do log('icecore: warning: could not resume alert ' ~ channel['name'] ~ ' (' ~ r ~ '); it stays suspended. An admin must run: GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ target.role, info=True) -%}
+          {%- do log('icecore: warning: could not resume alert ' ~ channel['name'] ~ ' (' ~ r ~ '); it stays suspended. An admin must run: GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(target.role), info=True) -%}
         {%- endif -%}
       {%- endif -%}
       {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status, 'resumed': resumed}) -%}
@@ -70,6 +73,54 @@
     {%- endif -%}
   {%- endif -%}
   {{ return(created) }}
+{% endmacro %}
+
+
+{#- Whether setup creates an object: var alerts is true, or the object's own resume var (alert_resume,
+    silence_task_resume) is true. The own var overrides alerts in both directions: true creates and resumes even
+    with alerts false; false keeps the object suspended (still created) with alerts true; null follows alerts. -#}
+{% macro _icecore_control_enabled(key) %}
+  {{ return(icecore._icecore_flag('alerts', false) or (icecore._icecore_setting(key, none) is not none and icecore._icecore_flag(key, false))) }}
+{% endmacro %}
+
+
+{#- The existing icecore task or alert objects of the obs schema that setup does not manage under the current vars:
+    [{kind, name, state}]. kind TASK matches ICECORE_SILENCE, kind ALERT matches ICECORE_ALERT_*. Reads only. -#}
+{% macro _icecore_existing_control_objects(schema, kind) %}
+  {%- set found = [] -%}
+  {%- if kind == 'TASK' -%}
+    {%- set rows = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- else -%}
+    {%- set rows = run_query('SHOW ALERTS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_ALERT_%') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- endif -%}
+  {%- for r in rows -%}
+    {%- if (r['name'] | string).startswith('ICECORE_') -%}
+      {%- do found.append({'kind': kind, 'name': r['name'] | string, 'state': r['state'] | string | lower}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(found) }}
+{% endmacro %}
+
+
+{#- The warning lines for objects setup leaves alone (pure; offline tests render it). Statements are printed, never run. -#}
+{% macro _icecore_unmanaged_lines(objects, schema=none) %}
+  {%- set lines = [] -%}
+  {%- for o in objects -%}
+    {%- set q = icecore.obs_schema(schema) ~ '.' ~ icecore._icecore_identifier(o['name']) -%}
+    {%- do lines.append('icecore: warning: ' ~ (o['kind'] | lower) ~ ' ' ~ q ~ ' exists and is ' ~ o['state']
+        ~ ' but var alerts is false: setup does not update, suspend or drop it'
+        ~ (' and it still uses warehouse time on every schedule period' if o['state'] in ['started', 'resumed'] else '')
+        ~ '. To stop it run: ALTER ' ~ o['kind'] ~ ' ' ~ q ~ ' SUSPEND; to remove it run: DROP ' ~ o['kind'] ~ ' IF EXISTS ' ~ q ~ ';') -%}
+  {%- endfor -%}
+  {{ return(lines) }}
+{% endmacro %}
+
+
+{#- Logs one warning per existing object of `kind` that the vars do not ask setup to manage; returns the lines. -#}
+{% macro _icecore_warn_unmanaged(schema, kind) %}
+  {%- set lines = icecore._icecore_unmanaged_lines(icecore._icecore_existing_control_objects(schema, kind), schema) -%}
+  {%- for line in lines -%}{%- do log(line, info=True) -%}{%- endfor -%}
+  {{ return(lines) }}
 {% endmacro %}
 
 

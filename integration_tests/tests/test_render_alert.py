@@ -252,11 +252,32 @@ def test_resume_follows_alerts_unless_the_objects_own_var_is_set(settings, key, 
     assert call("_icecore_resume_flag", {"key": key}, settings or {"telemetry": True}) is expected
 
 
-def test_setup_creates_no_alert_when_alerts_is_false():
-    """No connection is needed: the step returns before it reads the channels."""
-    out = call("_icecore_setup_run_step", {"name": "create_alerts", "state": {"schema": "X", "tasks": None}},
-               {"alerts": False, "alert_channels": EMAIL_CHANNELS})
-    assert "var alerts is false" in out and "no alert created" in out
+@pytest.mark.parametrize("settings, key, expected", [
+    ({}, "alert_resume", False),
+    ({"alerts": False}, "silence_task_resume", False),
+    ({"alerts": False, "alert_resume": None}, "alert_resume", False),
+    ({"alerts": True}, "alert_resume", True),
+    ({"alerts": True, "alert_resume": None}, "silence_task_resume", True),
+    ({"alerts": True, "alert_resume": False}, "alert_resume", True),   # false keeps it created, suspended
+    ({"alerts": False, "alert_resume": False}, "alert_resume", False),
+    ({"alerts": False, "alert_resume": True}, "alert_resume", True),   # true creates it even with alerts false
+    ({"alerts": False, "silence_task_resume": True}, "silence_task_resume", True),
+    ({"alerts": False, "silence_task_resume": True}, "alert_resume", False),
+])
+def test_an_object_is_created_when_alerts_or_its_own_var_is_true(settings, key, expected):
+    assert call("_icecore_control_enabled", {"key": key}, settings or {"telemetry": True}) is expected
+
+
+def test_existing_objects_not_asked_for_get_one_warning_each_with_printed_statements():
+    objects = [{"kind": "ALERT", "name": "ICECORE_ALERT_DATA", "state": "started"},
+               {"kind": "TASK", "name": "ICECORE_SILENCE", "state": "suspended"},
+               {"kind": "ALERT", "name": 'ICECORE_ALERT_X"; DROP SCHEMA y; --', "state": "started"}]
+    lines = call("_icecore_unmanaged_lines", {"objects": objects, "schema": "OBS"})
+    assert len(lines) == 3
+    assert "ALTER ALERT" in lines[0] and "ICECORE_ALERT_DATA SUSPEND;" in lines[0] and "DROP ALERT IF EXISTS" in lines[0]
+    assert "warehouse time" in lines[0] and "warehouse time" not in lines[1] and "is suspended" in lines[1]
+    assert "ALTER TASK" in lines[1] and "DROP TASK IF EXISTS" in lines[1]
+    assert 'ICECORE_ALERT_X""; DROP SCHEMA y; --"' in lines[2]  # the name is quoted: one identifier
 
 
 EMAIL_CHANNELS = {"data": {"type": "email", "integration": "ICECORE_EMAIL_INT", "recipients": ["data@example.com"]}}

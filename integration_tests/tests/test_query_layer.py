@@ -5,7 +5,7 @@ fixture rows. The sandbox test creates the views with icecore.create_views in IC
 schema_change records, and reads them back through the query functions over a qmark-bound connection.
 
 Merged views (status `merged` in VIEWS): METRICS, SCHEMA_CHANGES, TEST_RESULTS, LINEAGE, LINEAGE_LATEST,
-CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS, SILENCE_EVENTS. Their columns are checked against the SQL that icecore.create_views renders
+CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS, SILENCE_EVENTS, SCHEMA_COLUMNS. Their columns are checked against the SQL that icecore.create_views renders
 (offline), and the sandbox test reads every one of them. ALERTS_FEED (#57) is coming: its
 function returns no rows and runs no query.
 
@@ -48,6 +48,7 @@ BUILDERS = {
     "NODE_EXECUTIONS": lambda s: queries.build_node_executions(s, EVIL, ["error"]),
     "ALERTS_FEED": lambda s: queries.build_alerts_feed(s, False, "error", EVIL, "2026-01-01"),
     "SILENCE_EVENTS": lambda s: queries.build_silence_events(s, EVIL, "2026-01-01"),
+    "SCHEMA_COLUMNS": lambda s: queries.build_schema_columns(s, EVIL, "2026-01-01"),
     "SLA_DECLARED": lambda s: queries.build_sla_declared(s, EVIL),
 }
 
@@ -75,7 +76,7 @@ def test_each_query_reads_one_view_in_the_views_schema(view):
 
 
 MERGED = ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS",
-          "NODE_EXECUTIONS", "SILENCE_EVENTS"]
+          "NODE_EXECUTIONS", "SILENCE_EVENTS", "SCHEMA_COLUMNS"]
 
 
 def _output_columns(sql: str) -> list[str]:
@@ -123,8 +124,8 @@ def test_every_merged_view_is_marked_merged_and_the_others_are_not():
 
 
 def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
-    # SCHEMA_COLUMNS feeds the Elementary compat view only; the app does not read it. ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
-    assert sorted(v for v in rendered_views if v != "SCHEMA_COLUMNS") == sorted(MERGED + ["ALERTS_FEED"])
+    # ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
+    assert sorted(rendered_views) == sorted(MERGED + ["ALERTS_FEED"])
 
 
 @pytest.mark.parametrize("view", MERGED)

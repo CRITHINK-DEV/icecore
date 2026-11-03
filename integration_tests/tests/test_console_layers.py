@@ -32,7 +32,7 @@ def test_a_project_with_its_own_layers_gets_them_upstream_first(out):
     assert own["labels"] == ["Staging", "Marts"]           # seed, source, snapshot, test and null layers are left out
     assert own["health"] == ["bronze", "silver"]           # one health card per layer, accent by position
     assert own["staging"] == "bronze" and own["marts"] == "silver" and own["seed"] == "sources"
-    assert own["order"] == ["sources", "transient", "bronze", "silver", "snapshot"]
+    assert own["order"] == ["sources", "bronze", "silver", "snapshot"]   # no transient node: no Transient button
 
 
 def test_no_model_layer_falls_back_to_the_prototype_list(out):

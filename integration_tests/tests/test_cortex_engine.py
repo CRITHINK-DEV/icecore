@@ -334,7 +334,7 @@ def test_a_bad_model_name_is_a_fallback_not_a_failure(cortex_model):
 
 @pytest.mark.parametrize("name", ["a-b", "a'b", "a b", "a$$b", "a;b", "a.b", ""])
 def test_a_database_or_schema_that_is_not_plain_stops_the_procedure_ddl(name):
-    with pytest.raises(MacroFailed, match="plain identifiers"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro_with_logs("it_call", {"name": "_icecore_score_constant", "kwargs": {"name": name}})
 
 
@@ -346,7 +346,7 @@ def test_every_retired_score_signature_is_dropped_before_the_new_one_is_created(
 @pytest.mark.parametrize("schema", ["obs-x", "obs'x", "obs x", "obs$$x", "obs;x"])
 def test_a_bad_schema_name_stops_setup_before_any_drop(schema):
     """The retired-signature DROPs used to run before the names were validated; the stub raises if a DROP is issued."""
-    with pytest.raises(MacroFailed, match="plain identifiers"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro_with_logs("it_call", {"name": "create_emit_procedures", "kwargs": {"schema": schema}},
                             ["--vars", '{"it_query_stub": true, "it_query_stub_forbid_drop": true}'])
 

@@ -8,7 +8,7 @@
           teams: {type: teams, integration: ICECORE_TEAMS}
     type is email, slack or teams; integration is the name of the notification integration (an admin creates it);
     recipients (email only) are the allowed and default recipients. With two or more channels exactly one is `default: true`. Names, types, integrations and recipients are
-    validated against strict patterns and render only through _icecore_sql_literal / _icecore_identifier.
+    validated against strict patterns and render only through icecore._sql / _icecore_identifier.
     Which incidents a channel gets comes from meta.alerts (collect_sla_config): a node whose meta.alerts.channel is the
     channel's name sends its incidents there (matched on the feed's node_key, the node's unique id) and only its
     meta.alerts.severity or above (error: only error rows); the channel marked `default: true` (or the only channel)
@@ -110,7 +110,7 @@
 
 {#- The alert's name, qualified: <obs schema>."ICECORE_ALERT_<NAME>". -#}
 {% macro alert_name(channel, schema=none) %}
-  {{ return(icecore.obs_schema(schema) ~ '."ICECORE_ALERT_' ~ (channel['name'] | upper) ~ '"') }}
+  {{ return(icecore.obs_schema(schema) ~ '.' ~ icecore._sql('ICECORE_ALERT_' ~ (channel['name'] | upper), 'ident')) }}
 {% endmacro %}
 
 
@@ -126,14 +126,14 @@
   {%- endif -%}
   {%- set minutes = schedule_minutes if schedule_minutes is not none else icecore._icecore_alert_schedule_minutes() -%}
   {%- set routing = icecore._icecore_alert_routing_config(channel, entries, all_channels, nodes) -%}
-  {%- set routing_json = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson(routing)) ~ ')' -%}
-  {%- set channel_sql = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson({'channel': channel['name']})) ~ '):channel::string' -%}
+  {%- set routing_json = 'PARSE_JSON(' ~ icecore._sql(tojson(routing), 'string') ~ ')' -%}
+  {%- set channel_sql = 'PARSE_JSON(' ~ icecore._sql(tojson({'channel': channel['name']}), 'string') ~ '):channel::string' -%}
   {%- set dedup = icecore.dedup_window_sql(channel['name'], schema, event_table, channel_sql=channel_sql) -%}
   {%- set condition = 'with cfg as (select ' ~ routing_json ~ ' as c)\nselect pending.* from (\n' ~ dedup ~ '\n) as pending cross join cfg\nwhere ' ~ icecore._icecore_alert_routing_sql() -%}
   {%- set sql -%}
 CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   WAREHOUSE = {{ icecore._icecore_identifier(warehouse) }}
-  SCHEDULE = '{{ minutes }} MINUTE'
+  SCHEDULE = {{ icecore._sql(minutes ~ ' MINUTE', 'string') }}
   COMMENT = 'icecore: new unacknowledged incidents of ALERTS_FEED to one channel'
   IF (EXISTS (
 {{ condition }}
@@ -154,11 +154,11 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
     {%- set i = icecore._icecore_identifier(c['integration']) -%}
     {%- if c['type'] == 'email' -%}
       {%- set rec = [] -%}
-      {%- for r in c['recipients'] -%}{%- do rec.append(icecore._icecore_sql_literal(r)) -%}{%- endfor -%}
+      {%- for r in c['recipients'] -%}{%- do rec.append(icecore._sql(r, 'string')) -%}{%- endfor -%}
       {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = EMAIL ENABLED = TRUE ALLOWED_RECIPIENTS = (' ~ (rec | join(', ')) ~ ');') -%}
     {%- elif c['type'] == 'slack' -%}
-      {%- do out.append('CREATE SECRET ' ~ icecore.obs_schema(schema) ~ '."' ~ (c['integration'] | upper) ~ '_SECRET" TYPE = GENERIC_STRING SECRET_STRING = \'<the Slack webhook path T000/B000/XXXX>\';') -%}
-      {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'https://hooks.slack.com/services/SNOWFLAKE_WEBHOOK_SECRET\' WEBHOOK_SECRET = ' ~ icecore.obs_schema(schema) ~ '."' ~ (c['integration'] | upper) ~ '_SECRET" WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
+      {%- do out.append('CREATE SECRET ' ~ icecore.obs_schema(schema) ~ '.' ~ icecore._sql((c['integration'] | upper) ~ '_SECRET', 'ident') ~ ' TYPE = GENERIC_STRING SECRET_STRING = \'<the Slack webhook path T000/B000/XXXX>\';') -%}
+      {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'https://hooks.slack.com/services/SNOWFLAKE_WEBHOOK_SECRET\' WEBHOOK_SECRET = ' ~ icecore.obs_schema(schema) ~ '.' ~ icecore._sql((c['integration'] | upper) ~ '_SECRET', 'ident') ~ ' WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
     {%- else -%}
       {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'<the Teams workflow webhook URL>\' WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
     {%- endif -%}
@@ -252,7 +252,7 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   {%- set config = {'channel': channel['name'], 'integration': channel['integration'], 'recipients': channel['recipients']} -%}
   {%- set sql -%}
   BEGIN
-    LET cfg VARIANT := PARSE_JSON({{ icecore._icecore_block_literal(tojson(config)) }});
+    LET cfg VARIANT := PARSE_JSON({{ icecore._sql(tojson(config), 'string') }});
     LET qid STRING := {{ qid }};
     LET ch STRING := cfg:channel::STRING;
     LET k STRING := '';

@@ -69,16 +69,15 @@
 
 
 {#- The Scripting block text (no run): CALL ICECORE_SCORE with the current point and the previous ones. Every value is a
-    typed argument or goes through the shared _icecore_sql_literal. The series key is hashed inside the procedure. -#}
+    typed argument or goes through the shared icecore._sql. The series key is hashed inside the procedure. -#}
 {% macro _cortex_call_sql(model, series, current_value, sensitivity, observed_at, schema, refresh_days, previous) %}
   {% set interval = icecore._cortex_prediction_interval(sensitivity) %}
   {% set points = [{'ts': none if observed_at is none else observed_at | string, 'y': icecore._sql_number(current_value) | float}] + previous %}
-  {% set lit = icecore._icecore_sql_literal %}
   {% set payload = {'model': model, 'series': series, 'points': points} %}
   {% set block %}
 declare
   res variant;
-  payload variant default parse_json({{ lit(tojson(payload)) }});
+  payload variant default parse_json({{ icecore._sql(tojson(payload), 'string') }});
 begin
   call {{ icecore._icecore_procedure('ICECORE_SCORE', schema) }}(:payload:model::string, :payload:series::string,
     to_array(:payload:points), {{ interval }}, {{ icecore._cortex_refresh_days(refresh_days) }}) into :res;
@@ -93,7 +92,7 @@ end;
 
 {#- Run a Scripting block that returns an object; never raises. -#}
 {% macro _icecore_try_cortex(block) %}
-  {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
+  {{ return(fromjson(run_query('execute immediate ' ~ icecore._sql(block, 'string')).rows[0][0])) }}
 {% endmacro %}
 
 

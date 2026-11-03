@@ -44,24 +44,22 @@
 {#- The obs schema's name, as Snowflake resolves an unquoted identifier (upper case): `schema` when given (setup's
     and doctor's argument), else the obs_schema var. -#}
 {% macro obs_schema_name(schema=none) %}
-  {{ return((schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper) }}
+  {%- set name = (schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper -%}
+  {%- do icecore._sql(name, 'ident') -%}
+  {{ return(name) }}
 {% endmacro %}
 
 
-{#- The obs schema, fully qualified and quoted: "<TARGET_DB>"."<OBS_SCHEMA>". -#}
+{#- The obs schema, fully qualified and quoted: "<TARGET_DB>"."<OBS_SCHEMA>". The schema is validated by icecore._sql (letters,
+    digits, underscore); a hostile obs_schema fails at compile time. -#}
 {% macro obs_schema(schema=none) %}
-  {%- set parts = [target.database | string | upper, icecore.obs_schema_name(schema)] -%}
-  {%- set quoted = [] -%}
-  {%- for part in parts -%}
-    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
-  {%- endfor -%}
-  {{ return(quoted | join('.')) }}
+  {{ return(icecore._sql(target.database | string | upper, 'name') ~ '.' ~ icecore._sql(icecore.obs_schema_name(schema), 'ident')) }}
 {% endmacro %}
 
 
 {#- A procedure of the obs schema, fully qualified (name only, no signature). -#}
 {% macro _icecore_procedure(name, schema=none) %}
-  {{ return(icecore.obs_schema(schema) ~ '."' ~ name ~ '"') }}
+  {{ return(icecore.obs_schema(schema) ~ '.' ~ icecore._sql(name, 'ident')) }}
 {% endmacro %}
 
 
@@ -69,7 +67,7 @@
   {%- set created = [] -%}
   {%- if execute -%}
     {#- Render and validate every DDL first (_icecore_score_constant refuses a database or schema outside [A-Za-z0-9_]
-        and stops setup), so nothing is dropped for names that fail the check. TODO(#75): use _sql(..., 'ident') for the names. -#}
+        and stops setup), so nothing is dropped for names that fail the check. -#}
     {%- set ddls = icecore._icecore_emit_procedures_ddl(schema) -%}
     {#- Snowflake keys a procedure by its signature: CREATE OR REPLACE of the shorter ICECORE_SCORE would leave an earlier
         signature (with database and schema arguments, a confused deputy) callable. Drop each retired one first, guarded,
@@ -249,8 +247,8 @@ COMMENT = 'icecore: scores points with a Cortex anomaly model in the owner role 
 EXECUTE AS OWNER
 AS $$
 DECLARE
-  db STRING DEFAULT '{{ icecore._icecore_score_constant(target.database) }}';
-  sch STRING DEFAULT '{{ icecore._icecore_score_constant(icecore.obs_schema_name(schema)) }}';
+  db STRING DEFAULT {{ icecore._sql(icecore._icecore_score_constant(target.database), 'string') }};
+  sch STRING DEFAULT {{ icecore._sql(icecore._icecore_score_constant(icecore.obs_schema_name(schema)), 'string') }};
   q STRING DEFAULT CHR(39);
   qq STRING DEFAULT CHR(39) || CHR(39);
   found INTEGER DEFAULT 0;
@@ -312,11 +310,9 @@ $$
 
 {#- A database or schema name that goes into an owner's-rights body or task text as a constant (ICECORE_SCORE, the refresh task):
     only [A-Za-z0-9_] on the name as given (so no quote, no $, no control character, and no upper-casing that changes it), whole
-    string (\Z), upper-cased; anything else stops the macro. TODO(#75): replace by _sql(..., 'ident') once icecore._sql merges. -#}
+    string (\Z), upper-cased; anything else stops the macro. The check is icecore._sql(..., 'ident'). -#}
 {% macro _icecore_score_constant(name) %}
-  {%- if not modules.re.match('^[A-Za-z0-9_]+\\Z', name | string) -%}
-    {{ exceptions.raise_compiler_error("icecore: the database and the obs schema must be plain identifiers ([A-Za-z0-9_]) to be written into an owner's-rights procedure or task, got '" ~ name ~ "'") }}
-  {%- endif -%}
+  {%- do icecore._sql(name | string, 'ident') -%}
   {{ return(name | string | upper) }}
 {% endmacro %}
 

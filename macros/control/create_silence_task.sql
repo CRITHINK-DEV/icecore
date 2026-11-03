@@ -41,7 +41,7 @@
   {%- set resume = cfg.get('silence_task_resume', false) if resume is none else resume -%}
   {%- set task = icecore._icecore_procedure('ICECORE_SILENCE', schema) -%}
   {#- the state of a task created earlier: a re-run keeps it (CREATE OR REPLACE would leave it suspended) -#}
-  {%- set before = run_query('SHOW TASKS LIKE ' ~ icecore._icecore_sql_literal('ICECORE_SILENCE') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- set before = run_query('SHOW TASKS LIKE ' ~ icecore._sql('ICECORE_SILENCE', 'string') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
   {%- set was_started = (before | length) > 0 and (before[0]['state'] | string | lower) == 'started' -%}
   {#- the procedure first: static code, no SLA value. The task body is a CALL carrying the SLA as one JSON literal. -#}
   {#- Snowflake keys procedures by signature: CREATE OR REPLACE of (VARIANT) leaves an older (VARIANT, VARCHAR, VARCHAR, VARCHAR)
@@ -82,7 +82,7 @@
 {% macro _icecore_silence_task_ddl(task, body, warehouse, schedule) %}
   {{ return('CREATE OR REPLACE TASK ' ~ task
       ~ ('\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '')
-      ~ '\n  SCHEDULE = ' ~ icecore._icecore_sql_literal(schedule)
+      ~ '\n  SCHEDULE = ' ~ icecore._sql(schedule, 'string')
       ~ "\n  COMMENT = 'icecore: detects runs that did not happen (meta.sla)'"
       ~ '\nAS\n' ~ body) }}
 {% endmacro %}

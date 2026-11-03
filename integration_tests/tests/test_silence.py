@@ -54,8 +54,12 @@ def literals(sql: str):
             assert i < len(sql), "unterminated literal"
             c = sql[i]
             if c == "\\":
-                value.append(sql[i + 1])
-                i += 2
+                if sql[i + 1:i + 4] == "x24":  # icecore writes `$` as \x24
+                    value.append("$")
+                    i += 4
+                else:
+                    value.append({"n": "\n", "r": "\r"}.get(sql[i + 1], sql[i + 1]))
+                    i += 2
             elif c == "'" and sql[i + 1:i + 2] == "'":
                 value.append("'")
                 i += 2

@@ -234,7 +234,7 @@ What the account supported when icecore last looked. One row per database, the l
 
 ## Elementary-compatible views
 
-`icecore.setup` with `compat: elementary` creates 8 more views in the compat schema, by default `<target_db>.<obs_schema>_ELEMENTARY` (for example `ICECORE_OBS_ELEMENTARY`). Set another name with the `compat_schema` var. The name may contain only letters, digits and underscores. The schema is created if it does not exist, so the role needs CREATE SCHEMA on the database, or an admin creates it first.
+`icecore.setup` with `compat: elementary` creates 8 more views in the compat schema, by default `<target_db>.<obs_schema>_ELEMENTARY` (for example `ICECORE_OBS_ELEMENTARY`). Set another name with the `compat_schema` var. The name may contain only letters, digits, underscores and a single dollar sign. The schema is created if it does not exist, so the role needs CREATE SCHEMA on the database, or an admin creates it first.
 
 ```bash
 dbt run-operation icecore.setup --args '{compat: elementary}'

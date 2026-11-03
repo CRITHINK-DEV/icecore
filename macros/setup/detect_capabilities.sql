@@ -101,7 +101,7 @@
 {#- (available, reason): the class is visible to the role. -#}
 {% macro _icecore_cortex(cortex_class) %}
   {%- set parts = cortex_class.split('.') -%}
-  {%- set shown = icecore._icecore_try_show("show classes like " ~ icecore._icecore_sql_literal(parts[-1]) ~ " in schema " ~ (parts[:-1] | join('.'))) -%}
+  {%- set shown = icecore._icecore_try_show("show classes like " ~ icecore._sql(parts[-1], 'string') ~ " in schema " ~ icecore._sql(parts[:-1], 'ident')) -%}
   {%- if 'error' in shown -%}{{ return([false, shown['error']]) }}{%- endif -%}
   {%- if not shown['rows'] -%}{{ return([false, cortex_class ~ ' is not available in this account or region']) }}{%- endif -%}
   {{ return([true, none]) }}
@@ -111,6 +111,12 @@
 {#- Run a SHOW inside a Snowflake Scripting block that catches every error: {'rows': [{column: value}]} or
     {'error': '<code>: <message>'}, never raises. -#}
 {% macro _icecore_try_show(show_sql) %}
+  {{ return(fromjson(run_query('execute immediate ' ~ icecore._sql(icecore._icecore_try_show_block(show_sql), 'string')).rows[0][0])) }}
+{% endmacro %}
+
+
+{#- The Scripting block of _icecore_try_show: constant text around the one SHOW statement it is given (built with icecore._sql). -#}
+{% macro _icecore_try_show_block(show_sql) %}
   {%- set block -%}
 declare
   res variant;
@@ -122,5 +128,5 @@ exception
   when other then return object_construct('error', sqlcode || ': ' || sqlerrm);
 end;
   {%- endset -%}
-  {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
+  {{ return(block) }}
 {% endmacro %}

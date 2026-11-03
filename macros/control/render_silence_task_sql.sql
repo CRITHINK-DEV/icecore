@@ -50,7 +50,7 @@
     {{ exceptions.raise_compiler_error('icecore: render_silence_task_sql needs at least one entry with meta.sla') }}
   {%- endif -%}
   {{ return('CALL ' ~ icecore._icecore_procedure('ICECORE_SILENCE_CHECK', schema) ~ '(PARSE_JSON('
-      ~ icecore._icecore_sql_literal(tojson(scheduled)) ~ '))') }}
+      ~ icecore._sql(tojson(scheduled), 'string') ~ '))') }}
 {% endmacro %}
 
 
@@ -61,14 +61,7 @@
     `view` is the object's name. Raises a compiler error otherwise, so nothing but a plain identifier reaches the DDL. -#}
 {% macro _icecore_silence_name(view, schema=none) %}
   {%- set parts = [target.database | string | upper, icecore.obs_schema_name(schema), view | string | upper] -%}
-  {%- set quoted = [] -%}
-  {%- for part in parts -%}
-    {%- if not modules.re.match('^[A-Za-z0-9_]+\\Z', part) -%}
-      {{ exceptions.raise_compiler_error('icecore: ' ~ part ~ ' is not a plain identifier (letters, digits and underscores); the silence procedure only embeds those') }}
-    {%- endif -%}
-    {%- do quoted.append('"' ~ part ~ '"') -%}
-  {%- endfor -%}
-  {{ return(quoted | join('.')) }}
+  {{ return(icecore._sql(parts, 'ident')) }}
 {% endmacro %}
 
 

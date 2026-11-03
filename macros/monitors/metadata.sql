@@ -16,7 +16,7 @@
   {%- set sql -%}
     select case when t.token > 0
                 then to_varchar(to_timestamp_ntz(t.token, 9), 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"') end
-    from (select system$last_change_commit_time({{ icecore._icecore_sql_literal(icecore._icecore_quoted_name(relation)) }})::number(38, 0) as token) t
+    from (select system$last_change_commit_time({{ icecore._sql(icecore._icecore_quoted_name(relation), 'string') }})::number(38, 0) as token) t
   {%- endset -%}
   {{ return(icecore._icecore_safe_scalar(sql, 'get_last_change_time', relation)) }}
 {% endmacro %}
@@ -77,21 +77,27 @@
 {% macro _icecore_quoted_name(relation) %}
   {%- set quoted = [] -%}
   {%- for part in icecore._icecore_name_parts(relation) -%}
-    {%- do quoted.append('"' ~ (part | replace('"', '""')) ~ '"') -%}
+    {%- do quoted.append(icecore._sql(part, 'name')) -%}
   {%- endfor -%}
   {{ return(quoted | join('.')) }}
 {% endmacro %}
 
 
-{#- Single-quoted Snowflake string literal: backslash first, then single quote. -#}
+{#- Wrapper kept for one release: icecore._sql(value, 'string'). -#}
 {% macro _icecore_sql_literal(value) %}
-  {{ return("'" ~ (value | string | replace('\\', '\\\\') | replace("'", "\\'")) ~ "'") }}
+  {{ return(icecore._sql(value, 'string')) }}
 {% endmacro %}
 
 
 {#- Run a one-value SELECT inside a Snowflake Scripting block that catches every error:
     returns {'value': <value>} or {'error': <Snowflake message>, 'code': <SQLCODE>}, never raises. -#}
 {% macro _icecore_try_scalar(select_sql) %}
+  {{ return(fromjson(run_query('execute immediate ' ~ icecore._sql(icecore._icecore_try_scalar_block(select_sql), 'string')).rows[0][0])) }}
+{% endmacro %}
+
+
+{#- The block of _icecore_try_scalar: constant text around the one SELECT it is given. -#}
+{% macro _icecore_try_scalar_block(select_sql) %}
   {%- set block -%}
 declare
   v variant default null;
@@ -102,7 +108,7 @@ exception
   when other then return object_construct('error', sqlerrm, 'code', sqlcode);
 end;
   {%- endset -%}
-  {{ return(fromjson(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0])) }}
+  {{ return(block) }}
 {% endmacro %}
 
 
@@ -132,9 +138,9 @@ end;
             when table_type in ('TEMPORARY TABLE', 'LOCAL TEMPORARY') then 'temporary'
             when is_transient = 'YES' then 'transient'
             else 'standard' end)
-    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.tables
-    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
-      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.tables
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
   {%- endset -%}
   {%- set info = icecore._icecore_safe_scalar(sql, 'get_row_count_metadata', relation) -%}
   {%- if info is none -%}
@@ -154,8 +160,8 @@ end;
     micro-partition after DELETE / UPDATE / MERGE, about 1.9 times a full scan in S5. -#}
 {% macro _icecore_changes_source(relation, since, until=none) %}
   {{ return(icecore._icecore_quoted_name(relation)
-      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(since) ~ '))'
-      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._icecore_sql_literal(until) ~ '))')) }}
+      ~ ' changes (information => default) at (timestamp => to_timestamp_tz(' ~ icecore._sql(since, 'string') ~ '))'
+      ~ ('' if until is none else ' end (timestamp => to_timestamp_tz(' ~ icecore._sql(until, 'string') ~ '))')) }}
 {% endmacro %}
 
 

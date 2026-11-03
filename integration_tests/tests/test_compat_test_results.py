@@ -73,11 +73,11 @@ def test_compat_schema_is_separate_from_the_obs_schema_and_configurable():
 
 
 @pytest.mark.parametrize("name", ['x"; drop schema y; --', "a.b", "a b", "x'y", "é"])
-def test_compat_schema_name_outside_letters_digits_underscore_is_a_compile_error(name):
+def test_compat_schema_name_outside_the_identifier_set_is_a_compile_error(name):
     from helpers.macros import MacroFailed
-    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro("it_compat_schema", {"compat_schema": name})
-    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro("it_compat_schema", {}, ["--vars", json.dumps({"icecore": {"compat_schema": name}})])
 
 

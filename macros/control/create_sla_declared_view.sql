@@ -1,6 +1,6 @@
 {#- UC7 SLA_DECLARED view: every model that declares meta.sla, one row each, whether or not it was ever silent
     (SILENCE_EVENTS holds verdicts only). Created by setup's `create_tasks` step from the same collect_sla_config
-    entries and the same escaped JSON literal (_icecore_sql_literal over tojson) as the silence task body, so meta.sla
+    entries and the same escaped JSON literal (icecore._sql over tojson) as the silence task body, so meta.sla
     text is data: it can only appear inside that one single-quoted literal. With no meta.sla the view is still created,
     with zero rows, so the app can tell "none declared" from "not set up". The SLA is embedded when setup runs.
     Columns: unique_id, expected_every_minutes, grace_minutes, channel, severity. -#}
@@ -20,7 +20,7 @@
       ~ 'select f.value:unique_id::string as unique_id, f.value:expected_every_minutes::number as expected_every_minutes, '
       ~ 'f.value:grace_minutes::number as grace_minutes, f.value:channel::string as channel, '
       ~ 'f.value:severity::string as severity\n'
-      ~ 'from table(flatten(input => parse_json(' ~ icecore._icecore_sql_literal(tojson(declared)) ~ '))) f') }}
+      ~ 'from table(flatten(input => parse_json(' ~ icecore._sql(tojson(declared), 'string') ~ '))) f') }}
 {% endmacro %}
 
 

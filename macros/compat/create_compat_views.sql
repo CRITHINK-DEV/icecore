@@ -32,7 +32,7 @@
     {%- endif -%}
     {%- for view in icecore._icecore_compat_views(schema) -%}
       {%- do run_query(icecore._icecore_compat_view_ddl(view['name'], view['sql'], schema, compat_schema)) -%}
-      {%- do created.append(target_schema ~ '."' ~ view['name'] ~ '"') -%}
+      {%- do created.append(target_schema ~ '.' ~ icecore._sql(view['name'], 'ident')) -%}
     {%- endfor -%}
     {%- do log('icecore: created ' ~ (created | join(', ')), info=True) -%}
   {%- endif -%}
@@ -56,19 +56,16 @@
 
 {#- The compat schema, fully qualified and quoted: "<TARGET_DB>"."<COMPAT_SCHEMA>". An explicit name or the var
     icecore.compat_schema wins; the default is <obs schema name>_ELEMENTARY. The name goes into DDL text, so it is
-    attacker data: anything outside [A-Za-z0-9_] is a compile error, then it is quoted.
-    TODO(#75): icecore._sql(..., 'ident') replaces this check and the quoting. -#}
+    attacker data: anything outside [A-Za-z0-9_$] (and no `$$`) is a compile error, then it is quoted by icecore._sql.
+ -#}
 {% macro _icecore_compat_schema(schema=none, compat_schema=none) %}
   {%- set name = (compat_schema or var('icecore', {}).get('compat_schema') or (icecore.obs_schema_name(schema) ~ '_ELEMENTARY')) | string | upper -%}
-  {%- if not modules.re.fullmatch('[A-Za-z0-9_]+', name) -%}
-    {{ exceptions.raise_compiler_error("icecore: the compat schema name (var icecore.compat_schema) may only contain letters, digits and underscores, got '" ~ name ~ "'") }}
-  {%- endif -%}
-  {{ return('"' ~ (target.database | string | upper | replace('"', '""')) ~ '"."' ~ name ~ '"') }}
+  {{ return(icecore._sql(target.database | string | upper, 'name') ~ '.' ~ icecore._sql(name, 'ident')) }}
 {% endmacro %}
 
 
 {% macro _icecore_compat_view_ddl(name, sql, schema=none, compat_schema=none) %}
-  {{ return('CREATE OR REPLACE VIEW ' ~ icecore._icecore_compat_schema(schema, compat_schema) ~ '."' ~ name ~ '" COPY GRANTS AS\n' ~ sql) }}
+  {{ return('CREATE OR REPLACE VIEW ' ~ icecore._icecore_compat_schema(schema, compat_schema) ~ '.' ~ icecore._sql(name, 'ident') ~ ' COPY GRANTS AS\n' ~ sql) }}
 {% endmacro %}
 
 

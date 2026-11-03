@@ -54,7 +54,9 @@ def constant_text(sql: str) -> str:
 
 def config_literals(sql: str) -> list:
     """The config objects of the alert, in text order: condition routing, dedup channel, action config."""
-    return [json.loads(m.encode().decode("unicode_escape")) for m in LITERAL.findall(sql)]
+    # undo icecore._sql(.., 'string') in one pass: \\ \' \x24 \n \r (unicode_escape would mangle non-ASCII text)
+    unescape = lambda text: re.sub(r"\\(x24|n|r|\\|')", lambda m: {"x24": "$", "n": "\n", "r": "\r"}.get(m.group(1), m.group(1)), text)  # noqa: E731
+    return [json.loads(unescape(m)) for m in LITERAL.findall(sql)]
 
 
 # --- offline: rendering only, no connection ------------------------------------------------------

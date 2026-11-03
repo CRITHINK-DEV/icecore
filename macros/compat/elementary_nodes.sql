@@ -79,17 +79,16 @@
 {#- [{name, type, expr}] in Elementary's order; none = typed NULL. -#}
 {% macro _icecore_dbt_models_columns(obs) %}
   {%- set text = icecore._icecore_elementary_text -%}
-  {%- set q = '"' -%}
   {{ return([
     {'name': 'unique_id', 'type': 'string', 'expr': "t.unique_id"},
-    {'name': 'alias', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 3), '" ~ q ~ "', '')"},
+    {'name': 'alias', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 3), chr(34), '')"},
     {'name': 'checksum', 'type': 'string', 'expr': none},
     {'name': 'materialization', 'type': 'string', 'expr': "t.materialization"},
     {'name': 'tags', 'type': 'long_string', 'expr': none},
     {'name': 'meta', 'type': 'long_string', 'expr': none},
     {'name': 'owner', 'type': 'string', 'expr': none},
-    {'name': 'database_name', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 1), '" ~ q ~ "', '')"},
-    {'name': 'schema_name', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 2), '" ~ q ~ "', '')"},
+    {'name': 'database_name', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 1), chr(34), '')"},
+    {'name': 'schema_name', 'type': 'string', 'expr': "replace(split_part(t.relation, '.', 2), chr(34), '')"},
     {'name': 'depends_on_macros', 'type': 'long_string', 'expr': none},
     {'name': 'depends_on_nodes', 'type': 'long_string', 'expr': "t.parents"},
     {'name': 'description', 'type': 'long_string', 'expr': none},

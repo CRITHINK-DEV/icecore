@@ -22,12 +22,14 @@
 {% macro base_events(event_table=none, database=none, obs_schema=none) %}
   {%- set database = database or target.database -%}
   {%- set obs_schema = obs_schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS') -%}
+  {%- do icecore._sql(obs_schema, 'ident') -%}
+  {%- do icecore._sql(database, 'name') -%}
   {%- if event_table is none -%}
     {%- set event_table = icecore.resolve_event_table(database) if execute else 'SNOWFLAKE.TELEMETRY.EVENTS_VIEW' -%}
   {%- endif -%}
   {%- set columns = [] -%}
   {%- for column, key, kind in icecore._icecore_base_event_attributes() -%}
-    {%- set path = 'RECORD_ATTRIBUTES:"' ~ key ~ '"::string' -%}
+    {%- set path = 'RECORD_ATTRIBUTES:' ~ icecore._sql(key, 'name') ~ '::string' -%}
     {%- if kind == 'string' -%}
       {%- do columns.append(path ~ ' as ' ~ column) -%}
     {%- else -%}
@@ -55,8 +57,8 @@ select
     RECORD_ATTRIBUTES as attributes
 from {{ event_table }}
 where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
-  and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(database)) }}
-  and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._icecore_sql_literal(icecore._icecore_stored_name(obs_schema)) }}
+  and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._sql(icecore._icecore_stored_name(database), 'string') }}
+  and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._sql(icecore._icecore_stored_name(obs_schema), 'string') }}
   and (RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
        or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')
        or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_NOTIFIED('))
@@ -111,6 +113,8 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('node_name', 'dbt.node.name', 'string'),
     ('node_materialization', 'dbt.node.materialization', 'string'),
     ('node_relation', 'dbt.node.relation', 'string'),
+    ('node_fqn', 'dbt.node.fqn', 'string'),
+    ('node_layer', 'dbt.node.layer', 'string'),
     ('node_query_id', 'snow.query.id', 'string'),
     ('result_status', 'dbt.result.status', 'string'),
     ('result_message', 'dbt.result.message', 'string'),
@@ -126,6 +130,7 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('metric_column', 'dbt.metric.column', 'string'),
     ('metric_dimension', 'dbt.metric.dimension', 'string'),
     ('metric_value', 'dbt.metric.value', 'float'),
+    ('metric_threshold', 'icecore.metric.threshold', 'float'),
     ('anomaly_engine', 'dbt.anomaly.engine', 'string'),
     ('anomaly_expected', 'dbt.anomaly.expected', 'float'),
     ('anomaly_lower', 'dbt.anomaly.lower', 'float'),
@@ -151,8 +156,11 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
 
 
 {#- The one plain-identifier helper of the package (setup, levels and views use it): an identifier for SQL text,
-    a plain identifier as it is (Snowflake resolves it upper case), anything else double-quoted. -#}
+    a plain identifier (letters, digits, underscore, and a single `$` after the first character: my$wh keeps its case) as it
+    is, anything else double-quoted by icecore._sql(..., 'name'), which refuses `$$` and control characters. Wrapper kept
+    for one release. -#}
 {% macro _icecore_identifier(name) %}
-  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', name | string) -%}{{ return(name | string) }}{%- endif -%}
-  {{ return('"' ~ (name | string | replace('"', '""')) ~ '"') }}
+  {%- set text = name | string -%}
+  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*\\Z', text) and '$$' not in text -%}{{ return(text) }}{%- endif -%}
+  {{ return(icecore._sql(text, 'name')) }}
 {% endmacro %}

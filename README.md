@@ -147,7 +147,7 @@ flowchart LR
 | **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; all exist. | `building` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
 | **Missed-run detection** | A Snowflake task compares `meta.sla` schedules with the last successful run. | `planned` |
-| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. Missed runs and cost regressions do not raise alerts yet. | `building` |
+| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `building` |
 | **Cortex engine and shadow scoring** | `SNOWFLAKE.ML.ANOMALY_DETECTION` when the account allows it, compared side by side with the native engine. | `planned` |
 | **Failed-row samples** | A capped sample of failing rows on test failure (payload limits from spike S2). | `planned` |
 | **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. | `planned` |
@@ -200,6 +200,7 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Roadmap](docs/superpowers/plans/2026-10-30-icecore-roadmap.md): six phases, three gates.
 - [Example project](examples/shop/README.md): a small shop with the hooks and the freshness and volume tests, and a test you can break on purpose.
 - [Quickstart](docs/quickstart.md): from an empty dbt project to the first icecore records.
+- [The app](docs/app.md): run it on your laptop against your own account (recommended for developers) or deploy it to Snowflake.
 - [Configuration](docs/configuration.md): every var, the setup, doctor and estimate operations, the hooks and the views.
 - [Public roadmap](docs/roadmap.md): what is built, what comes next and what is only considered.
 - [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.

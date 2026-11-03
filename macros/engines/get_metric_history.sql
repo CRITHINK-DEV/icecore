@@ -55,7 +55,7 @@
 {#- The series SELECT alone, no query run. `delay_minutes` is taken as given here (get_metric_history resolves the
     var). `source` is the relation to read, default the obs schema's METRICS view. -#}
 {% macro get_metric_history_sql(relation, metric, column=none, dimension=none, lookback_days=30, delay_minutes=1,
-                                source=none, schema=none) %}
+                                source=none, schema=none, node_unique_id=none) %}
   {%- if lookback_days is not integer or lookback_days < 1 -%}
     {{ exceptions.raise_compiler_error('icecore: lookback_days must be an integer of at least 1, got ' ~ lookback_days) }}
   {%- endif -%}
@@ -64,16 +64,18 @@
   {%- endif -%}
   {%- set name = relation if relation is string else icecore._icecore_quoted_name(relation) -%}
   {%- set source = source or icecore._icecore_procedure('METRICS', schema) -%}
-  {%- set literal = icecore._icecore_sql_literal -%}
   {%- set now = "convert_timezone('UTC', current_timestamp())::timestamp_ntz" -%}
   {%- set sql -%}
 select observed_at, value
 from {{ source }}
-where relation = {{ literal(name) }}
-  and metric = {{ literal(metric | string) }}
-  and "COLUMN" is not distinct from {{ 'null' if column is none else literal(column | string) }}
-  and dimension is not distinct from {{ 'null' if dimension is none else literal(dimension | string) }}
+where relation = {{ icecore._sql(name, 'string') }}
+  and metric = {{ icecore._sql(metric | string, 'string') }}
+  and "COLUMN" is not distinct from {{ 'null' if column is none else icecore._sql(column | string, 'string') }}
+  and dimension is not distinct from {{ 'null' if dimension is none else icecore._sql(dimension | string, 'string') }}
   and value is not null
+  {%- if node_unique_id is not none %}
+  and node_unique_id = {{ icecore._sql(node_unique_id | string, 'string') }}
+  {%- endif %}
   and observed_at > dateadd(day, -{{ lookback_days }}, {{ now }})
   and observed_at <= dateadd(minute, -{{ delay_minutes }}, {{ now }})
 order by observed_at

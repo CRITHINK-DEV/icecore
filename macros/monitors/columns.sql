@@ -224,7 +224,7 @@
   {%- set exprs = icecore._icecore_column_metric_exprs(c) -%}
   {%- set pairs = [] -%}
   {%- for metric in icecore._icecore_column_metric_names(metrics) -%}
-    {%- do pairs.append(icecore._icecore_sql_literal(metric) ~ ', ' ~ exprs[metric]) -%}
+    {%- do pairs.append(icecore._sql(metric, 'string') ~ ', ' ~ exprs[metric]) -%}
   {%- endfor -%}
   {{ return('select object_construct_keep_null(' ~ (pairs | join(', ')) ~ ') from ('
       ~ icecore._icecore_window_rows_sql(relation, window, [column_name]) ~ ') w') }}
@@ -243,9 +243,9 @@
     {%- set exprs = icecore._icecore_column_metric_exprs(icecore._icecore_column_ref(item['column'])) -%}
     {%- set inner = [] -%}
     {%- for metric in item['metrics'] -%}
-      {%- do inner.append(icecore._icecore_sql_literal(metric) ~ ', ' ~ exprs[metric]) -%}
+      {%- do inner.append(icecore._sql(metric, 'string') ~ ', ' ~ exprs[metric]) -%}
     {%- endfor -%}
-    {%- do pairs.append(icecore._icecore_sql_literal(loop.index0 | string) ~ ', object_construct_keep_null(' ~ (inner | join(', ')) ~ ')') -%}
+    {%- do pairs.append(icecore._sql(loop.index0 | string, 'string') ~ ', object_construct_keep_null(' ~ (inner | join(', ')) ~ ')') -%}
   {%- endfor -%}
   {{ return('select object_construct_keep_null(' ~ (pairs | join(', ')) ~ ') from ('
       ~ icecore._icecore_window_rows_sql(relation, window, columns) ~ ') w') }}
@@ -263,9 +263,9 @@
   {%- endif -%}
   {%- set sql -%}
     select coalesce(object_agg(column_name, data_type::variant), object_construct())
-    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.columns
-    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
-      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.columns
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
   {%- endset -%}
   {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}
@@ -361,14 +361,14 @@
   {%- set refs = [] -%}
   {%- for col in columns -%}{%- do refs.append(icecore._icecore_column_ref(col)) -%}{%- endfor -%}
   {%- set select_list = refs | join(', ') -%}
-  {%- set since = icecore._icecore_sql_literal(window['since']) -%}
+  {%- set since = icecore._sql(window['since'], 'string') -%}
   {%- if window['mode'] == 'changes' -%}
     {{ return('select ' ~ select_list ~ ' from ' ~ icecore._icecore_changes_source(relation, window['since'], window.get('until'))
         ~ " where metadata$action = 'INSERT'") }}
   {%- endif -%}
   {%- set ts = icecore._icecore_column_ref(window['timestamp_column']) -%}
   {%- set ts_type = window['timestamp_type'] -%}
-  {%- set stop = icecore._icecore_sql_literal(window['until']) if window.get('until') is not none else none -%}
+  {%- set stop = icecore._sql(window['until'], 'string') if window.get('until') is not none else none -%}
   {%- if ts_type == 'DATE' -%}
     {%- set predicate = ts ~ ' >= to_timestamp_ntz(' ~ since ~ ')::date' ~ ('' if stop is none else ' and ' ~ ts ~ ' < to_timestamp_ntz(' ~ stop ~ ')::date') -%}
   {%- elif ts_type == 'TIMESTAMP_NTZ' -%}
@@ -402,7 +402,7 @@
 
 
 {% macro _icecore_column_ref(column_name) %}
-  {{ return('"' ~ (icecore._icecore_column_name(column_name) | replace('"', '""')) ~ '"') }}
+  {{ return(icecore._sql(icecore._icecore_column_name(column_name), 'name')) }}
 {% endmacro %}
 
 
@@ -422,10 +422,10 @@
   {%- set parts = icecore._icecore_name_parts(relation) -%}
   {%- set sql -%}
     select data_type
-    from {{ '"' ~ (parts[0] | replace('"', '""')) ~ '"' }}.information_schema.columns
-    where table_schema = {{ icecore._icecore_sql_literal(parts[1]) }}
-      and table_name = {{ icecore._icecore_sql_literal(parts[2]) }}
-      and column_name = {{ icecore._icecore_sql_literal(icecore._icecore_column_name(column_name)) }}
+    from {{ icecore._sql(parts[0], 'name') }}.information_schema.columns
+    where table_schema = {{ icecore._sql(parts[1], 'string') }}
+      and table_name = {{ icecore._sql(parts[2], 'string') }}
+      and column_name = {{ icecore._sql(icecore._icecore_column_name(column_name), 'string') }}
   {%- endset -%}
   {{ return(icecore._icecore_try_scalar(sql)) }}
 {% endmacro %}

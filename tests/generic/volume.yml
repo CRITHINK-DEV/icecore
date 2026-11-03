@@ -9,8 +9,10 @@ macros:
       comes only from that comparison: a failed telemetry CALL is a logged warning and never changes the result.
       Views, external tables and Iceberg tables have no trusted metadata row count: the reader logs why and no metric is
       written; the test passes without thresholds, and with `min_rows` or `max_rows` it returns one row `unmeasured: <reason>`
-      so its severity applies. The scoring hook for UC3 (`icecore.score`) is marked in the test body and not
-      called yet. Use `severity: warn` in the test config to warn instead of failing. Example,
+      so its severity applies. The row count is also scored against the history of `row_count`
+      (`icecore.score_monitor_metrics`: one query, the lag-aware history reader's window) and written with its result
+      (`METRICS.anomaly_*`); the test fails on `min_rows` / `max_rows` (hard threshold); an anomaly only warns by default (status `warn`); it fails the test when var `anomaly_severity` is `error`. A hard threshold of this test fails it. The test sets `config(severity='error', warn_if='>=1', error_if='>=2' or '>=1')` and returns 1 row for anomalies and 2 or more for a hard breach; `severity`, `warn_if` or `error_if` written on the test in your project win. The history is this test's own (its `unique_id`), never another test's on the same series. Native engine cost: 1 query; engine cortex or auto adds the Cortex calls for series of 14+ days (once per relation when the model cannot score). Fewer than
+      `min_points` history points: not scored and an info line says so, never an error. Use `severity: warn` in the test config to warn instead of failing. Example,
       `data_tests: [icecore.volume: {min_rows: 1}]`.
     arguments:
       - name: model
@@ -22,3 +24,21 @@ macros:
       - name: max_rows
         type: integer
         description: Largest accepted row count. Optional.
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`, for this test. Default `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`, for this test. Default `var('icecore').anomaly_sensitivity` (medium)."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed, for this test. Default `var('icecore').anomaly_min_consecutive` (1)."
+      - name: lookback_days
+        type: integer
+        description: History window in days. Default 30.
+      - name: min_points
+        type: integer
+        description: Fewer history points than this are not scored (insufficient history). Default 7.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`, for this test. Default `var('icecore').shadow_engine` (none)."

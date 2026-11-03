@@ -61,7 +61,7 @@ def test_native_renders_one_select_statement():
 
 
 def test_observed_at_is_escaped():
-    assert call_macro("_sql_timestamp", value="2026-10-29' or '1'='1") == "'2026-10-29'' or ''1''=''1'::timestamp_ntz"
+    assert call_macro("_sql_timestamp", value="2026-10-29' or '1'='1") == "'2026-10-29\\' or \\'1\\'=\\'1'::timestamp_ntz"
     # History timestamps are UTC (event table); the default "now" must be UTC too, not the session time zone.
     assert call_macro("_sql_timestamp", value=None) == "convert_timezone('UTC', current_timestamp())::timestamp_ntz"
 

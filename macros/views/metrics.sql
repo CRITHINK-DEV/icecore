@@ -33,7 +33,8 @@ select
     anomaly_is_anomaly,
     invocation_id,
     node_unique_id,
-    emit_query_id
+    emit_query_id,
+    metric_threshold as threshold
 from events
 where record_type = 'SPAN_EVENT'
   and record_name = 'icecore.metric'

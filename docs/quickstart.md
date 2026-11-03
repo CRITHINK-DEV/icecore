@@ -107,15 +107,15 @@ icecore: setup step 5/9 record_capabilities: icecore.capabilities: ok 1
 icecore: telemetry cost: 12,960 rows per month (18 rows per run for 3 nodes (...) x 24 runs per day x 30 days).
 icecore: telemetry cost: 0.02 to 0.85 GB, 0.0004 to 0.0180 credits per month at 0.0212 Platform Credits per GB (1500 bytes per row to the 64 KB payload cap).
 icecore: setup step 7/9 create_views: CREATE OR REPLACE VIEW ... COPY GRANTS "MY_DB"."ICECORE_OBS"."METRICS", ... "TEST_RESULTS", ... "CAPABILITIES"
-icecore: setup step 8/9 create_alerts: planned, not available yet (Snowflake alerts)
-icecore: setup step 9/9 create_tasks: planned, not available yet (Snowflake tasks)
+icecore: setup step 8/9 create_tasks: cortex_refresh: ... (suspended); silence: not created, var alerts is false
+icecore: setup step 9/9 create_alerts: var alerts is false: no alert created (set vars: icecore: alerts: true to create the alerts and the silence task and resume them)
 ```
 
 Read the output for three things:
 
 - Step 4 says `levels sufficient`, or prints the `ALTER SCHEMA` statement for an admin. With sufficient levels, `printed 1 for an admin` is not a problem: it is the recommendation to cluster the event table, an `ALTER TABLE ... CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)` that an admin may run.
 - The cost line is an estimate of what icecore will write to your event table each month. `runs_per_day` is how often dbt runs.
-- Steps 8 and 9 are not built yet. They are reported as planned and do nothing.
+- Steps 8 and 9 create the silence task and the alerts only when the `alerts` var is `true`. By default it is `false`, so they create no alert and no silence task. With `alerts: true` they are also **resumed**, and a resumed alert or task runs on a warehouse every period: that is warehouse time on your account. See [Alerts and tasks](configuration.md#alerts-and-tasks).
 
 Running `setup` again changes nothing. To use another schema, pass `schema` and set the `obs_schema` var to the same name: see [Configuration](configuration.md#where-icecore-writes).
 
@@ -194,6 +194,10 @@ from ICECORE_OBS.CAPABILITIES;
 DATABASE_NAME | EDITION    | EVENT_TABLE                       | LOG_LEVEL | TRACE_LEVEL
 MY_DB         | ENTERPRISE | MY_DB.TELEMETRY.EVENTS            | INFO      | ALWAYS
 ```
+
+## Anomaly tests
+
+`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` score each metric against their own history (30 days, at least 7 points). Until a test has 7 points it only records metrics. An anomaly **warns** by default (status `warn`, and `METRICS` and the alerts carry it). To make it fail the test, set `vars: icecore: anomaly_severity: error`. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test (status `fail`), and `severity: warn` on a test makes everything warn. See [configuration](configuration.md#monitor-and-anomaly-settings).
 
 ## Turn telemetry off
 

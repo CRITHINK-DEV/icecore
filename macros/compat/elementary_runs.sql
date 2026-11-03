@@ -60,7 +60,7 @@
 
 {#- Text of a timestamp in Elementary's format, over the alias t. -#}
 {% macro _icecore_elementary_text(expression, micros=false) %}
-  {{ return("to_varchar(" ~ expression ~ ", '" ~ ('YYYY-MM-DD HH24:MI:SS.FF6' if micros else 'YYYY-MM-DD HH24:MI:SS') ~ "')") }}
+  {{ return("to_varchar(" ~ expression ~ ", " ~ icecore._sql('YYYY-MM-DD HH24:MI:SS.FF6' if micros else 'YYYY-MM-DD HH24:MI:SS', 'string') ~ ")") }}
 {% endmacro %}
 
 
@@ -79,7 +79,7 @@
     {'name': 'created_at', 'type': 'timestamp', 'expr': last},
     {'name': 'command', 'type': 'string', 'expr': 't.command'},
     {'name': 'dbt_version', 'type': 'string', 'expr': 't.dbt_version'},
-    {'name': 'elementary_version', 'type': 'string', 'expr': "'" ~ icecore._icecore_elementary_version() ~ "'"},
+    {'name': 'elementary_version', 'type': 'string', 'expr': icecore._sql(icecore._icecore_elementary_version(), 'string')},
     {'name': 'full_refresh', 'type': 'boolean', 'expr': none},
     {'name': 'invocation_vars', 'type': 'long_string', 'expr': none},
     {'name': 'vars', 'type': 'long_string', 'expr': none},

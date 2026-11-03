@@ -146,6 +146,11 @@ where event_at >= dateadd(hour, -24, convert_timezone('UTC', current_timestamp()
   {%- else -%}
     {%- set records_detail = count ~ ' icecore records in the last 24 h in ' ~ where -%}
   {%- endif -%}
+  {#- var icecore.layers that is not a mapping is ignored by the hooks; the check shows only then -#}
+  {%- set layers_problem = icecore._icecore_layers_problem() -%}
+  {%- if layers_problem is not none -%}
+    {%- do checks.append({'name': 'layers', 'ok': false, 'detail': layers_problem}) -%}
+  {%- endif -%}
   {%- do checks.append({'name': 'records', 'ok': count is not none and count > 0, 'detail': records_detail}) -%}
 
   {%- set failed = [] -%}

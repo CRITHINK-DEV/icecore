@@ -96,24 +96,24 @@ def test_body_follows_the_history_delay_var_and_validates_its_arguments():
 
 # Hostile database and schema names: each must stop the render with a compile error, so none reaches the task text.
 HOSTILE_NAMES = [
-    "OBS_X' || (SELECT CURRENT_ROLE()) || '", 'OBS_X" || (SELECT CURRENT_ROLE()) || "', "OBS_X$$", "OBS$X", "OBS X", "OBS_X;DROP",
+    "OBS_X' || (SELECT CURRENT_ROLE()) || '", 'OBS_X" || (SELECT CURRENT_ROLE()) || "', "OBS_X$$", "OBS X", "OBS_X;DROP",
     "OBS_X\n", "OBS_X\x00", "OBS_X\x1f", "OBS_X--", "OBS.X", 'OBS_"X', "OBS_X\\", "OBS_\u00dfX",
 ]
 
 
 @pytest.mark.parametrize("name", HOSTILE_NAMES)
 def test_a_hostile_schema_cannot_reach_the_task_body(name):
-    with pytest.raises(MacroFailed, match="plain identifiers"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         call("render_refresh_cortex_models_sql", {"schema": name})
-    with pytest.raises(MacroFailed, match="plain identifiers"):  # the same through the obs_schema var
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):  # the same through the obs_schema var
         call("render_refresh_cortex_models_sql", {}, ["--vars", json.dumps({"icecore": {"obs_schema": name}})])
-    with pytest.raises(MacroFailed, match="plain identifiers"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         call("create_refresh_cortex_task", {"schema": name, "capabilities": CORTEX_ON}, ["--vars", '{"it_query_stub": true}'])
 
 
 @pytest.mark.parametrize("name", HOSTILE_NAMES + [""])
 def test_a_hostile_database_cannot_reach_the_task_text(name):
-    with pytest.raises(MacroFailed, match="plain identifiers"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         call("_icecore_refresh_names", {"schema": "icecore_obs_x", "database": name})
 
 
@@ -357,3 +357,8 @@ def test_a_rerun_keeps_a_task_an_admin_resumed(refreshed, sf):
         assert state() == "started", "CREATE OR REPLACE suspended the task and setup did not resume it"
     finally:
         cur.execute(f"alter task if exists {task} suspend")
+
+
+def test_a_schema_with_a_single_dollar_sign_is_a_valid_name():
+    names, _ = call("_icecore_refresh_names", {"schema": "obs$x"})
+    assert names["metrics"] == '"%s"."OBS$X"."METRICS"' % DATABASE

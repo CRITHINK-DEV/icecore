@@ -25,7 +25,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, run_macro
+from helpers.macros import MacroFailed, call_macro, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
 SPIKES = os.environ.get("SNOWFLAKE_SCHEMA", "SPIKES")
@@ -92,10 +92,13 @@ def test_database_defaults_to_the_target():
 
 
 def test_literals_are_escaped():
-    sql = render(event_table=TABLE, database="o'brien", obs_schema="x\\y")
-    # not plain identifiers, so kept as written (quoted names keep their case)
+    sql = render(event_table=TABLE, database="o'brien", obs_schema="x_y")
+    # a database that is not a plain identifier is kept as written (quoted names keep their case)
     assert "= 'o\\'brien'" in sql
-    assert "= 'x\\\\y'" in sql
+    assert "= 'X_Y'" in sql
+    # the obs schema is an identifier: a backslash or a quote in it is refused at compile time
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
+        render(event_table=TABLE, database="D", obs_schema="x\\y")
 
 
 def test_numeric_attributes_are_typed():

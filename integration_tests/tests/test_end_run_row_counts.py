@@ -30,7 +30,7 @@ def result(i: int) -> dict:
 
 
 def estimate(settings: dict | None = None, **kwargs):
-    return run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": kwargs},
+    return run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"monitors": False, **kwargs}},
                                with_vars(settings) if settings is not None else None)[0]
 
 

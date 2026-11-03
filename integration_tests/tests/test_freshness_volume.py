@@ -2,7 +2,7 @@
 
 Fixtures: integration_tests/models/monitors/_freshness_volume.yml (sources whose identifiers are vars). Each test
 computes from metadata (zero scan), emits one metric through icecore.emit_metric and compares with the thresholds it
-is given; the scoring hook for UC3 is not called. The sandbox tests create the emitter procedures in a schema of their
+is given; they are scored against their history (tests/test_anomaly_e2e.py). The sandbox tests create the emitter procedures in a schema of their
 own, ICECORE_OBS_<run_id> (the obs_schema var), run `dbt test`, and read the metrics back through icecore.base_events().
 The story's "changed 3 hours ago" is exercised as a 5 second max_lag on a table left to age 10 seconds: a table's
 last change time cannot be backdated, and the comparison is the same.

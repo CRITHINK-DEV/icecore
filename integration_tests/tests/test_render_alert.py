@@ -54,7 +54,9 @@ def constant_text(sql: str) -> str:
 
 def config_literals(sql: str) -> list:
     """The config objects of the alert, in text order: condition routing, dedup channel, action config."""
-    return [json.loads(m.encode().decode("unicode_escape")) for m in LITERAL.findall(sql)]
+    # undo icecore._sql(.., 'string') in one pass: \\ \' \x24 \n \r (unicode_escape would mangle non-ASCII text)
+    unescape = lambda text: re.sub(r"\\(x24|n|r|\\|')", lambda m: {"x24": "$", "n": "\n", "r": "\r"}.get(m.group(1), m.group(1)), text)  # noqa: E731
+    return [json.loads(unescape(m)) for m in LITERAL.findall(sql)]
 
 
 # --- offline: rendering only, no connection ------------------------------------------------------
@@ -118,7 +120,7 @@ def test_slack_text_escapes_ampersand_and_angle_brackets_and_every_webhook_clean
     assert "replace(replace(replace(coalesce(title, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')" in slack
     for webhook in ("slack", "teams"):
         sql = call("alert_message_sql", {"type": webhook, "source": "pending"})
-        assert "'[[:cntrl:]]'" in sql and "''''" in sql and "'\\\\'" in sql
+        assert "'[[:cntrl:]]'" in sql and "chr(34), chr(39)" in sql and "'\\\\'" in sql
         assert "'\\n'" not in sql  # one line: no raw newline into a JSON body template
     email = call("alert_message_sql", {"type": "email", "source": "pending"})
     assert "&amp;" not in email and "cntrl" not in email and "'\\n'" in email
@@ -227,13 +229,66 @@ def test_integration_statements_are_printed_not_run():
     assert "WEBHOOK_URL = 'https://hooks.slack.com/services/SNOWFLAKE_WEBHOOK_SECRET'" in text
     assert "CREATE SECRET" in text and "SNOWFLAKE_WEBHOOK_MESSAGE" in text
     assert "GRANT USAGE ON INTEGRATION ICECORE_TEAMS_INT TO ROLE" in text and "GRANT EXECUTE ALERT ON ACCOUNT" in text
-    assert text.count("ALTER ALERT") == 3 and "RESUME;" in text and "icecore never resumes an alert" in text
+    assert text.count("ALTER ALERT") == 3 and "RESUME;" in text and "setup resumes alerts itself only when var alerts is true" in text
 
 
-def test_create_alerts_has_no_resume_path():
+def test_create_alerts_resumes_only_behind_the_resume_flag():
     source = open(os.path.join(os.path.dirname(__file__), "..", "..", "macros", "control", "render_alert_sql.sql")).read()
-    assert "alert_resume" not in source
-    assert not re.search(r"guarded_ddl\([^)]*RESUME", source)
+    assert source.count("RESUME'") == 1
+    assert "status == 'ok' and want_resume" in source
+    assert "_icecore_resume_flag('alert_resume')" in source
+
+
+@pytest.mark.parametrize("settings, key, expected", [
+    ({}, "alert_resume", False),
+    ({"alerts": False}, "silence_task_resume", False),
+    ({"alerts": True}, "alert_resume", True),
+    ({"alerts": True, "alert_resume": None}, "alert_resume", True),
+    ({"alerts": True, "alert_resume": False}, "alert_resume", False),
+    ({"alerts": True, "silence_task_resume": False}, "silence_task_resume", False),
+    ({"alerts": True, "silence_task_resume": False}, "alert_resume", True),
+    ({"alerts": False, "alert_resume": True}, "alert_resume", True),
+    ({"alerts": "true"}, "silence_task_resume", True),
+])
+def test_resume_follows_alerts_unless_the_objects_own_var_is_set(settings, key, expected):
+    assert call("_icecore_resume_flag", {"key": key}, settings or {"telemetry": True}) is expected
+
+
+@pytest.mark.parametrize("settings, key, expected", [
+    ({}, "alert_resume", False),
+    ({"alerts": False}, "silence_task_resume", False),
+    ({"alerts": False, "alert_resume": None}, "alert_resume", False),
+    ({"alerts": True}, "alert_resume", True),
+    ({"alerts": True, "alert_resume": None}, "silence_task_resume", True),
+    ({"alerts": True, "alert_resume": False}, "alert_resume", True),   # false keeps it created, suspended
+    ({"alerts": False, "alert_resume": False}, "alert_resume", False),
+    ({"alerts": False, "alert_resume": True}, "alert_resume", True),   # true creates it even with alerts false
+    ({"alerts": False, "silence_task_resume": True}, "silence_task_resume", True),
+    ({"alerts": False, "silence_task_resume": True}, "alert_resume", False),
+])
+def test_an_object_is_created_when_alerts_or_its_own_var_is_true(settings, key, expected):
+    assert call("_icecore_control_enabled", {"key": key}, settings or {"telemetry": True}) is expected
+
+
+def test_existing_objects_not_asked_for_get_one_warning_each_with_printed_statements():
+    objects = [{"kind": "ALERT", "name": "ICECORE_ALERT_DATA", "state": "started"},
+               {"kind": "TASK", "name": "ICECORE_SILENCE", "state": "suspended"},
+               {"kind": "ALERT", "name": 'ICECORE_ALERT_X"; DROP SCHEMA y; --', "state": "started"}]
+    lines = call("_icecore_unmanaged_lines", {"objects": objects, "schema": "OBS"})
+    assert len(lines) == 3
+    assert "ALTER ALERT" in lines[0] and "ICECORE_ALERT_DATA SUSPEND;" in lines[0] and "DROP ALERT IF EXISTS" in lines[0]
+    assert "warehouse time" in lines[0] and "warehouse time" not in lines[1] and "is suspended" in lines[1]
+    assert "ALTER TASK" in lines[1] and "DROP TASK IF EXISTS" in lines[1]
+    assert 'ICECORE_ALERT_X""; DROP SCHEMA y; --"' in lines[2]  # the name is quoted: one identifier
+
+
+EMAIL_CHANNELS = {"data": {"type": "email", "integration": "ICECORE_EMAIL_INT", "recipients": ["data@example.com"]}}
+
+
+def test_package_defaults_do_not_resume_anything():
+    text = open(os.path.join(os.path.dirname(__file__), "..", "..", "dbt_project.yml")).read()
+    assert re.search(r"^    alerts: false", text, re.M)
+    assert re.search(r"^    alert_resume: null", text, re.M) and re.search(r"^    silence_task_resume: null", text, re.M)
 
 
 def test_setup_marks_create_alerts_ready():

@@ -60,6 +60,15 @@ def test_test_results_and_node_executions_expose_the_new_columns():
     assert "node_result.root_cause_kind as root_cause_kind" in views()["NODE_EXECUTIONS"]
 
 
+def test_new_columns_are_last_so_positional_selects_do_not_shift():
+    from test_views_reference_docs import columns
+    test_results = columns(views()["TEST_RESULTS"])
+    assert test_results[-2:] == ["query_id", "tested_unique_id"] and test_results.index("root_cause_kind") < test_results.index("executed_at")
+    node_executions = columns(views()["NODE_EXECUTIONS"])
+    assert node_executions[-3:] == ["recorded_at", "layer", "root_cause_kind"]
+    assert node_executions[:4] == ["invocation_id", "unique_id", "type", "name"]
+
+
 def test_lineage_flattens_the_edge_lists_of_lineage_logs():
     sql = views()["LINEAGE"]
     assert """attributes:"icecore.kind"::string = 'lineage'""" in sql

@@ -87,8 +87,9 @@ select
     coalesce(cost_latest.cost_credits, node_result.cost_credits) as credits,
     cost_latest.attributes:"dbt.cost.settled"::string as credits_settled,
     node_result.root_cause_unique_id as root_cause_unique_id,
-    node_result.root_cause_kind as root_cause_kind,
-    node_result.event_at as recorded_at
+    node_result.event_at as recorded_at,
+    coalesce(node_span.node_layer, node_result.node_layer) as layer,
+    node_result.root_cause_kind as root_cause_kind
 from keys
 left join node_span on node_span.invocation_id = keys.invocation_id and node_span.node_unique_id = keys.node_unique_id
 left join node_result on node_result.invocation_id = keys.invocation_id and node_result.node_unique_id = keys.node_unique_id

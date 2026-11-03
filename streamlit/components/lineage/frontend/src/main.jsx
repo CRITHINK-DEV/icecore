@@ -104,15 +104,16 @@ function Canvas({ args, theme }) {
     let t;
     const ro = new ResizeObserver(() => {
       clearTimeout(t);
+      // Refit to the selected node's lit path (what feeds it and what it feeds), else to the whole graph; never zoom in
+      // past 1 so labels keep their size and nothing is cut off when the side pane narrows the canvas.
       t = setTimeout(() => {
-        const sel = selected && pos[selected] ? [{ id: selected }] : undefined;
-        rf.fitView({ padding: 0.15, duration: 250, maxZoom: compact ? 1 : 1.4, nodes: sel && undefined });
-        if (sel) rf.setCenter(pos[selected].x + NODE_W / 2, pos[selected].y + NODE_H / 2, { zoom: rf.getZoom(), duration: 250 });
+        const nodes = lit ? [...lit].filter((id) => pos[id]).map((id) => ({ id })) : undefined;
+        rf.fitView({ padding: 0.15, duration: 250, maxZoom: 1, ...(nodes && nodes.length ? { nodes } : {}) });
       }, 120);
     });
     ro.observe(wrap.current);
     return () => { ro.disconnect(); clearTimeout(t); };
-  }, [selected, pos, compact]); // eslint-disable-line
+  }, [lit, pos, compact]); // eslint-disable-line
   useEffect(() => { if (!selected) rf.fitView({ padding: 0.15, duration: 250, maxZoom: compact ? 1 : 1.4 }); }, [selected]); // eslint-disable-line
 
   const pick = (id) => { setSelected(id); setComponentValue(id); };

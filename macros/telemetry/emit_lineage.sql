@@ -39,7 +39,7 @@
       {%- if unique_id not in info -%}
         {%- set node = (graph.nodes or {}).get(unique_id) or (graph.sources or {}).get(unique_id) -%}
         {%- if node -%}
-          {%- set fqn = icecore._icecore_node_fqn(icecore._icecore_get(node, 'fqn')) -%}
+          {%- set fqn = icecore._icecore_node_fqn(icecore._icecore_get(node, 'fqn'), icecore._icecore_get(node, 'version')) -%}
           {%- set entry = {} -%}
           {%- do icecore._icecore_put(entry, 'fqn', fqn) -%}
           {%- do icecore._icecore_put(entry, 'layer', icecore._icecore_layer(unique_id.split('.')[0], fqn)) -%}
@@ -72,15 +72,19 @@
   {%- set info = info if info is not none else icecore._icecore_lineage_node_info(edges) -%}
   {%- set parts = [] -%}
   {%- if edges -%}
-    {#- room for the edges: the cap less the base attributes and this record's own attributes and message -#}
-    {%- set room = icecore._icecore_payload_cap_bytes() - (tojson(icecore.base_attributes()) | length) - 700 -%}
+    {#- room for the edges: the cap less the base attributes and this record's own attributes and message
+        (700), and the two node-map key names (120) -#}
+    {%- set room = icecore._icecore_payload_cap_bytes() - (tojson(icecore.base_attributes()) | length) - 700 - 120 -%}
     {%- set ns = namespace(current=[], size=0) -%}
     {%- for edge in edges -%}
       {#- the pair as it sits in the JSON string attribute, which JSON escapes once more, plus the comma -#}
       {%- set extra = namespace(size=0) -%}
       {%- for unique_id in edge -%}
         {%- if unique_id in info -%}
-          {%- set extra.size = extra.size + (tojson(tojson({unique_id: info[unique_id]})) | length) -%}
+          {#- each node is written twice: {uid: fqn} in dbt.lineage.node_fqn and {uid: layer} in dbt.lineage.node_layer -#}
+          {%- for key in ['fqn', 'layer'] if key in info[unique_id] -%}
+            {%- set extra.size = extra.size + (tojson(tojson({unique_id: info[unique_id][key]})) | length) + 1 -%}
+          {%- endfor -%}
         {%- endif -%}
       {%- endfor -%}
       {%- set size = (tojson(tojson(edge)) | length) + 1 + extra.size -%}
@@ -99,8 +103,8 @@
 
 
 {#- Add the LOG items for these edges to batch['items']. -#}
-{% macro _icecore_lineage_append(edges, batch) %}
-  {%- set info = icecore._icecore_lineage_node_info(edges) -%}
+{% macro _icecore_lineage_append(edges, batch, info=none) %}
+  {%- set info = info if info is not none else icecore._icecore_lineage_node_info(edges) -%}
   {%- set parts = icecore._icecore_lineage_parts(edges, info) -%}
   {%- for part in parts -%}
     {%- set attrs = {

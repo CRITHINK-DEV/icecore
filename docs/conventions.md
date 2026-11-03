@@ -85,7 +85,7 @@ Each list shows the keys added to the base keys above. `snow.query.id` as a reco
 
 Also on records icecore built: `icecore.kind` (logs), `icecore.truncated` and `icecore.truncated_keys` (when a value was cut, see [Payload cap](#payload-cap-and-chunking)). Python adds `code.filepath`, `code.function` and `code.lineno` to logs (S1.md, results table).
 
-Node keys `dbt.node.fqn` and `dbt.node.layer` are on node spans and node results. `dbt.node.fqn` is dbt's fqn as one dotted string (`shop.bronze.stripe.orders`: project, folders, name). `dbt.node.layer` is the first folder under `models/` for a model (fqn part 1, only when the fqn has more than 2 parts), renamed by the [`layers`](configuration.md#run-telemetry) var, and the resource type for a seed, snapshot or source. Both are left out when they do not apply, and a record written before they existed has neither: the views read null.
+Node keys `dbt.node.fqn` and `dbt.node.layer` are on node spans and node results. `dbt.node.fqn` is dbt's fqn as one dotted string (`shop.bronze.stripe.orders`: project, folders, name; the version part dbt adds to a versioned model is dropped). `dbt.node.layer` is the first folder under `models/` for a model (fqn part 1, only when the fqn has more than 2 parts), renamed by the [`layers`](configuration.md#run-telemetry) var, and the resource type for a seed, snapshot or source. Both are left out when they do not apply, and a record written before they existed has neither: the views read null.
 
 The metric names written today are `freshness_lag_seconds` and `row_count`.
 

@@ -37,7 +37,7 @@
     {%- do icecore._icecore_put(out, 'dbt.node.name', get(node, 'name')) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.materialization', get(config, 'materialized')) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.relation', icecore._icecore_node_relation(node)) -%}
-    {%- set fqn = icecore._icecore_node_fqn(get(node, 'fqn')) -%}
+    {%- set fqn = icecore._icecore_node_fqn(get(node, 'fqn'), get(node, 'version')) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.fqn', fqn) -%}
     {%- do icecore._icecore_put(out, 'dbt.node.layer', icecore._icecore_layer(resource_type, fqn)) -%}
     {%- if resource_type == 'test' -%}
@@ -156,12 +156,17 @@
 
 
 {#- dbt's fqn (a list: project, folders, name) as one dotted string, `shop.bronze.stripe.orders`: the compact form
-    written as `dbt.node.fqn`. None when there is no fqn. -#}
-{% macro _icecore_node_fqn(fqn) %}
+    written as `dbt.node.fqn`. None when there is no fqn. A versioned model (`version` set) has the version appended
+    to its fqn by dbt (`shop.orders.v2`): that last part is dropped, so the layer and the fqn do not depend on it. -#}
+{% macro _icecore_node_fqn(fqn, version=none) %}
   {%- if fqn is none or fqn is string or fqn | length == 0 -%}
     {{ return(none) }}
   {%- endif -%}
-  {{ return(fqn | map('string') | join('.')) }}
+  {%- set parts = fqn | map('string') | list -%}
+  {%- if version is not none and (version | string) != '' and parts | length > 1 -%}
+    {%- set parts = parts[:-1] -%}
+  {%- endif -%}
+  {{ return(parts | join('.')) }}
 {% endmacro %}
 
 
@@ -186,6 +191,16 @@
   {%- set layers = icecore._icecore_setting('layers', {}) -%}
   {%- set mapped = layers.get(folder) if layers is mapping else none -%}
   {{ return(folder if mapped is none or (mapped | string | trim) == '' else mapped | string | trim) }}
+{% endmacro %}
+
+
+{#- A message when var icecore.layers is set and is not a mapping (then it is ignored), else none. -#}
+{% macro _icecore_layers_problem() %}
+  {%- set layers = icecore._icecore_setting('layers', {}) -%}
+  {%- if layers is none or layers is mapping -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {{ return('var icecore.layers must be a mapping {folder: layer}; got ' ~ (layers | string)[:80] ~ ', so it is ignored and each model keeps its folder name as layer') }}
 {% endmacro %}
 
 

@@ -84,8 +84,19 @@ def test_lineage_records_carry_the_fqn_and_layer_of_their_nodes():
     layers = json.loads(log["attrs"]["dbt.lineage.node_layer"])
     assert fqns[a] == f"{PROJECT}.hooks.hooks_a"
     assert layers[a] == layers[b] == "hooks"
-    # a source parent has the type as layer
-    assert any(v == "source" for v in layers.values()) or not any(u.startswith("source.") for u in fqns)
+
+
+
+def test_a_source_parent_has_the_type_as_layer_in_the_lineage_record():
+    graph = run_macro("it_lineage_edges", {})
+    source_ids = {u for e in graph for u in e if u.startswith("source.")}
+    records = run_macro("it_end_run_render", {"results": []})["records"]
+    layers = {}
+    for r in records:
+        if r["attrs"].get("icecore.kind") == "lineage" and "dbt.lineage.node_layer" in r["attrs"]:
+            layers.update(json.loads(r["attrs"]["dbt.lineage.node_layer"]))
+    assert source_ids, "the fixture project has no source in an edge"
+    assert all(layers[u] == "source" for u in source_ids)
 
 
 def test_lineage_layers_follow_the_var():
@@ -101,11 +112,48 @@ def test_a_synthetic_edge_the_graph_does_not_know_has_no_node_keys():
     assert "dbt.lineage.node_fqn" not in attrs and "dbt.lineage.node_layer" not in attrs
 
 
-def test_node_keys_stay_under_the_payload_cap_and_split_when_needed():
-    uid = f"model.{PROJECT}.hooks_a"
-    edges = [[uid, f"model.{PROJECT}.hooks_b"]] * 1
-    out = run_macro("it_lineage_render", {"edges": edges}, ["--vars", json.dumps({"icecore": {"payload_cap_kb": 1}})])
-    assert all(size < 1024 for size in out["sizes"]), out["sizes"]
+@pytest.mark.parametrize("cap_kb", [1, 2, 4])
+def test_node_maps_stay_under_the_payload_cap_and_stay_valid_json(cap_kb):
+    n = 22 * 2
+    uids = [f"model.{PROJECT}.m_{i:03d}" for i in range(n)]
+    info = {u: {"fqn": f"{PROJECT}.some_folder.m_{i:03d}",
+                "layer": "some_layer"} for i, u in enumerate(uids)}
+    edges = [[uids[2 * i], uids[2 * i + 1]] for i in range(22)]
+    out = run_macro("it_lineage_render", {"edges": edges, "info": info},
+                    ["--vars", json.dumps({"icecore": {"payload_cap_kb": cap_kb}})])
+    assert len(out["records"]) > 1
+    seen = set()
+    for record, size in zip(out["records"], out["sizes"]):
+        attrs = record["attrs"]
+        assert size <= cap_kb * 1024 and "icecore.truncated" not in attrs, (size, attrs.get("icecore.truncated_keys"))
+        fqns = json.loads(attrs["dbt.lineage.node_fqn"])
+        layers = json.loads(attrs["dbt.lineage.node_layer"])
+        assert set(fqns) == set(layers)
+        seen |= set(fqns)
+    assert seen == set(uids)
+
+
+def test_a_versioned_model_in_models_has_no_layer_not_its_name():
+    versioned = {**node(["shop", "orders", "v2"]), "version": 2}
+    a = run_macro("it_node_attributes", {"node": versioned})
+    assert a["dbt.node.fqn"] == "shop.orders" and "dbt.node.layer" not in a
+    in_folder = {**node(["shop", "bronze", "orders", "v2"]), "version": "2"}
+    a = run_macro("it_node_attributes", {"node": in_folder})
+    assert a["dbt.node.fqn"] == "shop.bronze.orders" and a["dbt.node.layer"] == "bronze"
+
+
+def test_a_layers_var_that_is_not_a_mapping_is_ignored_and_doctor_reports_it():
+    extra = ["--vars", json.dumps({"icecore": {"layers": ["bronze"]}})]
+    assert attrs_of(["shop", "bronze", "orders"], layers=["bronze"])["dbt.node.layer"] == "bronze"
+    problem = run_macro("it_call", {"name": "_icecore_layers_problem", "kwargs": {}}, extra)
+    assert problem and "must be a mapping" in problem
+    assert run_macro("it_call", {"name": "_icecore_layers_problem", "kwargs": {}}) is None
+    caps = {"database": "DB", "event_table": "DB.T.EVENTS", "log_level": "INFO", "trace_level": "ALWAYS"}
+    probes = {"ICECORE_EMIT": "ok 1", "ICECORE_EMIT_RUN": "ok spans=0 logs=1"}
+    report = run_macro("it_call", {"name": "_icecore_doctor_report",
+                                   "kwargs": {"capabilities": caps, "probes": probes, "count": 3}}, extra)
+    check = next(c for c in report["checks"] if c["name"] == "layers")
+    assert not check["ok"] and "icecore.layers" in check["detail"]
 
 
 # --- offline: threshold ---------------------------------------------------------------------------

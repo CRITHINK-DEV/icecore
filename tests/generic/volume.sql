@@ -1,8 +1,9 @@
 {#- icecore.volume: zero-scan volume test (UC2). Documented in volume.yml.
     Reads the total row count with icecore.get_row_count_metadata (INFORMATION_SCHEMA.TABLES, no data scan),
-    emits it as the metric row_count, then compares it with min_rows and max_rows when given. The test fails
-    or passes only on that comparison: emit_metric guards its own CALL. -#}
-{% test volume(model, min_rows=none, max_rows=none) %}
+    scores it against the metric's own history (icecore.score_monitor_metrics: one query), emits it as the metric
+    row_count with the scored result, then fails when it is outside min_rows / max_rows OR the engine says anomaly.
+    Not enough history: not scored, the test passes on that account. emit_metric guards its own CALL. -#}
+{% test volume(model, min_rows=none, max_rows=none, engine=none, sensitivity=none, min_consecutive=none, lookback_days=30, min_points=7, shadow_engine=none) %}
   {%- for pair in [('min_rows', min_rows), ('max_rows', max_rows)] -%}
     {%- if pair[1] is not none and (pair[1] is boolean or pair[1] is not number or pair[1] < 0) -%}
       {{ exceptions.raise_compiler_error("icecore.volume: " ~ pair[0] ~ " must be a non-negative number; got '" ~ pair[1] ~ "'") }}
@@ -15,6 +16,8 @@
   {%- set breach = false -%}
   {%- set unmeasured = none -%}
   {%- set row_count = none -%}
+  {%- set verdict = none -%}
+  {%- do icecore.score_monitor_metrics(model, [], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine) -%}
   {%- if execute -%}
     {%- set row_count = icecore.get_row_count_metadata(model) -%}
     {%- if row_count is none -%}
@@ -26,15 +29,15 @@
       {%- endif -%}
     {%- else -%}
       {%- set breach = (min_rows is not none and row_count < min_rows) or (max_rows is not none and row_count > max_rows) -%}
-      {#- UC3 scoring hook: icecore.score(<history of row_count>, row_count) plugs in here and its result goes
-          to emit_metric as `anomaly=`. Not called at this stage (engine none). -#}
-      {%- do icecore.emit_metric(model, 'row_count', row_count) -%}
+      {%- set verdict = icecore.score_monitor_metrics(model, [{'metric': 'row_count', 'value': row_count}], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine)[0] -%}
+      {%- do icecore.emit_metric(model, 'row_count', row_count, anomaly=verdict, attributes=icecore._icecore_window_attrs(verdict)) -%}
     {%- endif -%}
   {%- endif -%}
 
+  {%- set anomalous = icecore._icecore_anomalous(verdict) -%}
   select {{ 'null' if row_count is none else row_count }}::number as row_count,
          {{ 'null' if min_rows is none else min_rows }}::number as min_rows,
          {{ 'null' if max_rows is none else max_rows }}::number as max_rows,
-         {{ 'null' if unmeasured is none else icecore._icecore_sql_literal(unmeasured) }}::varchar as reason
-  where {{ 'true' if (breach or unmeasured is not none) else 'false' }}
+         {{ 'null' if (unmeasured is none and not anomalous) else icecore._icecore_sql_literal(unmeasured if unmeasured is not none else icecore._icecore_anomaly_text(verdict)) }}::varchar as reason
+  where {{ 'true' if (breach or anomalous or unmeasured is not none) else 'false' }}
 {% endtest %}

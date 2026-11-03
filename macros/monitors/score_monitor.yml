@@ -1,0 +1,50 @@
+version: 2
+
+macros:
+  - name: score_monitor_metrics
+    description: >
+      Scores the metrics a generic monitor test (`freshness`, `volume`, `column_anomaly`, `all_columns_anomaly`,
+      `dimension_anomaly`) just computed against their own history and returns one result per point, in the order given.
+      A result is the contract of `icecore.score` (engine, expected, lower, upper, score, is_anomaly, fallback_reason, plus
+      baseline and history sizes) to pass to `emit_metric` / `emit_metrics` as `anomaly`, or none when the point is not scored:
+      fewer than `min_points` points in the lookback (an info line says so; never an error), scoring switched off
+      (`var('icecore').monitor_score: false`), or a failed read (a warning). The history is the lag-aware reader's window
+      (`get_metric_history_sql`: the METRICS view of the obs schema, `lookback_days`, minus `history_delay_minutes`).
+      One query reads and scores the history of every metric of the test (one scored subquery per point, chunked at 25 points):
+      one query for `freshness`, `volume` and `column_anomaly`, `ceil(points / 25)` for the two wide tests. The native engine
+      scores every point; with `engine` cortex or auto, a point with at least 14 days of history is then tried with Cortex
+      (the dispatcher's guarded call, 2 more queries) and keeps the native result, with its `fallback_reason`, when Cortex
+      cannot score. With a shadow engine, each scored point is also scored by it (not for a point the primary did not
+      score) and written as an `icecore.shadow` event. Settings default to `var('icecore')` (`anomaly_engine`,
+      `anomaly_sensitivity`, `anomaly_min_consecutive`, `shadow_engine`); the tests pass their own arguments.
+    arguments:
+      - name: relation
+        type: relation
+        description: The monitored relation (the METRICS key `relation`).
+      - name: points
+        type: list
+        description: "[{metric, value, column, dimension}]: the metrics just computed; column and dimension are optional."
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`. Default `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`. Default `var('icecore').anomaly_sensitivity` (medium)."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed. Default `var('icecore').anomaly_min_consecutive` (1)."
+      - name: lookback_days
+        type: integer
+        description: History window in days. Default 30.
+      - name: min_points
+        type: integer
+        description: Fewer history points than this are not scored (insufficient history). Default 7.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`. Default `var('icecore').shadow_engine` (none)."
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+      - name: runner
+        type: macro
+        description: Tests only. A macro that replaces the guarded query, to render offline.

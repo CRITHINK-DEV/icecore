@@ -64,7 +64,9 @@ If you give `setup` another schema with its `schema` argument, set this var to t
 
 ### Monitor and anomaly settings
 
-The tests do not score anomalies yet. These keys are read today by the scoring macros `icecore.score` and `icecore.native__score`, and by the metadata and history readers.
+The five monitor tests (`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) score each metric they compute against its own history, write the result with the metric (`METRICS.anomaly_*`), and fail (or warn, per the test's `severity`) when the engine says anomaly. `freshness` fails on `max_lag` or on an anomaly, `volume` on `min_rows`/`max_rows` or on an anomaly, the column and dimension tests on their `bounds` or on an anomaly. A series with fewer than 7 points in the last 30 days (after the history delay) is not scored: the test passes on that account and logs `insufficient history`.
+
+Each test takes these arguments, which override the vars below for that test only: `engine`, `sensitivity`, `min_consecutive`, `lookback_days` (default 30), `min_points` (default 7) and `shadow_engine`. Example: `data_tests: [icecore.volume: {engine: native, sensitivity: high}]`. Cost: one extra query per test (one query reads and scores the history of all its metrics, 25 metrics per query for the two wide tests). The first runs on a new table only record metrics, until 7 points exist.
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
@@ -73,7 +75,8 @@ The tests do not score anomalies yet. These keys are read today by the scoring m
 | `anomaly_min_consecutive` | `1` | integer | How many points in a row must be outside the band. At least 1. | None. |
 | `anomaly_mad_floor_pct` | `0.01` | number | Smallest band half-width as a share of the expected value. | None. |
 | `anomaly_mad_floor_abs` | `0` | number | Smallest band half-width as an absolute value. | None. |
-| `shadow_engine` | `none` | string | Recorded on each run's start and end records. Shadow scoring is **coming**. | None. |
+| `shadow_engine` | `none` | string | `none`, `native` or `cortex`. Scores each metric a second time with that engine and writes an `icecore.shadow` event next to the metric. The primary verdict is never changed. Also recorded on each run's start and end records. | Cost: one more query per metric. |
+| `monitor_score` | `true` | boolean | `false` stops the five monitor tests from scoring and from failing on an anomaly: they only record metrics, as before. | Cost: none when false. |
 | `history_delay_minutes` | `1` | number | Metric history leaves out the newest minutes, because of ingestion lag. Spike S3 measured a p95 lag of about 8 s and a worst case of 20 s. | None. |
 | `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |

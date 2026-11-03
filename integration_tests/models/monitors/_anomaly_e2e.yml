@@ -1,0 +1,65 @@
+version: 2
+
+# Fixtures for the UC3 wiring (tests/test_score_monitor.py parses them, tests/test_anomaly_e2e.py runs them in the sandbox).
+# Sources only: the tables are created by the sandbox test under names that carry its run_id and passed as vars; the defaults
+# only let the project parse. Tagged icecore_fixture by dbt_project.yml (data_tests: monitors) and left out of the default selector.
+sources:
+  - name: it_uc3_anomaly
+    schema: spikes
+    tables:
+      - name: spike
+        identifier: "{{ var('it_uc3_spike_table', 'it_uc3_unset') }}"
+        columns:
+          - name: amount
+            data_tests:
+              - icecore.column_anomaly:
+                  name: it_anom_column_override
+                  metrics: [avg]
+                  engine: native
+                  sensitivity: high
+              - icecore.column_anomaly:
+                  name: it_anom_column_spike
+                  metrics: [avg]
+                  window_tag: spike
+                  timestamp_column: loaded_at
+          - name: country
+            data_tests:
+              - icecore.dimension_anomaly:
+                  name: it_anom_dimension_override
+                  engine: native
+                  sensitivity: high
+        data_tests:
+          - icecore.volume:
+              name: it_anom_volume_spike
+          - icecore.volume:
+              name: it_anom_volume_override
+              engine: native
+              sensitivity: high
+          - icecore.volume:
+              name: it_anom_volume_warn
+              config:
+                severity: warn
+          - icecore.freshness:
+              name: it_anom_freshness_override
+              engine: native
+              sensitivity: high
+          - icecore.freshness:
+              name: it_anom_freshness_spike
+              max_lag: 1d
+          - icecore.all_columns_anomaly:
+              name: it_anom_all_columns_override
+              engine: native
+              sensitivity: high
+      - name: calm
+        identifier: "{{ var('it_uc3_calm_table', 'it_uc3_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_anom_volume_calm
+      - name: young
+        identifier: "{{ var('it_uc3_young_table', 'it_uc3_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_anom_volume_young
+          - icecore.volume:
+              name: it_anom_volume_bad_engine
+              engine: "{{ var('it_anom_engine', 'native') }}"

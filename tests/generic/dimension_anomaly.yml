@@ -9,8 +9,9 @@ macros:
       through `icecore.emit_metric` with the dimension `<column>=<value>`. At most `max_values` values are written
       (default `vars: icecore: dimension_max_values`, 20, the most frequent ones); the rest are grouped in one
       `<column>=<other>` metric, and a null value is written as `<column>=<null>`. It fails when a count is outside the
-      static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are the only verdict, and the
-      scoring hook is marked in the test body and not called. The previous observation is the newest dimension metric
+      static `bounds`. Each count is also scored against its own history (`icecore.score_monitor_metrics`: one query
+      per 25 values) and written with its result (`METRICS.anomaly_*`); the test fails on a bound breach OR an anomaly. A value with
+      fewer than `min_points` history points is not scored (an info line says so). The previous observation is the newest dimension metric
       record of the column, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago,
       and `since` overrides both. When no window can be read the readers log why, no metric is written and the test
       passes. A failed telemetry CALL is a logged warning and never changes the verdict. CHANGES is cheap for
@@ -39,3 +40,21 @@ macros:
       - name: lookback_hours
         type: number
         description: Window length when there is no previous observation and no `since`. Default 24.
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`, for this test. Default `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`, for this test. Default `var('icecore').anomaly_sensitivity` (medium)."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed, for this test. Default `var('icecore').anomaly_min_consecutive` (1)."
+      - name: lookback_days
+        type: integer
+        description: History window in days. Default 30.
+      - name: min_points
+        type: integer
+        description: Fewer history points than this are not scored (insufficient history). Default 7.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`, for this test. Default `var('icecore').shadow_engine` (none)."

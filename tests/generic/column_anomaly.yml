@@ -6,8 +6,9 @@ macros:
       Incremental column metrics test. Reads only the rows that changed since the previous observation (CHANGES,
       or `timestamp_column` when change tracking does not cover the window), computes the requested metrics over
       them, writes each as a metric span event through `icecore.emit_metric` (one per metric, with the column), and
-      fails when a value is outside its static `bounds`. Until the anomaly engines are wired in (UC3) the bounds are
-      the only verdict, and the scoring hook is marked in the test body and not called. The window end is read from Snowflake's
+      fails when a value is outside its static `bounds`. Each value is also scored against its own history
+      (`icecore.score_monitor_metrics`: one query for the test) and written with its result (`METRICS.anomaly_*`); the test fails
+      on a bound breach OR an anomaly. A metric with fewer than `min_points` history points is not scored (an info line says so). The window end is read from Snowflake's
       clock before the read and recorded on every metric (`dbt.window.until`), and the next run starts its window there, so
       no row falls between two runs. The previous observation is the newest metric record of the tested column, read
       through `icecore.base_events()`; with none the window
@@ -51,3 +52,21 @@ macros:
           Name of this test's window. Two column_anomaly tests on the same column and relation should each have their
           own, so one test's window end does not move the other's. Optional; without it the tests of a column share
           one window.
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`, for this test. Default `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`, for this test. Default `var('icecore').anomaly_sensitivity` (medium)."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed, for this test. Default `var('icecore').anomaly_min_consecutive` (1)."
+      - name: lookback_days
+        type: integer
+        description: History window in days. Default 30.
+      - name: min_points
+        type: integer
+        description: Fewer history points than this are not scored (insufficient history). Default 7.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`, for this test. Default `var('icecore').shadow_engine` (none)."

@@ -215,5 +215,7 @@ def test_overview_renders_with_rows(monkeypatch):
     labels = [m.label for m in at.metric]
     for want in ("Open incidents", "Failing tests", "Successful runs", "Missed schedules", "Credits"):
         assert want in labels
-    assert {"silver", "gold"} <= {m.label.split(" ")[0] for m in at.metric if m.label.endswith("health")}
+    # layers with no scorable data get no tile, one compact caption line instead
+    assert not [m for m in at.metric if m.label.endswith("health")]
+    assert any("No health score yet" in c.value and "silver" in c.value and "gold" in c.value for c in at.caption)
     assert len(at.dataframe) == 2

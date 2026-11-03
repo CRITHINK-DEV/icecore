@@ -179,3 +179,19 @@ def test_page_renders_with_data(monkeypatch):
     assert [m.value for m in at.metric] == ["1", "1", "0", "1"]
     # both engines scored the series: two captions with scores
     assert sum("latest score" in c.value for c in at.caption) == 2
+
+
+def test_default_series_is_the_anomalous_one_else_the_longest():
+    from lib.pages import tests as logic
+
+    def pt(metric, i, anomalous=False):
+        return {"relation": "R", "metric": metric, "observed_at": f"2026-11-0{i}T00:00:00", "value": 1,
+                "anomaly_is_anomaly": anomalous}
+
+    calm = [pt("a_one", 1), pt("b_many", 1), pt("b_many", 2), pt("b_many", 3)]
+    series = logic.series_list(calm)
+    assert series[logic.default_series_index(series, calm)]["metric"] == "b_many"
+    flagged = calm + [pt("c_bad", 1, True)]
+    series = logic.series_list(flagged)
+    assert series[logic.default_series_index(series, flagged)]["metric"] == "c_bad"
+    assert logic.default_series_index([], []) == 0

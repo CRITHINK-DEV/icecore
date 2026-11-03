@@ -42,6 +42,8 @@ def format_minutes(minutes) -> str:
     """90 -> '1h30m', 1440 -> '1d'; None -> ''."""
     if minutes is None:
         return ""
+    if 0 < minutes < 1:
+        return "<1m"
     total = int(round(minutes))
     if total <= 0:
         return "0m"

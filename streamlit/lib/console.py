@@ -43,8 +43,76 @@ def md(s: Any) -> str:
 # --- header and states ------------------------------------------------------------------------------------------
 
 def page(title: str, question: str, views: list[str]) -> None:
+    """Title, then the question and "Reads N views"; the qualified view names sit in a help tooltip, not inline."""
     st.title(title)
-    st.caption(f"{question} Reads {', '.join(f'`{settings.view(v)}`' for v in views)}.")
+    names = ", ".join(f"`{settings.view(v)}`" for v in views)
+    count = f"{len(views)} view{'s' if len(views) != 1 else ''}"
+    st.caption(f"{question} Reads {count}.", help=f"Views read by this page: {names}")
+
+
+NO_DATA = "No data in this window"
+
+
+def chart(spec: Any, rows: list | None) -> None:
+    """Draw an Altair chart, or the caption "No data in this window" when it has no rows (never an empty axis)."""
+    if not rows:
+        st.caption(NO_DATA)
+        return
+    st.altair_chart(spec, use_container_width=True)
+
+
+# --- table cell and title helpers -------------------------------------------------------------------------------
+
+def column_title(name: str) -> str:
+    """Title Case from snake_case: "last_success_at" -> "Last Success At", "status" -> "Status"."""
+    return " ".join(w.capitalize() for w in str(name).split("_") if w)
+
+
+def short_name(name: Any) -> Any:
+    """The last part of a (possibly quoted) qualified relation name: '"DB"."SCHEMA"."NAME"' -> NAME."""
+    if not isinstance(name, str) or not name:
+        return name
+    parts = re.findall(r'"([^"]*)"|([^.]+)', name)
+    last = [a or b for a, b in parts]
+    return last[-1].strip() if last else name
+
+
+def short_id(value: Any, n: int = 8) -> Any:
+    """The first `n` characters of a long id (an invocation_id)."""
+    return value[:n] if isinstance(value, str) else value
+
+
+def _is_nan(v: Any) -> bool:
+    return isinstance(v, float) and v != v
+
+
+def _display_rows(rows: list[dict]) -> list[dict]:
+    """Rows as shown: None / NaN as a dash in text columns (blank in numeric and date ones), ids and relations shortened."""
+    typed_cols = {k for r in rows for k, v in r.items() if v is not None and not _is_nan(v) and not isinstance(v, str)}
+    out = []
+    for r in rows:
+        d = {}
+        for k, v in r.items():
+            if k.endswith("invocation_id"):
+                v = short_id(v)
+            elif k == "relation":
+                v = short_name(v)
+            if v is None or _is_nan(v):
+                v = None if k in typed_cols else "\u2014"
+            d[k] = v
+        out.append(d)
+    return out
+
+
+def column_config_with_titles(rows: list[dict], column_config: dict | None) -> dict:
+    """The page's column_config plus a Title Case title for every column it does not mention. A None entry hides the
+    column and a str entry is already a title."""
+    config = dict(column_config or {})
+    for key in {k for r in rows for k in r}:
+        if key not in config:
+            config[key] = st.column_config.TextColumn(column_title(key)) \
+                if any(isinstance(r.get(key), str) for r in rows) else column_title(key)
+    return config
 
 
 def guarded(read: Callable[[], list[dict]]) -> tuple[list[dict], str | None]:
@@ -71,6 +139,7 @@ class Tile:
     label: str
     value: Any
     delta: str | None = None
+    delta_color: str = "off"  # deltas are informational ("13 pending"): never a green or red arrow
     help: str = ""
     series: list[float] | None = None
     chart: str = "line"
@@ -84,6 +153,7 @@ def kpi_row(tiles: list[Tile]) -> None:
             kwargs: dict[str, Any] = {"help": tile.help or None, "border": True}
             if tile.delta is not None:
                 kwargs["delta"] = tile.delta
+                kwargs["delta_color"] = tile.delta_color
             if tile.series and len(tile.series) > 1:
                 kwargs["chart_data"] = list(tile.series)
                 kwargs["chart_type"] = "bar" if tile.chart == "bar" else "line"
@@ -184,7 +254,7 @@ def table(rows: list[dict], column_config: dict, key: str, *, limit: int | None 
     if not shown:
         st.caption("Nothing to show.")
         return None
-    event = st.dataframe(shown, column_config=column_config or None, hide_index=True, width="stretch", key=key,
+    event = st.dataframe(_display_rows(shown), column_config=column_config_with_titles(shown, column_config), hide_index=True, width="stretch", key=key,
                          on_select="rerun", selection_mode="single-row")
     if note:
         st.caption(note)

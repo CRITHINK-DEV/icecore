@@ -29,14 +29,16 @@ if not series:
     st.caption("No monitored metric in this window.")
 else:
     by_label = {f"{'🔴 ' if s['anomalous'] else ''}{s['label']}  [{s['engine']}]": s for s in series}
-    chosen = by_label[st.selectbox("Metric", list(by_label), key="tests_series")]
+    default = logic.default_series_index(series, metrics)
+    chosen = by_label[st.selectbox("Metric", list(by_label), index=default, key="tests_series")]
     by_engine = logic.series_for(metrics, chosen["relation"], chosen["metric"], chosen["column"], chosen["dimension"])
     columns = st.columns(len(by_engine)) if len(by_engine) > 1 else [st.container()]
     for col, (engine, points) in zip(columns, by_engine.items()):
         with col:
-            st.altair_chart(charts.band_chart(points, title=chosen["label"], unit=chosen["metric"],
-                                              engine=None if engine == logic.UNSCORED else engine),
-                            use_container_width=True)
+            console.chart(charts.band_chart(points, title=chosen["label"], unit=chosen["metric"],
+                                            engine=None if engine == logic.UNSCORED else engine), points)
+            if charts.band_note(points):
+                st.caption(charts.band_note(points))
             st.caption(logic.score_caption(points, engine))
     if len(by_engine) > 1:
         st.caption("Both engines scored this metric (shadow scoring): the primary engine decides the verdict.")

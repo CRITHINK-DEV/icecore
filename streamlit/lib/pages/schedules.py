@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from lib import slas
-from lib.console import Tile
+from lib.console import Tile, short_name
 
 LAG_METRIC = "freshness_lag_seconds"
 NO_LIMIT = "no limit set"
@@ -60,7 +60,7 @@ def sources_table(metrics: list[dict]) -> list[dict]:
         relation = str(m.get("relation") or key)
         rows.append({
             "unique_id": m.get("node_unique_id") if str(m.get("node_unique_id") or "").startswith("source.") else None,
-            "name": relation.rsplit(".", 1)[-1],
+            "name": short_name(relation),
             "relation": relation,
             "status": "late" if over else "ok",
             "lag_minutes": lag_min,

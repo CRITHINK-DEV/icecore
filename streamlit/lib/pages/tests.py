@@ -155,6 +155,18 @@ def series_list(metrics: list[Row]) -> list[Row]:
     return sorted(out, key=lambda s: (not s["anomalous"], str(s["label"])))
 
 
+def default_series_index(series: list[Row], metrics: list[Row]) -> int:
+    """Index in `series` (anomalous first, as series_list orders it) to select by default: the first anomalous one,
+    else the series with the most points (the first on ties)."""
+    if not series:
+        return 0
+    for i, s in enumerate(series):
+        if s["anomalous"]:
+            return i
+    counts = [sum(1 for m in metrics or [] if series_key(m) == s["key"]) for s in series]
+    return counts.index(max(counts))
+
+
 def score_caption(points: list[Row], engine: str) -> str:
     """The score of the latest scored point of one engine's list, and its anomaly count, as text for a caption."""
     scored = [p for p in points if p.get("anomaly_score") is not None]

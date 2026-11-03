@@ -24,7 +24,7 @@ note = console.truncation_note(all_runs, queries.MAX_LIMIT)
 if note:
     st.caption(note)
 
-st.altair_chart(charts.runs_chart(runs), use_container_width=True)
+console.chart(charts.runs_chart(runs), runs)
 
 st.subheader("Runs")
 picked = console.table(
@@ -40,7 +40,7 @@ if picked and st.query_params.get("run") != picked["invocation_id"]:
 run = logic.selected_run(runs, st.query_params.get("run"))
 started = run["started_at"]
 st.subheader(f"Run {started.strftime('%Y-%m-%d %H:%M:%S') if hasattr(started, 'strftime') else started}")
-st.caption(f"`{run['invocation_id']}`")
+st.caption(f"Invocation `{run['invocation_id']}`")
 nodes, node_error = console.guarded(
     lambda: queries.node_executions(invocation_id=run["invocation_id"], since=since, limit=queries.MAX_LIMIT))
 if node_error:
@@ -49,7 +49,7 @@ elif not any(n.get("started_at") for n in nodes):
     st.info("This run has no node timing records yet. They arrive shortly after the run ends.",
             icon=":material/info:")
 else:
-    st.altair_chart(charts.gantt(nodes), use_container_width=True)
+    console.chart(charts.gantt(nodes), nodes)
     st.subheader("Slowest nodes")
     console.table(
         logic.slowest_nodes(nodes, 10),

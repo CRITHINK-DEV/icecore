@@ -11,12 +11,14 @@ LIMIT = queries.MAX_LIMIT
 VIEWS = ["alerts_feed"]
 MESSAGE = "No incidents in this window. Incidents appear when a test fails, a metric is anomalous, a schedule is missed, a schema changes or a cost regresses."
 
+header = st.container()  # the title comes first; it is filled once the incident count is known
 f = console.filter_bar("incidents", layers=None, statuses=False)
 since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=f.days)
 
 feed, error = console.guarded(lambda: queries.alerts_feed(since=since, limit=LIMIT))
 if error or not feed:
-    console.page("Incidents", "What is open, what is acknowledged, what is resolved.", VIEWS)
+    with header:
+        console.page("Incidents", "What is open, what is acknowledged, what is resolved.", VIEWS)
     console.empty(MESSAGE, error)
 
 # the rows that decide "resolved" (spec ruling 4); a failed read only means fewer incidents show as resolved
@@ -28,7 +30,8 @@ now = as_of(feed, tests, nodes, points) or datetime.now(timezone.utc).replace(tz
 states = logic.classify(feed, test_results=tests, node_executions=nodes, metrics=points, now=now)
 groups = logic.rows(feed, {i["incident_key"]: s for i, s in states}, now=now)
 
-console.page(logic.title_count(states), "What is open, what is acknowledged, what is resolved.", VIEWS)
+with header:
+    console.page(logic.title_count(states), "What is open, what is acknowledged, what is resolved.", VIEWS)
 if console.truncation_note(feed, LIMIT):
     st.caption(console.truncation_note(feed, LIMIT))
 for msg in failed_reads:
@@ -36,9 +39,8 @@ for msg in failed_reads:
 console.kpi_row(logic.tiles(states, now=now))
 
 chart_rows = logic.per_day([i for i, _ in states])
-if chart_rows:
-    st.altair_chart(charts.daily(chart_rows, x="day", y="incidents", title="Incidents per day by kind",
-                                 y_title="Incidents first seen", color="kind"), use_container_width=True)
+console.chart(charts.daily(chart_rows, x="day", y="incidents", title="Incidents per day by kind",
+                           y_title="Incidents first seen", color="kind"), chart_rows)
 
 wanted = st.query_params.get("state")
 group = st.radio("State", list(logic.GROUPS), horizontal=True, key="incidents_group",

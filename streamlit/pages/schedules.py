@@ -66,7 +66,7 @@ else:
 
 st.subheader("Source freshness")
 if sources:
-    st.altair_chart(charts.lag_vs_limit(logic.chart_rows(sources)), use_container_width=True)
+    console.chart(charts.lag_vs_limit(logic.chart_rows(sources)), sources)
     console.table(sources, {
         "name": st.column_config.TextColumn("Source"),
         "status": st.column_config.TextColumn("Status"),

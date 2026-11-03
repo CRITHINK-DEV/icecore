@@ -76,9 +76,34 @@ def test_band_chart_titles_layers_and_anomaly_filter():
 
 def test_band_chart_accepts_plain_band_columns():
     rows = [{"observed_at": "2026-11-01T00:00:00", "value": 1, "expected": 1, "lower": 0, "upper": 2, "anomaly_is_anomaly": False}]
+    rows = rows * 3
     spec = _charts().band_chart(rows, title="t", unit="rows").to_dict()
     assert len(spec["layer"]) == 4
     assert "lower" in json.dumps(spec["layer"][0]["encoding"]["y"])
+
+
+def test_band_chart_with_fewer_than_three_points_draws_points_only():
+    c = _charts()
+    rows = [{"observed_at": "2026-11-01T00:00:00", "value": 1}, {"observed_at": "2026-11-02T00:00:00", "value": 2}]
+    spec = c.band_chart(rows, title="t", unit="rows").to_dict()
+    assert len(spec["layer"]) == 1 and spec["layer"][0]["mark"]["type"] == "point"
+    assert c.band_note(rows) == "Not enough history for a band yet (2 points; scoring starts at 7)"
+    assert c.band_note(rows * 2) is None
+
+
+def test_runs_chart_x_is_the_run_order_not_time():
+    runs = [{"started_at": f"2026-11-01T00:00:0{i}", "duration_s": 5, "status": "success"} for i in range(3)]
+    spec = _charts().runs_chart(runs).to_dict()
+    bars = spec["layer"][0]
+    assert bars["encoding"]["x"]["type"] == "ordinal"
+    assert len(next(iter(spec["datasets"].values()))) == 3
+    assert len(bars["encoding"]["x"]["sort"]) == 3 and len(set(bars["encoding"]["x"]["sort"])) == 3
+
+
+def test_daily_bins_per_day():
+    spec = _charts().daily([{"d": "2026-11-01", "n": 1}], x="d", y="n", title="T", y_title="Y").to_dict()
+    assert spec["encoding"]["x"]["timeUnit"] == "utcyearmonthdate"
+    assert spec["encoding"]["x"]["axis"]["format"] == "%b %d"
 
 
 def test_runs_chart_titles_status_colours_and_right_axis():
@@ -125,8 +150,9 @@ def test_daily_without_colour():
 
 def test_lag_vs_limit_layers_and_titles():
     spec = _charts().lag_vs_limit(SOURCES).to_dict()
-    assert len(spec["layer"]) == 2
-    bars, tick = spec["layer"]
+    assert len(spec["layer"]) == 3  # bars, threshold ticks, value labels so small lags stay visible
+    bars, tick, labels = spec["layer"]
+    assert labels["mark"]["type"] == "text"
     assert "minutes" in bars["encoding"]["x"]["title"] or "minutes" in bars["encoding"]["y"]["title"]
     assert "threshold" in json.dumps(tick["encoding"])
     assert _title(spec)

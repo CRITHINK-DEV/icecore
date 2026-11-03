@@ -232,3 +232,85 @@ def test_table_sorts_labelled_statuses():
 
     os.environ["APP_DIR"] = str(APP_DIR)
     assert list(_run(app).dataframe[0].value["unique_id"]) == ["f", "n"]
+
+
+def test_column_title_and_short_name():
+    from lib import console
+
+    assert console.column_title("last_success_at") == "Last Success At" and console.column_title("status") == "Status"
+    assert console.short_name('"DB"."SCHEMA"."NAME"') == "NAME"
+    assert console.short_name("DB.SCHEMA.NAME") == "NAME" and console.short_name(None) is None
+    assert console.short_id("0123456789abcdef") == "01234567"
+
+
+def test_table_titles_dashes_and_short_ids():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        from lib.console import table
+
+        rows = [{"unique_id": "a", "status": "success", "invocation_id": "0123456789abcdef", "last_ok_at": None,
+                 "relation": '"DB"."S"."ORDERS"', "note": None}]
+        table(rows, {"unique_id": None}, "t_clean")
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    at = _run(app)
+    df = at.dataframe[0].value
+    assert df["invocation_id"][0] == "01234567" and df["relation"][0] == "ORDERS" and df["note"][0] == "\u2014"
+
+
+def test_column_config_titles_every_untitled_column():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        import streamlit as st
+        from lib.console import column_config_with_titles
+
+        cfg = column_config_with_titles([{"status": "x", "first_seen_at": "y", "hidden": 1}], {"hidden": None})
+        st.write(f"{cfg['hidden']} {cfg['first_seen_at']['label']} {cfg['status']['label']}")
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    assert "None First Seen At Status" in _run(app).markdown[-1].value
+
+
+def test_metric_deltas_are_informational():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        from lib.console import Tile, kpi_row
+
+        kpi_row([Tile("Credits", 1, delta="13 pending")])
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    assert _run(app).metric[0].delta == "13 pending"
+    from lib.console import Tile
+    assert Tile("a", 1).delta_color == "off"
+
+
+def test_chart_without_rows_shows_a_caption():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        from lib import charts, console
+
+        console.chart(charts.daily([], x="d", y="n", title="t", y_title="y"), [])
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    at = _run(app)
+    assert [c.value for c in at.caption] == ["No data in this window"] and not at.get("arrow_vega_lite_chart")

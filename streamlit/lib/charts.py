@@ -121,9 +121,21 @@ def _time_x(field: str, title: str = "Time (UTC)"):
     return alt.X(f"{field}:T", title=title, scale=alt.Scale(type="utc"))
 
 
+MIN_BAND_POINTS = 3
+SCORING_STARTS_AT = 7
+
+
+def band_note(points: list[Row]) -> str | None:
+    """The caption for a series too short to draw a band, else None."""
+    n = sum(1 for p in points if _utc_iso(p.get("observed_at")) is not None)
+    if n < MIN_BAND_POINTS:
+        return f"Not enough history for a band yet ({n} point{'s' if n != 1 else ''}; scoring starts at {SCORING_STARTS_AT})"
+    return None
+
+
 def band_chart(points: list[Row], *, title: str, unit: str, engine: str | None = None):
     """METRICS rows as value over time: the expected band (lower to upper), the expected line, the value line, and red
-    points where the engine flagged an anomaly."""
+    points where the engine flagged an anomaly. With fewer than 3 points only the points are drawn (see band_note)."""
     import altair as alt
 
     from lib.status import COLOURS
@@ -157,6 +169,10 @@ def band_chart(points: list[Row], *, title: str, unit: str, engine: str | None =
         .encode(x=x, y=alt.Y("value:Q", title=y_title))
     )
     chart_title = alt.TitleParams(title, subtitle=f"Engine: {engine}" if engine else "")
+    if len(data) < MIN_BAND_POINTS:
+        only = base.mark_point(color=COLOURS["ok"], filled=True, size=70).encode(
+            x=x, y=alt.Y("value:Q", title=y_title), tooltip=["observed_at:T", "value:Q"])
+        return alt.layer(only).properties(title=chart_title)
     return alt.layer(band, expected, value, points_layer).properties(title=chart_title)
 
 
@@ -166,21 +182,27 @@ def runs_chart(runs: list[Row]):
 
     from lib.status import normalise
 
-    data = []
-    for r in runs:
-        at = _utc_iso(r.get("started_at"))
-        if at is None:
-            continue
+    parsed = sorted(((_utc_iso(r.get("started_at")), r) for r in runs if _utc_iso(r.get("started_at"))),
+                    key=lambda t: t[0])
+    data, labels = [], []
+    for i, (at, r) in enumerate(parsed):
+        dt = _as_dt(at.rstrip("Z"))
+        label = f"{dt:%b %d %H:%M}"
+        if label in labels:  # two runs in the same minute stay distinct bars
+            label = f"{label}:{dt:%S}" if f"{label}:{dt:%S}" not in labels else f"{label} #{i + 1}"
+        labels.append(label)
         data.append({
+            "order": i + 1,
+            "run": label,
             "started_at": at,
             "duration_s": _num(r.get("duration_s")),
             "status": normalise(r.get("status")),
             "failing_tests": _num(_first(r, "tests_failed", "nodes_failed")) or 0,
             "invocation_id": r.get("invocation_id"),
         })
-    data.sort(key=lambda d: d["started_at"])
     base = alt.Chart(alt.Data(values=data))
-    x = _time_x("started_at", "Run start (UTC)")
+    # x is the run order (one ordinal bar per run), not time: runs that come in bursts would collapse into spikes
+    x = alt.X("run:O", sort=labels, title="Run (start time, UTC)", axis=alt.Axis(labelAngle=-45))
     bars = base.mark_bar().encode(
         x=x,
         y=alt.Y("duration_s:Q", title="Duration (seconds)"),
@@ -241,13 +263,13 @@ def daily(rows: list[Row], *, x: str, y: str, title: str, y_title: str, color: s
 
     data = [{**r, x: _utc_iso(r.get(x)) or r.get(x)} for r in rows]
     enc = {
-        "x": alt.X(f"{x}:T", title="Day (UTC)", scale=alt.Scale(type="utc")),
+        "x": alt.X(f"{x}:T", title="Day (UTC)", timeUnit="utcyearmonthdate", axis=alt.Axis(format="%b %d", labelAngle=0)),
         "y": alt.Y(f"{y}:Q", title=y_title),
         "tooltip": [f"{x}:T", f"{y}:Q"] + ([f"{color}:N"] if color else []),
     }
     if color:
         enc["color"] = alt.Color(f"{color}:N", title=color.replace("_", " ").capitalize())
-    return alt.Chart(alt.Data(values=data), title=title).mark_bar().encode(**enc)
+    return alt.Chart(alt.Data(values=data), title=title).mark_bar(minBandSize=4).encode(**enc)
 
 
 def lag_vs_limit(sources: list[Row]):
@@ -268,6 +290,8 @@ def lag_vs_limit(sources: list[Row]):
     y = alt.Y("name:N", title="Source", sort=None)
     bars = base.mark_bar(color=_status_colour("late")).encode(
         x=alt.X("lag_minutes:Q", title="Lag (minutes)"), y=y, tooltip=["name:N", "lag_minutes:Q", "threshold:Q"])
+    labels = base.mark_text(align="left", dx=4, color="#555").encode(
+        x=alt.X("lag_minutes:Q"), y=y, text=alt.Text("lag_minutes:Q", format=".1f"))
     tick = base.mark_tick(color=_status_colour("failed"), thickness=3, size=18).encode(
         x=alt.X("threshold:Q", title="Lag (minutes)"), y=y)
-    return alt.layer(bars, tick).properties(title="Source lag against its limit")
+    return alt.layer(bars, tick, labels).properties(title="Source lag against its limit")

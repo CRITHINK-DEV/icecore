@@ -53,17 +53,17 @@ st.caption(f"As of {now:%Y-%m-%d %H:%M} UTC, the newest record read.")
 console.kpi_row(logic.tiles(states, runs, tests, slas, silences, runs, now=now))
 
 strip = logic.layer_health(nodes, lineage_rows, tests, metrics, slas, silences)
-if strip:
-    for col, item in zip(st.columns(len(strip)), strip):
-        score = item["score"]
+scored = [item for item in strip if item["score"] is not None]
+if scored:
+    for col, item in zip(st.columns(len(scored)), scored):
         with col:
-            st.metric(f"{console.md(item['layer'])} health", "n/a" if score is None else f"{score:.0f} / 100",
+            st.metric(f"{console.md(item['layer'])} health", f"{item['score']:.0f} / 100",
                       help=health.formula_help(), border=True)
+unscored = [item["layer"] for item in strip if item["score"] is None]
+if unscored:
+    st.caption(f"No health score yet (no data): {', '.join(console.md(l) for l in unscored)}.")
 
-if runs:
-    st.altair_chart(charts.runs_chart(logic.runs_for_chart(runs, tests)), use_container_width=True)
-else:
-    st.caption("No runs in this window.")
+console.chart(charts.runs_chart(logic.runs_for_chart(runs, tests)), runs)
 
 st.subheader("Needs attention")
 attention = logic.needs_attention(states, now=now)

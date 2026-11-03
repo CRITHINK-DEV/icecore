@@ -67,8 +67,9 @@ def _on_change() -> None:
 
 def render_sidebar() -> None:
     current = views_schema()
-    if INPUT_KEY not in st.session_state:
-        st.session_state[INPUT_KEY] = current
+    # Streamlit drops a widget's state when a run does not render it; the session value is the source of truth,
+    # so the field is reseeded from it on every page.
+    st.session_state[INPUT_KEY] = current
     st.sidebar.text_input(
         "Views schema",
         key=INPUT_KEY,

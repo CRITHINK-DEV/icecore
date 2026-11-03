@@ -15,8 +15,9 @@ if not rows:
     console.empty("No schema changes in this window.", error)
 
 console.kpi_row(logic.tiles(rows))
-st.altair_chart(charts.daily(logic.per_day(rows), x="day", y="changes", title="Changes per day",
-                             y_title="Changes (count)", color="change_kind"), use_container_width=True)
+per_day = logic.per_day(rows)
+console.chart(charts.daily(per_day, x="day", y="changes", title="Changes per day",
+                           y_title="Changes (count)", color="change_kind"), per_day)
 console.table(logic.changes_table(rows), {
     "detected_at": st.column_config.DatetimeColumn("Detected (UTC)"),
     "relation": "Table",

@@ -58,5 +58,10 @@ def test_empty_state_has_the_meta_sla_example():
     assert "1m, capped at expected_every" in slas.SLA_EXAMPLE and "m, h, d, w" in slas.SLA_EXAMPLE
 
 
+def test_format_minutes_under_a_minute():
+    assert [slas.format_minutes(m) for m in (0.2, 0.9)] == ["<1m", "<1m"]
+    assert slas.format_minutes(0) == "0m"
+
+
 def test_format_minutes():
     assert [slas.format_minutes(m) for m in (None, 1, 90, 1440)] == ["", "1m", "1h30m", "1d"]

@@ -84,8 +84,10 @@ if s["metric_series"]:
     for (metric, column), points in list(s["metric_series"].items())[:logic.MAX_SERIES]:
         title = f"{metric}" + (f" on {column}" if column else "")
         engine = next((p.get("anomaly_engine") for p in reversed(points) if p.get("anomaly_engine")), None)
-        st.altair_chart(charts.band_chart(points, title=title, unit=logic.METRIC_UNITS.get(metric, "value"),
-                                          engine=engine), use_container_width=True)
+        console.chart(charts.band_chart(points, title=title, unit=logic.METRIC_UNITS.get(metric, "value"),
+                                        engine=engine), points)
+        if charts.band_note(points):
+            st.caption(charts.band_note(points))
 else:
     st.caption("No metrics recorded for this node in the window.")
 
@@ -119,8 +121,8 @@ if s["columns"]:
 
 st.subheader("Cost")
 if s["cost_by_day"]:
-    st.altair_chart(charts.daily(s["cost_by_day"], x="day", y="credits", title="Credits per day",
-                                 y_title="Credits"), use_container_width=True)
+    console.chart(charts.daily(s["cost_by_day"], x="day", y="credits", title="Credits per day",
+                               y_title="Credits"), s["cost_by_day"])
 else:
     st.caption("No credits recorded for this node in the window.")
 

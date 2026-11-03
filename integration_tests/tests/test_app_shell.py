@@ -71,9 +71,21 @@ def test_each_page_renders_an_empty_state(path, title):
     assert at.info, f"{title} has no empty state"
 
 
+def _captions(at):
+    """Caption text plus its help tooltip: the qualified view names live in the tooltip, not inline."""
+    return " ".join(f"{c.value} {c.help or ''}" for c in at.caption)
+
+
+def test_page_caption_counts_views_and_keeps_names_in_the_tooltip():
+    at = run_app("pages/runs.py")
+    head = at.caption[0]
+    assert "Reads 2 views." in head.value and "ICECORE_OBS" not in head.value
+    assert "ICECORE_OBS.INVOCATIONS" in head.help and "ICECORE_OBS.NODE_EXECUTIONS" in head.help
+
+
 def test_default_views_schema_without_a_session():
     at = run_app("pages/runs.py")
-    assert "ICECORE_OBS.INVOCATIONS" in " ".join(c.value for c in at.caption)
+    assert "ICECORE_OBS.INVOCATIONS" in _captions(at)
 
 
 def test_changing_the_views_schema_moves_every_page():
@@ -82,7 +94,8 @@ def test_changing_the_views_schema_moves_every_page():
     run_app(at=at)
     for path, _ in EXPECTED_PAGES:
         run_app(path, at=at)
-        captions = " ".join(c.value for c in at.caption)
+        captions = _captions(at)
+        assert at.sidebar.text_input(key=SCHEMA_INPUT_KEY).value == "ANALYTICS.OBS_V2", path  # the field keeps it
         assert "ANALYTICS.OBS_V2." in captions, (path, captions)
         assert "ICECORE_OBS" not in captions, (path, captions)
 
@@ -92,7 +105,7 @@ def test_invalid_views_schema_is_rejected_and_the_previous_one_kept():
     at.sidebar.text_input(key=SCHEMA_INPUT_KEY).set_value("obs; drop table x")
     run_app("pages/runs.py", at=at)
     assert at.sidebar.error, "no error shown for an invalid schema"
-    assert "ICECORE_OBS.INVOCATIONS" in " ".join(c.value for c in at.caption)
+    assert "ICECORE_OBS.INVOCATIONS" in _captions(at)
 
 
 def test_default_schema_uses_the_session_database(monkeypatch):

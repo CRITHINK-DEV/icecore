@@ -1,0 +1,4 @@
+/* Additions to prototype D's stylesheet for the Streamlit bundle (console.css stays verbatim). */
+.errbar{margin:14px 28px 0;max-width:1444px;padding:8px 12px;border:1px solid var(--fail);border-radius:8px;background:var(--fail-soft);color:var(--ink);font-size:12px}
+.errbar b{display:block;color:var(--fail);margin-bottom:2px}
+.errbar .mono{font-weight:500}

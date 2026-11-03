@@ -8,6 +8,6 @@ app:
 demo-data:
 	scripts/demo_data.sh
 
-# A richer demo (15 real runs, about 30 minutes; sandbox only, see the header of the script).
+# A richer demo (15 real runs, about 35 minutes; sandbox only, see the header of the script).
 rich-demo:
 	scripts/demo/build_rich_demo.sh

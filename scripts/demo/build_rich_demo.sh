@@ -47,11 +47,11 @@ db="$SNOWFLAKE_DATABASE"
 
 # idempotent: stop when the demo is already built (the views may not exist yet: that reads as not built)
 points="$(sf "select count(*) from $db.$obs.METRICS where metric = 'row_count' and relation ilike '%\"$SHOP_SCHEMA\".\"FCT_ORDERS\"'" 2>/dev/null || echo '[["0"]]')"
-if [ "$points" != '[["0"]]' ] && [ -z "${FORCE:-}" ]; then
+if [ "$points" != '[["0"]]' ] && [ "${FORCE:-0}" != 1 ]; then
   n="${points//[^0-9]/}"
   if [ "${n:-0}" -ge 14 ]; then echo "demo already built in $db.$obs ($n row_count points of fct_orders). FORCE=1 rebuilds it."; exit 0; fi
 fi
-if [ -n "${FORCE:-}" ]; then
+if [ "${FORCE:-0}" = 1 ]; then
   sf "drop schema if exists $db.$SHOP_SCHEMA cascade" >/dev/null
   sf "drop schema if exists $db.$obs cascade" >/dev/null
 fi

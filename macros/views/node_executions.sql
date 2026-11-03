@@ -22,7 +22,8 @@
     those two keys, never on the writing run. dbt.cost.credits is the credits; a settled record (Snowflake never
     attributed the node's queries) has 0 credits and dbt.cost.settled = 'no_attribution', exposed as credits_settled
     (null for a real cost). Both are null until a cost record exists. root_cause_unique_id (dbt.root_cause.unique_id)
-    is read from the node-result LOG and is null until root cause (UC4) writes it. -#}
+    is read from the node-result LOG and is null until root cause (UC4) writes it; root_cause_kind (dbt.root_cause.kind)
+    comes from the same record. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -86,7 +87,9 @@ select
     coalesce(cost_latest.cost_credits, node_result.cost_credits) as credits,
     cost_latest.attributes:"dbt.cost.settled"::string as credits_settled,
     node_result.root_cause_unique_id as root_cause_unique_id,
-    node_result.event_at as recorded_at
+    node_result.event_at as recorded_at,
+    coalesce(node_span.node_layer, node_result.node_layer) as layer,
+    node_result.root_cause_kind as root_cause_kind
 from keys
 left join node_span on node_span.invocation_id = keys.invocation_id and node_span.node_unique_id = keys.node_unique_id
 left join node_result on node_result.invocation_id = keys.invocation_id and node_result.node_unique_id = keys.node_unique_id

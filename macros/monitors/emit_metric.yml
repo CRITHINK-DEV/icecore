@@ -43,6 +43,12 @@ macros:
         description: >
           The anomaly result for this value, as `icecore.score` returns it (`engine`, `expected`, `lower`, `upper`,
           `score`, `is_anomaly`; other keys are ignored). Default none: no `dbt.anomaly.*` key is written.
+      - name: threshold
+        type: number
+        description: >
+          The limit the test judges the metric by, written as `icecore.metric.threshold` and read as `METRICS.threshold`
+          (`icecore.freshness` passes its `max_lag` in seconds). Default none: the key is absent. A value that is not
+          a number is left out.
       - name: attributes
         type: dict
         description: >
@@ -65,5 +71,5 @@ macros:
       - name: metrics
         type: list
         description: >
-          One entry per metric, a mapping with `metric` and `value` and optionally `column`, `dimension`, `anomaly`
-          and `attributes`, as the arguments of `emit_metric`.
+          One entry per metric, a mapping with `metric` and `value` and optionally `column`, `dimension`, `anomaly`,
+          `attributes` and `threshold`, as the arguments of `emit_metric`.

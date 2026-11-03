@@ -84,8 +84,7 @@
   {%- set days = lookback_days or icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7 -%}
   {%- set literals = [] -%}
   {%- for query_id in query_ids -%}
-    {#- TODO(#75): once icecore._sql lands on develop, use icecore._sql(value, 'string') for this record-value literal. -#}
-    {%- do literals.append(icecore._icecore_sql_literal(query_id)) -%}
+    {%- do literals.append(icecore._sql(query_id, 'string')) -%}
   {%- endfor -%}
   {{ return("select array_agg(object_construct('query_id', query_id, 'warehouse', warehouse_name, "
       ~ "'credits', coalesce(credits_attributed_compute, 0) + coalesce(credits_used_query_acceleration, 0))) "
@@ -372,8 +371,7 @@ window_events as (
   select * from events
   where event_at >= dateadd(day, -{{ days | int }}, current_timestamp())
     and node_unique_id is not null and invocation_id is not null
-    {#- TODO(#75): icecore._sql(current_invocation_id, 'string') once icecore._sql is on develop. #}
-    and invocation_id <> {{ icecore._icecore_sql_literal(current_invocation_id) }}
+    and invocation_id <> {{ icecore._sql(current_invocation_id, 'string') }}
 ),
 costed as (
   select distinct invocation_id, node_unique_id from window_events where cost_credits is not null
@@ -536,8 +534,7 @@ from pending
 {% macro _icecore_credit_history_points_sql(keys, delay_minutes) %}
   {%- set now = "convert_timezone('UTC', current_timestamp())::timestamp_ntz" -%}
   {%- set literals = [] -%}
-  {#- TODO(#75): once icecore._sql lands on develop, use icecore._sql(value, 'string') for this record-value literal. -#}
-  {%- for key in keys -%}{%- do literals.append(icecore._icecore_sql_literal(key)) -%}{%- endfor -%}
+  {%- for key in keys -%}{%- do literals.append(icecore._sql(key, 'string')) -%}{%- endfor -%}
   {{ return("select object_agg(relation, n) from (select relation, count(*) as n from " ~ icecore._icecore_procedure('METRICS')
       ~ " where metric = 'credits' and \"COLUMN\" is not distinct from null and dimension is not distinct from null"
       ~ " and observed_at > dateadd(day, -30, " ~ now ~ ") and observed_at <= dateadd(minute, -" ~ (delay_minutes | int) ~ ", " ~ now ~ ")"

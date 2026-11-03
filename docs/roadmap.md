@@ -11,7 +11,7 @@ Status words:
 
 ## Where we are
 
-Gate 1 is decided. icecore writes telemetry through two procedures that `icecore.setup` creates, `ICECORE_EMIT` and `ICECORE_EMIT_RUN` ([conventions](conventions.md)). Nothing is released to dbt Hub yet.
+Gate 1 is decided. icecore writes telemetry through two procedures that `icecore.setup` creates, `ICECORE_EMIT` and `ICECORE_EMIT_RUN` ([conventions](conventions.md)). Version 0.1.0 is the first public release, installed from its Git tag (not on dbt Hub).
 
 ## Before 1.0
 
@@ -23,10 +23,10 @@ The work is in six phases with three gates. A gate is a decision point where the
 | 2. Run telemetry and read core | The `start_run` and `end_run` hooks, node results, query events, lineage, `setup`, `doctor`, and the core views | Merged: hooks, setup, doctor, failed-row samples and the views [`INVOCATIONS`, `NODE_EXECUTIONS`, `TEST_RESULTS`, `LINEAGE`, `LINEAGE_LATEST`, `CAPABILITIES`](reference/views.md) |
 | 3. Monitors | Generic tests with static thresholds, and the `METRICS` and `SCHEMA_CHANGES` views. Ends with **Gate 2**, a pilot on a real dbt project | `icecore.freshness`, `icecore.volume` and the schema, column and dimension tests are merged. The pilot is not done |
 | 4. Anomaly engines, cost, root cause | The native engine (merged as macros), the Cortex engine with native fallback, shadow scoring, cost per model, root-cause attribution | Merged: the native and Cortex engines with native fallback, shadow scoring, cost per node (opt-in with the `cost` var) and root-cause attribution (opt-in with the `root_cause` var) |
-| 5. Control path and app | SLA and alert settings, Snowflake Alerts, missed-run detection, acknowledgements through `ICECORE_ACK`, the Streamlit in Snowflake app | The silence task, alerts to email, Slack and Teams, deduplication, acknowledgements through `ICECORE_ACK`, and the Runs, Lineage, Cost and SLAs pages are merged. Missed runs and cost regressions do not raise alerts yet; the Tests and anomalies and Settings pages are in progress |
-| 6. Compatibility and release | Elementary-compatible views, the runtime matrix, docs, the dbt Hub listing. Ends with **Gate 3**, the public release `1.0.0` | The Elementary-compatible views are merged. Docs are in progress. The rest is planned |
+| 5. Control path and app | SLA and alert settings, Snowflake Alerts, missed-run detection, acknowledgements through `ICECORE_ACK`, the Streamlit in Snowflake app | Merged: the silence task, alerts to email, Slack and Teams, deduplication, acknowledgements through `ICECORE_ACK`, and the Console app |
+| 6. Compatibility and release | Elementary-compatible views, the runtime matrix, docs, the dbt Hub listing. Ends with **Gate 3**, the public release `1.0.0` | The Elementary-compatible views and the docs are in 0.1.0. The runtime matrix (Cloud, Fusion, dbt Projects) and the dbt Hub listing are planned |
 
-Pre-releases are tagged `0.1.0-alpha` (run telemetry), `0.2.0-beta` (monitors, engines, cost, root cause) and `0.3.0-beta` (alerts and app) on the way to `1.0.0`.
+Version `0.1.0` is the first public release; `1.0.0` follows the third gate.
 
 ### Measured since Gate 1
 

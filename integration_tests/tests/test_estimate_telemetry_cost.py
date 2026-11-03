@@ -12,14 +12,15 @@ import os
 
 import pytest
 
-from helpers.macros import IT_DIR, call_macro, invoke, run_macro_with_logs
+from helpers.macros import IT_DIR, call_macro, invoke, run_macro, run_macro_with_logs
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 NODE_TYPES = {"model", "seed", "snapshot", "test"}
 
 
 def estimate(**kwargs):
-    return run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": kwargs})
+    # the fixtures of this project hold icecore monitor tests: the monitor records have their own tests below
+    return run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"monitors": False, **kwargs}})
 
 
 def message(logs) -> str:
@@ -30,7 +31,7 @@ def message(logs) -> str:
 
 def test_cost_true_raises_the_total_by_its_rows_and_its_live_calls():
     base, _ = estimate(nodes=100, runs_per_day=24)
-    out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"nodes": 100, "runs_per_day": 24}},
+    out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"nodes": 100, "runs_per_day": 24, "monitors": False}},
                                     ["--vars", '{"icecore": {"cost": true}}'])
     # 100 nodes x (cost LOG + metric event + the backfill's span) = 300 more end_run records: 609 x 1,500 B needs a
     # second ICECORE_EMIT_RUN CALL (+4 rows), plus one live ICECORE_EMIT CALL for the 100 metric events (+1 SPAN)
@@ -86,7 +87,7 @@ def test_samples_and_query_events_follow_their_arguments():
     # samples is opt-in: counted only with the var on; lineage off by its var
     vars_ = ["--vars", json.dumps({"icecore": {"samples": True, "lineage": False}})]
     out, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {
-        "nodes": 10, "runs_per_day": 1, "query_events_per_node": 3, "failing_tests_per_run": 2}}, vars_)
+        "nodes": 10, "runs_per_day": 1, "query_events_per_node": 3, "failing_tests_per_run": 2, "monitors": False}}, vars_)
     r = out["records_per_run"]
     assert (r["query_events"], r["samples"], r["lineage"]) == (30, 2, 0)
     # default vars: samples are off, so failing tests add no rows
@@ -112,6 +113,81 @@ def test_nodes_default_to_the_graph():
 def test_setup_runs_the_estimate_after_recording_capabilities():
     names = [s["name"] for s in call_macro("_icecore_setup_steps") if s["ready"]]
     assert names.index("record_capabilities") + 1 == names.index("estimate_telemetry_cost")
+
+
+# --- offline: monitor records (the icecore generic tests) ---------------------------------------------
+
+def monitor_test(kind, attached="source.p.s.t", **kwargs):
+    return {"unique_id": f"test.p.{kind}_{abs(hash((kind, str(kwargs))))}", "resource_type": "test", "attached_node": attached,
+            "depends_on": {"macros": [f"macro.icecore.test_{kind}"]},
+            "test_metadata": {"name": kind, "namespace": "icecore", "kwargs": kwargs}}
+
+
+def monitor_records(nodes, sources=None, **kwargs):
+    return run_macro("it_call", {"name": "_icecore_monitor_records",
+                                 "kwargs": {"nodes": nodes, "sources": sources or {}, **kwargs}})
+
+
+def test_a_project_without_monitor_tests_has_no_monitor_entry_and_an_unchanged_estimate():
+    nodes = [{"unique_id": "test.p.not_null_x", "resource_type": "test", "attached_node": "model.p.m",
+              "test_metadata": {"name": "not_null", "namespace": None, "kwargs": {"column_name": "id"}}},
+             # a project's own test that happens to be called freshness is not icecore's
+             {"unique_id": "test.p.freshness_own", "resource_type": "test",
+              "test_metadata": {"name": "freshness", "namespace": None, "kwargs": {}}}]
+    assert monitor_records(nodes) == {"tests": 0, "metrics": 0, "anomalies": 0, "schema_signatures": 0, "records": 0, "calls": 0,
+                                      "dimension_tests": 0, "dimension_values": 0, "assumed_column_tests": 0}
+    # with the monitor tests of the graph left out the estimate is the one of a project without them
+    out, logs = estimate(nodes=100, runs_per_day=24)
+    assert "monitors" not in out["records_per_run"] and out["rows_per_run"] == 309
+    assert "monitor records" not in message(logs)
+
+
+def test_one_metric_record_per_computed_metric_and_one_signature_per_schema_changes_test():
+    sources = {"source.p.s.t": {"columns": {"a": {}, "b": {}, "c": {}}}}
+    nodes = [monitor_test("freshness", max_lag="2h"), monitor_test("volume", min_rows=1), monitor_test("schema_changes"),
+             monitor_test("column_anomaly", metrics=["null_rate", "avg", "max"], column_name="a"),
+             monitor_test("column_anomaly", column_name="a"),                          # default metrics: window_rows, null_rate
+             monitor_test("all_columns_anomaly", exclude_columns=["c"]),                # 2 default metrics x (3 - 1) columns
+             monitor_test("dimension_anomaly", max_values=5, column_name="b")]          # 5 values + other
+    out = monitor_records(nodes, sources)
+    # metrics: 1 + 1 + 3 + 2 + 4 + 6 = 17; no anomaly events unless anomalies_per_run says so; one signature
+    assert (out["tests"], out["metrics"], out["anomalies"], out["schema_signatures"]) == (7, 17, 0, 1)
+    assert out["records"] == 18 and out["dimension_values"] == 6
+    # one ICECORE_EMIT CALL per test, 100 events each: the 7 tests send 1, 1, 1, 6, 4, 8, 12 events
+    assert out["calls"] == 7
+    assert monitor_records(nodes, sources, anomalies_per_run=5)["anomalies"] == 5
+    assert monitor_records(nodes, sources, anomalies_per_run=5)["records"] == 23
+
+
+def test_untyped_columns_and_wide_tables_follow_their_assumptions():
+    # no declared columns: assumed_columns (default 10) for all_columns_anomaly
+    assert monitor_records([monitor_test("all_columns_anomaly")])["metrics"] == 20
+    assert monitor_records([monitor_test("all_columns_anomaly")], assumed_columns=3)["metrics"] == 6
+    assert monitor_records([monitor_test("all_columns_anomaly")])["assumed_column_tests"] == 1
+    # dimension_anomaly with no max_values reads the var (20) plus the other group
+    assert monitor_records([monitor_test("dimension_anomaly", column_name="b")])["metrics"] == 21
+    # a signature over the payload cap (64 KB) is split: 1,400 declared columns at about 100 bytes = 140 KB = 3 records
+    wide = {"source.p.s.t": {"columns": {f"c{i}": {} for i in range(1400)}}}
+    assert monitor_records([monitor_test("schema_changes")], wide)["schema_signatures"] == 3
+    # more than 100 events in a test need more than one CALL
+    assert monitor_records([monitor_test("dimension_anomaly", max_values=120, column_name="b")])["calls"] == 2
+
+
+def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
+    base, base_logs = estimate(runs_per_day=24)
+    out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}})
+    mon = out["records_per_run"]["monitors"]
+    # the fixtures hold monitor tests: their records are their own entry, and so are their procedure spans
+    assert mon > 0 and out["rows_per_run"] > base["rows_per_run"]
+    assert out["records_per_run"]["call_overhead"] > base["records_per_run"]["call_overhead"]
+    assert out["rows_per_run"] == base["rows_per_run"] + mon + (out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"])
+    text = message(logs)
+    assert f"{mon:,} are icecore monitor records" in text
+    assert "anomaly warn events (only what anomalies_per_run says" in text and "schema signatures" in text and "silence verdicts" in text
+    # the other entries and the text of the existing lines do not change
+    assert {k: v for k, v in out["records_per_run"].items() if k not in ("monitors", "call_overhead")} == \
+           {k: v for k, v in base["records_per_run"].items() if k != "call_overhead"}
+    assert "credits per month" in text and "monitor records" not in message(base_logs)
 
 
 # --- sandbox --------------------------------------------------------------------------------------

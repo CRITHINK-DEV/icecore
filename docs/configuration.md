@@ -1,6 +1,6 @@
 # Configuration
 
-This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is merged on `develop`. Features that are not merged yet are marked **coming** and have no detail here.
+This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is in this release.
 
 For a first install, follow the [quickstart](quickstart.md).
 
@@ -33,6 +33,11 @@ These keys control what the `start_run` and `end_run` hooks write.
 | `node_results` | `true` | boolean | `end_run` writes one record per node result: status, rows affected, execution time, message, test failures. | Cost: one row per node per run. Privacy: carries `dbt.result.message`, see `result_message`. |
 | `query_events` | `true` | boolean | `end_run` adds one `icecore.query` event with the Snowflake query id to each node's span. | Cost: one row per node query per run. The query id is what cost attribution joins on later. |
 | `lineage` | `true` | boolean | `end_run` writes the project's dependency edges (parent and child unique ids, between models, seeds, snapshots and sources) as log records. The whole graph is sent every run, not only the selected nodes. Edges that do not fit under `payload_cap_kb` are split over as many records as needed, and none is dropped. A graph with no edges writes no record. | Cost: at least one row per run, one more for each payload cap of edges. Privacy: unique ids only, no data. |
+| `samples` | `false` | boolean | Opt-in. `end_run` writes the failed rows of failed tests that have `store_failures` on, as log records. | Privacy: they copy row values; list sensitive columns in `sample_exclude_columns`. |
+| `sample_rows` | `10` | integer | Rows per sample, 1 to 1,000. Rows are dropped from the end until the record fits `payload_cap_kb`, and the record is marked truncated. | Cost: one record per failed test per run. |
+| `sample_exclude_columns` | `[]` | list | Column names, any case, whose sampled values are written as `?`. | |
+| `samples_on_warn` | `false` | boolean | Also sample tests that only warned. | |
+| `layers` | `{}` | mapping | Renames the layer of models. A model's layer is the first folder under `models/` (`models/bronze/orders.sql` is `bronze`). `layers: {brz: bronze}` makes a model in `models/brz` read as `bronze`; a folder not in the mapping is its own layer. Seeds, snapshots and sources have the resource type as layer (`seed`, `snapshot`, `source`). A model directly in `models/`, with no folder, has no layer. A value that is not a mapping is ignored, with one warning per run and a failed `layers` check in `icecore.doctor`. The mapping is applied when the record is written (`dbt.node.layer`), so a record keeps the layer it had then. | None. Folder and layer names are written to the event table. |
 | `result_message` | `redacted` | string | How much of dbt's result message reaches the event table: `redacted`, `full` or `none`. An unknown value reads as `redacted`. | Privacy, see below. |
 | `payload_cap_kb` | `64` | number | Largest size of one record's attributes. A longer string is cut and the record gets `icecore.truncated = true`. Clamped to 1 to 256. | Cost: the high end of the cost estimate. Snowflake silently drops a record of about 1 MB (spike S2). |
 
@@ -64,16 +69,26 @@ If you give `setup` another schema with its `schema` argument, set this var to t
 
 ### Monitor and anomaly settings
 
-The tests do not score anomalies yet. These keys are read today by the scoring macros `icecore.score` and `icecore.native__score`, and by the metadata and history readers.
+The five monitor tests (`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) score each metric they compute against the test's own history, write the result with the metric (`METRICS.anomaly_*`), and report an anomaly. A series with fewer than 7 points in the last 30 days (after the history delay) is not scored: the test passes on that account and logs `insufficient history`.
+
+**Severity.** An anomaly **warns by default**: the test ends with status `warn` (dbt prints WARN, `TEST_RESULTS.status` is `warn`), and the metric, the `icecore.anomaly` event, `METRICS` and `ALERTS_FEED` carry it. It fails the test when var `anomaly_severity` is `error`. This uses dbt's own thresholds: each monitor test sets `config(severity='error', warn_if='>=1', error_if=...)` and returns failing rows, one row for all the anomalies of the run and at least two for a hard threshold you wrote (`max_lag`, `min_rows`, `max_rows`, `bounds`). `error_if` is `>=2` with `anomaly_severity: warn` (an anomaly warns, a hard breach fails) and `>=1` with `error` (an anomaly fails). Config you write on the test in your project (`severity`, `warn_if`, `error_if`) wins over the test's own definition: `severity: warn` makes everything warn, `error_if: ">=1"` makes an anomaly fail. This was checked on dbt 1.8.
+
+**History is per test.** Each test stamps its metrics with its own `unique_id` and reads only those points, so two tests on the same column never share points. A test starts with no history after upgrading: it scores from its 7th run.
+
+Each test takes these arguments, which override the vars below for that test only: `engine`, `sensitivity`, `min_consecutive`, `lookback_days` (default 30), `min_points` (default 7) and `shadow_engine`. Example: `data_tests: [icecore.volume: {engine: native, sensitivity: high}]`.
+
+**Cost per test.** Native engine: one query reads and scores all the test's metrics (`freshness`, `volume`, `column_anomaly`: 1; `all_columns_anomaly`, `dimension_anomaly`: `ceil(metrics / 25)`). With `auto` or `cortex`, a series of 14 or more days is also tried with Cortex: 2 queries per metric when the relation's model scores. The model is per relation, so when it cannot score (no model, stale, error) the first metric pays the failed calls (2 to 5 queries) and the rest of the relation's metrics fall back to native without calling; one info line says why. Set `engine: native` on a test, or `anomaly_engine: native`, to never try Cortex. A shadow engine adds one native query per metric (or the Cortex calls). The native band of a constant series whose median and spread are both 0 is zero-width (a null rate that was always 0): any move off 0 is an anomaly; set `anomaly_mad_floor_abs` to tolerate it.
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. The Cortex engine is **coming**: today every choice scores with the native engine, and `auto` and `cortex` log why at debug level only: run dbt with `--debug` to see it. | Cost: none today. |
+| `anomaly_engine` | `auto` | string | `native`, `cortex` or `auto`. Any other value is a compile error. `native` scores with the native engine. `cortex` and `auto` try the per-table Cortex model when a series has 14 or more days of history and fall back to native, with the reason logged once per relation, when it cannot score. | Cost: see above. `auto` on an account without a model costs the failed Cortex calls once per relation per test. |
+| `anomaly_severity` | `warn` | string | `warn` or `error`. `error` makes an anomaly fail the five monitor tests; `warn` makes it a dbt warning. | None. |
 | `anomaly_sensitivity` | `medium` | string | `low`, `medium` or `high`. Sets the band width to 4, 3 or 2 median absolute deviations. | None. |
 | `anomaly_min_consecutive` | `1` | integer | How many points in a row must be outside the band. At least 1. | None. |
 | `anomaly_mad_floor_pct` | `0.01` | number | Smallest band half-width as a share of the expected value. | None. |
 | `anomaly_mad_floor_abs` | `0` | number | Smallest band half-width as an absolute value. | None. |
-| `shadow_engine` | `none` | string | Recorded on each run's start and end records. Shadow scoring is **coming**. | None. |
+| `shadow_engine` | `none` | string | `none`, `native` or `cortex`. Scores each metric a second time with that engine and writes an `icecore.shadow` event next to the metric. The primary verdict is never changed. Also recorded on each run's start and end records. | Cost: one more query per metric. |
+| `monitor_score` | `true` | boolean | `false` stops the five monitor tests from scoring and from failing on an anomaly: they only record metrics, as before. | Cost: none when false. |
 | `history_delay_minutes` | `1` | number | Metric history leaves out the newest minutes, because of ingestion lag. Spike S3 measured a p95 lag of about 8 s and a worst case of 20 s. | None. |
 | `metadata_fallback_kinds` | `[iceberg, materialized_view]` | list | Table kinds whose metadata row count is not trusted. The metadata row-count reader returns none for them. Iceberg is unmeasured (spike S5). A materialized view's metadata total was still the old one 60 s after an insert, and `CHANGES` is not supported on it. | The fallback reader over `CHANGES` is opt-in and reads data (spike S5). |
 | `dimension_max_values` | `20` | integer | Distinct values counted per dimension column. The rest are grouped as `other`. At least 1. | Cost: more values, more metric rows. |
@@ -87,17 +102,42 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 | `root_cause` | `false` | boolean | Turn the explanation on. | Two small queries on the views at the end of a run with a failed test; no row of its own while `node_results` is on. |
 | `root_cause_lookback_hours` | `24` | integer | How far back schema changes and metric anomalies count as signals. | None. |
 
-### Declared, not read yet
+### Cost per node
 
-These keys are in the package's `dbt_project.yml`, but no merged macro reads them. Setting them changes nothing today.
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
 
-| Var | Default | Status |
+### Declared, not read
+
+The package's `dbt_project.yml` declares `monitors: true`, but no macro reads it as a var: the monitors run when you add their tests, and setting it changes nothing. (`monitors` is an argument of `icecore.estimate_telemetry_cost`.)
+
+### Alerts and tasks
+
+`alerts` is the switch for the alerts and the silence task. `alert_resume` and `silence_task_resume` override it for one object, in both directions. The Cortex refresh task is separate: it does not depend on `alerts` (it is created when Cortex is available).
+
+| `alerts` | Per-object var (`alert_resume`, `silence_task_resume`) | Result for that object |
 | --- | --- | --- |
-| `monitors` | `true` | **coming** |
-| `cost` | `false` | **coming** |
-| `alerts` | `false` | **coming** |
+| any | `true` | Created and resumed, even with `alerts: false`. |
+| `true` | `false` | Created and kept suspended. |
+| `true` or `false` | `null` (default) | Follows `alerts`: `true` creates and resumes it; `false` creates nothing. |
 
-The `meta.sla` and `meta.alerts` model settings, the alerts and the app are **coming** too.
+(`alerts: false` with a per-object `false` creates nothing.) The settings:
+
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `alerts` | `false` | boolean | `true`: `setup` creates one ALERT per channel of `alert_channels` and the silence TASK, **and resumes them**, unless a per-object var says `false`. `false`: it creates neither, unless a per-object var says `true`. | **Cost: a resumed alert or task runs on its warehouse every schedule period (default 5 minutes for the task) and uses the warehouse time of the account that owns it.** |
+| `alert_channels` | none | mapping | One alert per channel: `{name: {type: email\|slack\|teams, integration: <notification integration>, recipients: [...], default: true}}`. An admin creates the integrations: `setup` prints the statements. | None until an alert is resumed and finds an incident. |
+| `alert_resume` | `null` | boolean | `true` creates and resumes the alerts even with `alerts: false`; `false` keeps them suspended with `alerts: true`; `null` follows `alerts`. | Cost as above. |
+| `silence_task_resume` | `null` | boolean | Same, for the silence task. | Cost as above. |
+| `alert_schedule_minutes`, `alert_warehouse`, `silence_task_schedule`, `silence_task_warehouse` | see the macros | | Schedule and warehouse of each object. | Shorter schedules use more warehouse time. |
+
+`setup` is safe to run twice: each object has a fixed name (`ICECORE_ALERT_<CHANNEL>`, `ICECORE_SILENCE`), is created with `CREATE OR REPLACE`, and is resumed again by the same rule, so a second run leaves the same objects and no duplicates. The silence task needs at least one model with `meta.sla`. Resuming needs the `EXECUTE ALERT` and `EXECUTE TASK` privileges on the account: when the role lacks one, `setup` prints the grant and the object stays suspended. The setup output warns when it resumed something. To stop the cost, `ALTER ALERT ... SUSPEND` and `ALTER TASK ... SUSPEND`.
+
+Re-runs and upgrades:
+
+- `CREATE OR REPLACE` leaves an alert or task suspended and resets its grants (a dedup state is not affected: it lives in the event table), so `setup` resumes it again when its var asks for it. A running object whose var now says `false` is recreated suspended, for the alerts and for the silence task alike.
+- An alert or silence task that an earlier `setup` created and that the vars no longer ask for (for example after upgrading with `alerts: false`) is left exactly as it is, possibly still resumed and using warehouse time. `setup` prints one warning per object with its state and the `ALTER ... SUSPEND` and `DROP ...` statements to run. It never runs them.
 
 ## Hooks
 
@@ -132,11 +172,11 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var (`ICECORE_OBS`) | string | Schema to create in the target database. |
-| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The compat views are **coming**: the step prints `planned, not available yet` and does nothing. |
-| `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
+| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The step creates the Elementary-compatible views in their own schema. |
+| `app` | `false` | boolean | `true` adds a `deploy_app` step. The step prints `planned, not available yet` and does nothing; deploy the app with `make deploy-app`. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
-Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for alerts and tasks always print the same line, because they are **coming**.
+With `app: true`, the `deploy_app` step prints `planned, not available yet` and does nothing: deploy the app with `make deploy-app` ([the app](app.md)). The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
 
 The role that runs `setup` needs:
 
@@ -169,14 +209,31 @@ dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24, nod
 
 It reads the dbt graph and runs no query. It estimates rows per run, rows per month and ingestion credits at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It follows the `node_results`, `query_events`, `lineage` and `payload_cap_kb` settings: with `node_results` and `query_events` off, the same 3-node project goes from 18 rows to 12 rows per run. Lineage records are counted only when `lineage` is on; there is no argument for them.
 
+The icecore monitor tests of the graph get their own line, `of the rows per run, N are icecore monitor records ...`, and their own entry `monitors` in `records_per_run`. A project without icecore tests has no such line and the same numbers as before. The count comes from each test's arguments, with no query, per run:
+
+| Record | Count | Note |
+| --- | --- | --- |
+| `icecore.metric` span events | `freshness` and `volume`: 1 each. `column_anomaly`: one per requested metric (default `window_rows`, `null_rate`). `all_columns_anomaly`: one per metric per column, minus `exclude_columns`. `dimension_anomaly`: one `window_rows` per value. | `all_columns_anomaly` uses the columns declared in the project's yml, or `assumed_columns` (default 10) when none are. `dimension_anomaly` cannot know its values at compile time: it assumes the most frequent `max_values` (the test's argument, else the `dimension_max_values` var, 20) plus the `other` group. |
+| `icecore.anomaly` warn events | Only `anomalies_per_run` (default 0). | No test emits them on its own today; give the number you expect per run. |
+| `icecore.schema_change` warn events | 0. | One per column change a `schema_changes` test finds, 0 on a stable table; not estimated. |
+| `icecore.schema_signature` | One per `schema_changes` test per run. | A signature of a wide table is split when its columns pass `payload_cap_kb`; the estimate counts about 100 bytes per declared column for that. |
+| Cost records | Counted in the `cost` entry, when the `cost` var is on. | Not repeated in the monitor line. |
+| Silence verdicts | 0. | The silence task writes them when a run is missing, not a run; 0 in a healthy project. |
+| Procedure spans | One per `ICECORE_EMIT` CALL: one CALL per test, one more for each 100 events. | Added to `call_overhead`. |
+
+These records go through `ICECORE_EMIT` while the tests run, not through `end_run`, so they do not change `emit_run_calls`.
+
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
 | `runs_per_day` | none | number | dbt runs per day that fire the hooks. Needed for the monthly figures. |
 | `nodes` | the models, seeds, snapshots and tests of the graph | integer | Nodes per run. |
 | `query_events_per_node` | `1` | integer | Queries per node, one query event each. |
-| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are **coming**. |
+| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are written when the `samples` var is on (see [Run telemetry](#run-telemetry)). |
 | `days` | `30` | integer | Days per month. |
 | `bytes_per_record` | `1500` | integer | Bytes per row at the low end of the range. The high end is the payload cap. |
+| `assumed_columns` | `10` | integer | Columns assumed for an `all_columns_anomaly` test whose tested node declares none. |
+| `anomalies_per_run` | `0` | integer | Anomaly warn events you expect per run. Monitor anomalies are counted only through it. |
+| `monitors` | `true` | boolean | `false` leaves the icecore monitor tests out of the count. |
 
 Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Logging instead, which a row count cannot predict. The command says so and names the `METERING_HISTORY` service types to check.
 
@@ -229,7 +286,7 @@ Reads the last committed change of the relation (`SYSTEM$LAST_CHANGE_COMMIT_TIME
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
-| `max_lag` | none | number or string | Largest accepted lag. A number is seconds. A string is a number with a unit `s`, `m`, `h` or `d`: `30m`, `2h`, `1d`, `1.5h`. Spaces and case are ignored. Combined units such as `1h30m` are not accepted. A negative number, a boolean or any other text is a compile error. Without it the test records the metric and always passes. |
+| `max_lag` | none | number or string | Largest accepted lag. A number is seconds. A string is a number with a unit `s`, `m`, `h` or `d`: `30m`, `2h`, `1d`, `1.5h`. Spaces and case are ignored. Combined units such as `1h30m` are not accepted. A negative number, a boolean or any other text is a compile error. Without it the test records the metric and always passes. The limit in seconds is written on the metric as `icecore.metric.threshold` and read as `METRICS.threshold`. |
 
 ### `icecore.volume`
 
@@ -256,7 +313,6 @@ In that case no metric is written, and the test logs a warning. What happens nex
 
 A threshold you cannot check is not reported as a pass.
 
-### The other tests
+### The other monitors
 
-`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` have every argument documented in the [generic test reference](reference/tests.md), as do `freshness` and `volume`. Every public macro is in the [macro reference](reference/macros.md).
-
+`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` are available. Their settings are under [Monitor and anomaly settings](#monitor-and-anomaly-settings), and each test's arguments are in its docs block (`dbt docs generate`) and in the [generic test reference](reference/tests.md). Every public macro is in the [macro reference](reference/macros.md).

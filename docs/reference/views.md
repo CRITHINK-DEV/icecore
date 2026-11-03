@@ -73,6 +73,8 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `credits_settled` | text | `no_attribution` when the latest `cost` record closed the node with what was attributed (0 when Snowflake never wrote an attribution row). Null otherwise: the credits are attributed, or may still change | `dbt.cost.settled` |
 | `root_cause_unique_id` | text | The upstream node that explains a failed test. Set on the test's row only, and only when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |
+| `layer` | text | The node's layer: for a model the first folder under `models/` (renamed by the [`layers`](../configuration.md#run-telemetry) var), for a seed, snapshot or source its type. Null for a model with no folder, for tests and for records written before the key existed | `dbt.node.layer` |
+| `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source`. Set with `root_cause_unique_id` | `dbt.root_cause.kind` |
 
 ## `TEST_RESULTS`
 
@@ -97,8 +99,7 @@ One row per test per invocation. Reads the `node_result` log records of test nod
 | `query_id` | text | The test's Snowflake query | `snow.query.id` |
 | `root_cause_unique_id` | text | The upstream node that explains the failure, when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `root_cause_kind` | text | Why that node: `upstream_failure`, `schema_change` or `stale_source` | `dbt.root_cause.kind` |
-
-There is no `model_unique_id` column: no emitter writes the tested model's id on the node result.
+| `tested_unique_id` | text | The model or source the test is attached to (dbt's `attached_node`, else the single model, seed, snapshot or source the test depends on). Null for a singular test over several nodes, for a relationships test from a source (two parents, no `attached_node`), and for records written before this key existed | `dbt.test.attached_node` |
 
 ## `METRICS`
 
@@ -118,6 +119,7 @@ One row per metric a monitor computed, from the `icecore.metric` span events tha
 | `invocation_id` | text | The dbt run | `dbt.invocation_id` |
 | `node_unique_id` | text | The node, when the record has one | `dbt.node.unique_id` |
 | `emit_query_id` | text | Query id of the `CALL` that wrote the record | `snow.query.id` in `RESOURCE_ATTRIBUTES` |
+| `threshold` | float | The limit the test judges the metric by, in the metric's unit. Set by `icecore.freshness` with `max_lag`, in seconds, on its `freshness_lag_seconds` rows. Null for other metrics, for a bare freshness test and for records written before the key existed | `icecore.metric.threshold` |
 
 ## `SCHEMA_CHANGES`
 
@@ -150,7 +152,7 @@ One row per column per `icecore.schema_changes` run: the full column state of ea
 
 ## `SILENCE_EVENTS`
 
-One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. `icecore.setup` creates the task suspended. The `silence_task_resume` var resumes it. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.
+One row per missed run, from the `icecore.silence` span events that the silence task writes through `ICECORE_EMIT`. With `alerts: true` (or `silence_task_resume: true`), `icecore.setup` creates the task and resumes it (it uses warehouse time on every schedule period); with `alerts: false` it creates no task. `silence_task_resume: false` keeps it suspended. It checks the nodes that have `meta.sla`. Rows exist only once the task has run and found a node whose next run is overdue by more than its grace.
 
 `expected_at` and `last_success_at` are the verdict's own values, UTC to the second, on Snowflake's clock: they come from the `recorded_at` of the node's results. `detected_at` is the `TIMESTAMP` of the verdict record.
 
@@ -167,7 +169,7 @@ One row per missed run, from the `icecore.silence` span events that the silence 
 
 ## `ALERTS_FEED`
 
-One row per incident: every alertable signal in one place. The Snowflake alerts and the app read it, and an acknowledged incident stops notifying. Signals are test failures (`TEST_RESULTS` rows with status `fail`, `error` or `warn`), anomalies (`METRICS` rows with `anomaly_is_anomaly`) and schema changes (`SCHEMA_CHANGES` rows). Missed runs and cost regressions have their place in the view but write no rows yet.
+One row per incident: every alertable signal in one place. The Snowflake alerts and the app read it, and an acknowledged incident stops notifying. Signals, one `kind` each: `test_failure` (`TEST_RESULTS` rows with status `fail`, `error` or `warn`), `anomaly` (`METRICS` rows with `anomaly_is_anomaly`, except metric `credits`), `schema_change` (`SCHEMA_CHANGES` rows), `silence` (one per missed run, from `SILENCE_EVENTS`: `node_key` is the node's unique id, severity is the verdict's `warn` or `error`, the title names the node and `expected_at`, no invocation) and `cost` (`METRICS` rows of metric `credits` that are anomalous and above the band, `node_key` is `relation|credits||`). A credits anomaly is read only as `cost`, never also as `anomaly`, so a regression is one incident. Credits below the band raise nothing. A silence incident goes to the node's `meta.alerts` channel like the node's other signals.
 
 An incident groups the same signal on the same node inside one window: `incident_key` is the md5 of the node key, the kind and the window start. The window is the `alert_window_hours` var, 24 hours by default, aligned to the epoch, so the next window is a new incident and alerts again. Acknowledgements are `icecore.ack` span events written by the `ICECORE_ACK` procedure (`icecore.acknowledge` calls it); only those written by that procedure, at or after the incident's first detection, count.
 
@@ -209,6 +211,7 @@ One row per dependency edge per invocation, from the `lineage` log records. Edge
 | `parent_unique_id` | text | Upstream node | element 0 of a pair in `dbt.lineage.edges` |
 | `child_unique_id` | text | Downstream node | element 1 of a pair in `dbt.lineage.edges` |
 | `recorded_at` | time | Time of the edge's latest record | event `TIMESTAMP` |
+| `parent_layer`, `child_layer` | text | The layer of each node of the edge, as `layer` in `NODE_EXECUTIONS`. Null for records written before the key existed | key of the node in `dbt.lineage.node_layer` |
 
 ## `LINEAGE_LATEST`
 
@@ -234,7 +237,7 @@ What the account supported when icecore last looked. One row per database, the l
 
 ## Elementary-compatible views
 
-`icecore.setup` with `compat: elementary` creates 8 more views in the compat schema, by default `<target_db>.<obs_schema>_ELEMENTARY` (for example `ICECORE_OBS_ELEMENTARY`). Set another name with the `compat_schema` var. The name may contain only letters, digits and underscores. The schema is created if it does not exist, so the role needs CREATE SCHEMA on the database, or an admin creates it first.
+`icecore.setup` with `compat: elementary` creates 8 more views in the compat schema, by default `<target_db>.<obs_schema>_ELEMENTARY` (for example `ICECORE_OBS_ELEMENTARY`). Set another name with the `compat_schema` var. The name may contain only letters, digits, underscores and a single dollar sign. The schema is created if it does not exist, so the role needs CREATE SCHEMA on the database, or an admin creates it first.
 
 ```bash
 dbt run-operation icecore.setup --args '{compat: elementary}'
@@ -257,7 +260,7 @@ Limits, from the macros:
 
 - `SCHEMA_COLUMNS_SNAPSHOT` is a change log, not a snapshot. Elementary appends every current column on every run. Here a column has a row only when it was added or its type changed, so "the latest snapshot per table" returns only the columns of the latest change.
 - icecore holds no manifest metadata. `DBT_MODELS`, `DBT_TESTS` and `DBT_SOURCES` know only what the run records say, so a node appears once it has run. Description, tags, owner, paths and similar columns are NULL.
-- `ELEMENTARY_TEST_RESULTS` has no `model_unique_id`, table or schema name (typed NULLs). Scored tests carry their band in `other` as JSON.
+- `ELEMENTARY_TEST_RESULTS` has no table or schema name (typed NULLs). Its `model_unique_id` is `tested_unique_id`, which can be a source. Scored tests carry their band in `other` as JSON.
 - Times that Elementary stores as text are written as `YYYY-MM-DD HH24:MI:SS` text that Snowflake can cast. The two clocks are never subtracted.
 
 ## Keeping this page in step

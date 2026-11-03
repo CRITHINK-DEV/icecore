@@ -55,8 +55,9 @@ def test_view_selects_only_from_the_core_view_and_casts_every_column():
 
 def test_unfillable_columns_are_typed_nulls():
     columns = {c["name"]: c["expr"] for c in run_macro("it_compat_test_results", {})["columns"]}
+    assert columns["model_unique_id"] == "t.tested_unique_id"
     assert sorted(n for n, e in columns.items() if e is None) == sorted([
-        "data_issue_id", "model_unique_id", "database_name", "schema_name", "table_name", "owners", "tags",
+        "data_issue_id", "database_name", "schema_name", "table_name", "owners", "tags",
         "test_results_query", "test_params", "test_alias", "result_rows"])
 
 
@@ -73,11 +74,11 @@ def test_compat_schema_is_separate_from_the_obs_schema_and_configurable():
 
 
 @pytest.mark.parametrize("name", ['x"; drop schema y; --', "a.b", "a b", "x'y", "é"])
-def test_compat_schema_name_outside_letters_digits_underscore_is_a_compile_error(name):
+def test_compat_schema_name_outside_the_identifier_set_is_a_compile_error(name):
     from helpers.macros import MacroFailed
-    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro("it_compat_schema", {"compat_schema": name})
-    with pytest.raises(MacroFailed, match="letters, digits and underscores"):
+    with pytest.raises(MacroFailed, match="invalid SQL identifier"):
         run_macro("it_compat_schema", {}, ["--vars", json.dumps({"icecore": {"compat_schema": name}})])
 
 

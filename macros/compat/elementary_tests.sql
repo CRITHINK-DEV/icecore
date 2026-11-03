@@ -16,7 +16,8 @@
       status                     lower case, as Elementary writes dbt's result status (pass, fail, warn, error)
       failures, failed_row_count failures
       other                      for scored tests a JSON object {engine, expected, lower, upper, score}, else NULL
-    Typed NULLs (icecore has no source for them): data_issue_id, model_unique_id, database_name, schema_name,
+      model_unique_id            tested_unique_id (the model or source the test is attached to; NULL when ambiguous)
+    Typed NULLs (icecore has no source for them): data_issue_id, database_name, schema_name,
     table_name, owners, tags, test_results_query, test_params, test_alias, result_rows.
     Elementary stores timestamps as TIMESTAMP_NTZ here (detected_at, created_at) and strings as VARCHAR. -#}
 
@@ -42,7 +43,7 @@
     {'name': 'data_issue_id', 'type': 'string', 'expr': none},
     {'name': 'test_execution_id', 'type': 'long_string', 'expr': "t.invocation_id || '.' || t.test_unique_id"},
     {'name': 'test_unique_id', 'type': 'long_string', 'expr': 't.test_unique_id'},
-    {'name': 'model_unique_id', 'type': 'long_string', 'expr': none},
+    {'name': 'model_unique_id', 'type': 'long_string', 'expr': 't.tested_unique_id'},
     {'name': 'invocation_id', 'type': 'string', 'expr': 't.invocation_id'},
     {'name': 'detected_at', 'type': 'timestamp', 'expr': 't.executed_at'},
     {'name': 'created_at', 'type': 'timestamp', 'expr': 't.executed_at'},

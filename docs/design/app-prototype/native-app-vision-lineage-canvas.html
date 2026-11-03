@@ -1,0 +1,1506 @@
+<!doctype html>
+<!--
+DIRECTION B, "Lineage canvas". Idea: the project's lineage IS the home screen; status, freshness, cost, tests and schedules are map layers you switch on it, and every other section opens as a sheet over the graph.
+Who it suits: engineers triaging a failed run ("what broke, what is upstream, what does it hit") and leads who think in pipelines; less suited to people who only want a ranked list.
+What is great: one spatial anchor; problems glow and a pill jumps between them; a failing test animates its root-cause path; the node panel holds history, tests, band charts, schema and cost with no page change.
+What it costs: the most front-end work of the four (React Flow + dagre layout, semantic zoom, overlays, focus/centering logic); about 3 to 4 weeks for one engineer to production quality, plus layout tuning for 300+ node projects.
+Generated report: this file is the prototype; the CLI writes the view rows as window.ICECORE_DATA next to the same React bundle (inlined), so it opens offline exactly like this.
+Streamlit: the canvas, node panel and sheets ship as ONE custom component (this React app) fed by the views; Streamlit only hosts it and handles acknowledge writes; the Snowflake Native App reuses the same bundle.
+
+Custom component note (Streamlit): needs a custom component for the React Flow canvas and its overlays, the docked node panel (tabs, band charts),
+the command palette (Ctrl/Cmd-K) and the overlay sheets; the run Gantt and band charts could fall back to st.plotly_chart but would lose the click-to-focus link to the graph.
+The acknowledge button is local state here; in Streamlit it would call back to Python to write ALERTS_FEED.acknowledged_by.
+-->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>icecore lineage canvas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css">
+<style>
+:root, :root[data-theme="light"] {
+  --canvas:#E8EDF1; --dot:#C3CDD6; --surface:#FFFFFF; --surface-2:#F3F6F8; --line:#D6DEE5; --line-strong:#AEBBC7;
+  --ink:#16202A; --ink-2:#4A5866; --ink-3:#74818E;
+  --ice:#1668A0; --ice-soft:#DCEBF6; --ice-ink:#FFFFFF;
+  --failed:#CF3A2B; --failed-soft:#FBE3E0; --warn:#B9740A; --warn-soft:#FCEFD6; --stale:#7656D0; --stale-soft:#ECE6FB;
+  --ok:#2C8A5F; --ok-soft:#DFF2E8; --notrun:#8E99A5; --notrun-soft:#EDF0F3;
+  --l-inputs:#64717E; --l-transient:#3F93A3; --l-bronze:#A4652A; --l-silver:#8795A4; --l-gold:#BE9116; --l-snapshot:#6A7BA0;
+  --shadow:0 1px 2px rgba(22,32,42,.06), 0 10px 28px rgba(22,32,42,.10);
+  --scrim:rgba(232,237,241,.55);
+}
+:root[data-theme="dark"] {
+  --canvas:#131B24; --dot:#27333F; --surface:#1A2430; --surface-2:#202C39; --line:#2C3946; --line-strong:#43525F;
+  --ink:#E4EAF0; --ink-2:#A9B6C2; --ink-3:#7F8C99;
+  --ice:#62B2E8; --ice-soft:#173247; --ice-ink:#0F1A24;
+  --failed:#F0685A; --failed-soft:#3D2120; --warn:#E9A53A; --warn-soft:#3A2C14; --stale:#A48BF0; --stale-soft:#2A2342;
+  --ok:#4CC08A; --ok-soft:#173327; --notrun:#7D8996; --notrun-soft:#222C36;
+  --l-inputs:#8D9AA7; --l-transient:#5DB3C2; --l-bronze:#CC8A4C; --l-silver:#A7B4C2; --l-gold:#DDB33E; --l-snapshot:#8C9CC2;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.35);
+  --scrim:rgba(19,27,36,.55);
+}
+* { box-sizing:border-box; }
+html, body, #root { height:100%; margin:0; }
+body { background:var(--canvas); color:var(--ink); font:14px/1.45 "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
+button { font:inherit; color:inherit; }
+:focus-visible { outline:2px solid var(--ice); outline-offset:2px; }
+.mono { font-family:"IBM Plex Mono", ui-monospace, Menlo, monospace; font-size:12px; }
+.app { display:flex; flex-direction:column; height:100%; }
+.muted { color:var(--ink-3); }
+.ink2 { color:var(--ink-2); }
+
+/* top bar + strip */
+.topbar { display:flex; align-items:center; gap:14px; padding:0 14px; height:50px; background:var(--surface); border-bottom:1px solid var(--line); flex:none; z-index:20; }
+.brand { display:flex; align-items:center; gap:9px; font-weight:800; font-size:17px; letter-spacing:-.01em; }
+.brand svg { display:block; }
+.proj { color:var(--ink-2); font-weight:500; font-size:13px; }
+.proj b { color:var(--ink); font-weight:600; }
+.kbtn { display:flex; align-items:center; gap:8px; height:32px; padding:0 10px 0 10px; min-width:260px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); color:var(--ink-3); cursor:pointer; }
+.kbtn:hover { border-color:var(--line-strong); color:var(--ink-2); }
+.kbtn kbd, .kbd { margin-left:auto; font:500 11px "IBM Plex Mono", monospace; padding:1px 6px; border:1px solid var(--line); border-radius:5px; background:var(--surface); color:var(--ink-3); }
+.spacer { flex:1; }
+.iconbtn { width:32px; height:32px; display:grid; place-items:center; border:1px solid transparent; border-radius:8px; background:transparent; cursor:pointer; color:var(--ink-2); }
+.iconbtn:hover { background:var(--surface-2); border-color:var(--line); }
+.strip { display:flex; align-items:stretch; background:var(--surface); border-bottom:1px solid var(--line); overflow-x:auto; flex:none; z-index:19; }
+.readout { display:flex; flex-direction:column; justify-content:center; gap:1px; padding:9px 18px; border:0; border-right:1px solid var(--line); background:transparent; text-align:left; cursor:pointer; min-width:150px; }
+.readout:hover { background:var(--surface-2); }
+.readout .lbl { font-size:12px; color:var(--ink-3); white-space:nowrap; }
+.readout .val { font-size:17px; font-weight:600; letter-spacing:-.01em; display:flex; align-items:baseline; gap:6px; white-space:nowrap; }
+.readout .val small { font-size:12px; font-weight:500; color:var(--ink-2); letter-spacing:0; }
+.readout svg { margin-top:2px; }
+.dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex:none; }
+
+/* main */
+.main { flex:1; display:flex; min-height:0; }
+.stage { position:relative; flex:1; min-width:0; }
+.react-flow { background:var(--canvas); }
+.react-flow__attribution { display:none; }
+.react-flow__controls { box-shadow:var(--shadow); border-radius:8px; overflow:hidden; }
+.react-flow__controls-button { background:var(--surface); border-bottom:1px solid var(--line); color:var(--ink-2); fill:var(--ink-2); width:28px; height:28px; }
+.react-flow__controls-button:hover { background:var(--surface-2); }
+.react-flow__controls-button svg { fill:var(--ink-2); }
+.react-flow__minimap { background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; }
+.react-flow__handle { opacity:0; width:4px; height:4px; min-width:0; min-height:0; border:0; pointer-events:none; }
+.react-flow__node { cursor:pointer; }
+.react-flow__node-lane { cursor:default; pointer-events:none !important; }
+.react-flow__edge-path { transition:stroke .2s, opacity .2s; }
+.react-flow__edge.dim { opacity:.12; }
+.react-flow__edge.rc .react-flow__edge-path { stroke-dasharray:7 5; }
+
+/* lanes */
+.lane { border-radius:18px; background:color-mix(in srgb, var(--lc) 7%, transparent); border:1px solid color-mix(in srgb, var(--lc) 22%, transparent); position:relative; transition:opacity .2s; }
+.lane-title { position:absolute; left:18px; top:6px; font-size:34px; font-weight:800; letter-spacing:-.025em; color:color-mix(in srgb, var(--lc) 70%, transparent); white-space:nowrap; }
+.lane-count { position:absolute; left:20px; top:47px; font-size:12px; color:var(--ink-3); }
+.lane.off { opacity:.25; }
+
+/* nodes */
+.n { width:200px; height:54px; display:flex; align-items:stretch; background:var(--surface); border:1.5px solid var(--line-strong); border-radius:10px; position:relative; transition:opacity .2s, transform .2s; color:var(--ink); }
+.n-stripe { width:5px; border-radius:8px 0 0 8px; flex:none; margin:-1.5px 0 -1.5px -1.5px; }
+.n-main { flex:1; min-width:0; padding:6px 8px 6px 9px; display:flex; flex-direction:column; justify-content:center; }
+.n-name { font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-.005em; }
+.n-sub { font-size:11.5px; color:inherit; opacity:.72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.n.far .n-name { font-size:17px; font-weight:700; }
+.n-side { display:flex; flex-direction:column; align-items:flex-end; justify-content:space-between; padding:6px 7px 6px 0; gap:3px; }
+.n-badge { font-size:10.5px; font-weight:600; padding:0 5px; border-radius:6px; line-height:16px; background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line); white-space:nowrap; }
+.n-badge.bad { background:var(--failed); color:#fff; border-color:var(--failed); }
+.n-badge.hot { background:var(--warn); color:#fff; border-color:var(--warn); }
+.n.far .n-badge { font-size:13px; line-height:19px; }
+.n.dim { opacity:.18; }
+.n.off { opacity:.08; pointer-events:none; }
+.n.sel { outline:3px solid var(--ice); outline-offset:3px; }
+.n.inpath { border-color:var(--ice); }
+.n.unmeasured { border-style:dashed; background:var(--surface); color:var(--ink-3); }
+.n.glow { animation:glow 2.6s ease-in-out infinite; }
+@keyframes glow { 0%,100% { box-shadow:0 0 0 3px color-mix(in srgb, var(--g) 22%, transparent), 0 0 14px 3px color-mix(in srgb, var(--g) 35%, transparent); } 50% { box-shadow:0 0 0 6px color-mix(in srgb, var(--g) 16%, transparent), 0 0 30px 10px color-mix(in srgb, var(--g) 30%, transparent); } }
+.n-flag { position:absolute; left:8px; bottom:calc(100% + 8px); background:var(--failed); color:#fff; font-size:12px; font-weight:600; padding:3px 8px; border-radius:7px; white-space:nowrap; box-shadow:var(--shadow); z-index:5; }
+.n-flag.root { background:var(--ink); color:var(--surface); }
+.n-flag.root::after { border-top-color:var(--ink); }
+.n-flag::after { content:""; position:absolute; left:14px; top:100%; border:6px solid transparent; border-top-color:var(--failed); }
+.t { width:180px; height:28px; display:flex; align-items:center; gap:6px; padding:0 8px; border-radius:14px; border:1px solid var(--line-strong); background:var(--surface); font-size:11.5px; white-space:nowrap; overflow:hidden; color:var(--ink-2); transition:opacity .2s; }
+.t.fail { border-color:var(--failed); background:var(--failed-soft); color:var(--ink); font-weight:600; }
+.t.dim { opacity:.15; } .t.sel { outline:3px solid var(--ice); outline-offset:2px; }
+.t span { overflow:hidden; text-overflow:ellipsis; }
+
+/* floating chrome */
+.float { position:absolute; z-index:6; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
+.pill { top:14px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:2px; padding:4px; border-radius:999px; }
+.pill .pmain { display:flex; align-items:center; gap:9px; border:0; background:transparent; cursor:pointer; padding:4px 12px 4px 10px; border-radius:999px; font-weight:600; }
+.pill .pmain:hover { background:var(--surface-2); }
+.pill .pnum { display:grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--failed); color:#fff; font-size:12px; font-weight:700; }
+.pill .pnum.zero { background:var(--ok); }
+.pill .pcur { font-weight:500; color:var(--ink-2); white-space:nowrap; }
+.pill .iconbtn { width:28px; height:28px; border-radius:50%; }
+.toolbar { bottom:16px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; padding:6px; border-radius:14px; flex-wrap:nowrap; }
+.seg { display:flex; gap:2px; background:var(--surface-2); border-radius:10px; padding:2px; }
+.seg button { border:0; background:transparent; padding:6px 11px; border-radius:8px; cursor:pointer; color:var(--ink-2); font-weight:500; white-space:nowrap; font-size:13px; }
+.seg button:hover { color:var(--ink); }
+.seg button[aria-pressed="true"] { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.12); font-weight:600; }
+.vsep { width:1px; align-self:stretch; background:var(--line); margin:3px 0; }
+.chips { display:flex; gap:4px; flex-wrap:wrap; }
+.chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:3px 10px; font-size:12.5px; cursor:pointer; color:var(--ink-2); white-space:nowrap; }
+.chip:hover { border-color:var(--line-strong); color:var(--ink); }
+.chip[aria-pressed="true"] { background:var(--ink); color:var(--surface); border-color:var(--ink); }
+.lanechips { flex-wrap:nowrap; }
+.chip.lanechip[aria-pressed="true"] { background:var(--surface); color:var(--ink); border-color:var(--line); }
+.chip.lanechip[aria-pressed="false"] { opacity:.55; text-decoration:line-through; }
+.toggle { display:flex; align-items:center; gap:7px; border:0; background:transparent; cursor:pointer; padding:5px 8px; border-radius:8px; color:var(--ink-2); font-size:13px; white-space:nowrap; }
+.toggle:hover { background:var(--surface-2); }
+.sw { width:28px; height:16px; border-radius:8px; background:var(--line-strong); position:relative; transition:background .15s; flex:none; }
+.sw::after { content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition:left .15s; }
+.toggle[aria-pressed="true"] .sw { background:var(--ice); }
+.toggle[aria-pressed="true"] .sw::after { left:14px; }
+.legend { top:14px; right:14px; padding:10px 12px; width:236px; font-size:12.5px; }
+.legend h4 { margin:0 0 6px; font-size:13px; font-weight:600; display:flex; align-items:center; }
+.legend.min { width:auto; padding:4px 6px 4px 12px; }
+.legend.min h4 { margin:0; }
+.layerpop { position:absolute; bottom:calc(100% + 8px); left:0; padding:8px; display:flex; flex-direction:column; gap:4px; }
+.toolbar.compact .lanechips { display:none; }
+.legend .row { display:flex; align-items:center; gap:8px; padding:2px 4px; border-radius:6px; border:0; background:transparent; width:100%; text-align:left; cursor:pointer; color:var(--ink-2); }
+.legend .row:hover { background:var(--surface-2); }
+.legend .row[aria-pressed="true"] { background:var(--ice-soft); color:var(--ink); }
+.legend .row b { margin-left:auto; font-weight:600; color:var(--ink); }
+.legend .ramp { height:10px; border-radius:5px; margin:6px 0 3px; }
+.legend .ends { display:flex; justify-content:space-between; color:var(--ink-3); font-size:11.5px; }
+.legend p { margin:6px 0 0; color:var(--ink-3); font-size:11.5px; line-height:1.4; }
+.rpanel { padding:14px 16px 20px; overflow:auto; border-left:3px solid var(--failed); }
+.rpanel h4 { margin:2px 0 0; font-size:18px; letter-spacing:-.01em; }
+.steps { list-style:none; margin:10px 0 6px; padding:0; position:relative; }
+.steps li { position:relative; padding:4px 0 4px 22px; }
+.steps li::before { content:""; position:absolute; left:6px; top:0; bottom:0; width:2px; background:var(--line); }
+.steps li:first-child::before { top:12px; } .steps li:last-child::before { bottom:calc(100% - 12px); }
+.steps li i { position:absolute; left:2px; top:9px; width:10px; height:10px; border-radius:50%; border:2px solid var(--surface); }
+.steps button { border:0; background:transparent; padding:0; cursor:pointer; font-weight:600; text-align:left; }
+.steps button:hover { color:var(--ice); }
+.hover { position:fixed; z-index:50; pointer-events:none; padding:9px 11px; font-size:12.5px; max-width:300px; }
+.hover b { font-size:13.5px; }
+
+/* node panel */
+.panel { width:440px; flex:none; background:var(--surface); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; z-index:8; }
+.ph { padding:14px 16px 0; }
+.ph .kind { display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-3); }
+.ph h2 { margin:4px 0 6px; font-size:21px; letter-spacing:-.02em; font-weight:700; word-break:break-all; }
+.ph .acts { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 12px; }
+.btn { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 11px; border-radius:8px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-size:13px; font-weight:500; white-space:nowrap; }
+.btn:hover { border-color:var(--line-strong); background:var(--surface-2); }
+.btn.primary { background:var(--ice); color:var(--ice-ink); border-color:var(--ice); }
+.btn.primary:hover { filter:brightness(1.07); background:var(--ice); }
+.btn.danger { background:var(--failed); border-color:var(--failed); color:#fff; }
+.btn.sm { height:26px; padding:0 9px; font-size:12.5px; }
+.tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); padding:0 12px; }
+.tabs button { border:0; background:transparent; padding:9px 8px 8px; cursor:pointer; color:var(--ink-3); border-bottom:2px solid transparent; margin-bottom:-1px; font-weight:500; white-space:nowrap; }
+.tabs button:hover { color:var(--ink); }
+.tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--ice); font-weight:600; }
+.pb { flex:1; overflow:auto; padding:14px 16px 24px; }
+.sec { margin-bottom:20px; }
+.sec h3 { font-size:13.5px; margin:0 0 8px; font-weight:600; }
+.reason { display:flex; gap:9px; padding:8px 10px; border-radius:9px; margin-bottom:6px; align-items:flex-start; }
+.reason .dot { margin-top:6px; }
+.status-chip { display:inline-flex; align-items:center; gap:6px; padding:2px 9px 2px 7px; border-radius:999px; font-size:12.5px; font-weight:600; }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:13px; }
+.kv dt { color:var(--ink-3); } .kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.nb { display:flex; flex-wrap:wrap; gap:5px; }
+.linkish { border:0; background:transparent; padding:0; color:var(--ice); cursor:pointer; font-weight:500; text-align:left; }
+.linkish:hover { text-decoration:underline; }
+.empty { padding:14px; border:1px dashed var(--line-strong); border-radius:10px; color:var(--ink-2); font-size:13px; }
+.trow { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); }
+.trow .tn { flex:1; min-width:0; }
+.trow .tn div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* sheets */
+.sheet { position:absolute; left:0; right:0; bottom:0; z-index:12; background:var(--surface); border-top:1px solid var(--line); border-radius:16px 16px 0 0; box-shadow:0 -12px 40px rgba(16,24,32,.16); display:flex; flex-direction:column; animation:rise .22s ease-out; }
+@keyframes rise { from { transform:translateY(24px); opacity:.4; } to { transform:none; opacity:1; } }
+.sheet-h { display:flex; align-items:center; gap:12px; padding:12px 18px 10px; border-bottom:1px solid var(--line); }
+.sheet-h h2 { margin:0; font-size:19px; letter-spacing:-.02em; }
+.sheet-h .sum { color:var(--ink-3); font-size:13px; }
+.sheet-b { flex:1; overflow:auto; padding:14px 18px 28px; }
+.grab { position:absolute; top:5px; left:50%; width:40px; height:4px; margin-left:-20px; border-radius:2px; background:var(--line-strong); }
+table.tbl { width:100%; border-collapse:collapse; font-size:13px; }
+.tbl th { text-align:left; font-weight:600; color:var(--ink-3); font-size:12px; padding:6px 8px; border-bottom:1px solid var(--line); position:sticky; top:-14px; background:var(--surface); z-index:1; white-space:nowrap; }
+.tbl td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+.tbl tr.click { cursor:pointer; }
+.tbl tr.click:hover td { background:var(--surface-2); }
+.tbl tr.on td { background:var(--ice-soft); }
+.tbl td.num, .tbl th.num { text-align:right; white-space:nowrap; }
+.grp { display:flex; align-items:baseline; gap:10px; margin:6px 0 6px; }
+.grp h3 { margin:0; font-size:15px; }
+.sev { display:inline-flex; align-items:center; gap:5px; font-weight:600; font-size:12.5px; }
+.cols { display:grid; gap:18px; }
+.cols.two { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.cols.side { grid-template-columns:340px minmax(0,1fr); }
+.box { border:1px solid var(--line); border-radius:12px; padding:12px; min-width:0; }
+.note { font-size:12.5px; color:var(--ink-3); margin:4px 0 0; }
+.bar-filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 10px; }
+.input { height:30px; border:1px solid var(--line); border-radius:8px; padding:0 10px; background:var(--surface); color:var(--ink); font:inherit; font-size:13px; }
+select.input { padding-right:4px; }
+.engine { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:6px; border:1px solid var(--line); font-size:11.5px; font-weight:600; color:var(--ink-2); }
+
+/* palette */
+.scrim { position:fixed; inset:0; background:var(--scrim); backdrop-filter:blur(2px); z-index:60; display:flex; justify-content:center; align-items:flex-start; padding-top:12vh; }
+.pal { width:min(620px, 92vw); max-height:64vh; display:flex; flex-direction:column; overflow:hidden; }
+.pal input { border:0; border-bottom:1px solid var(--line); background:transparent; padding:16px 18px; font:inherit; font-size:16px; color:var(--ink); outline:none; }
+.pal ul { list-style:none; margin:0; padding:6px; overflow:auto; }
+.pal .g { font-size:12px; color:var(--ink-3); padding:8px 10px 4px; }
+.pal li.it { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; }
+.pal li.it[aria-selected="true"] { background:var(--ice-soft); }
+.pal li.it .h { margin-left:auto; color:var(--ink-3); font-size:12px; white-space:nowrap; }
+
+@media (max-width:1180px) {
+  .panel { width:390px; }
+  .kbtn { min-width:180px; }
+  .legend { width:210px; }
+  .seg button { padding:6px 8px; }
+  .cols.two { grid-template-columns:minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .n.glow { animation:none; box-shadow:0 0 0 4px color-mix(in srgb, var(--g) 30%, transparent); }
+  .sheet { animation:none; }
+  .react-flow__edge.animated path { animation:none; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<noscript>This report needs JavaScript to draw the lineage.</noscript>
+<script src="icecore-mock-data.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/reactflow@11.11.4/dist/umd/index.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const { useState, useMemo, useEffect, useRef, useCallback, useContext, createContext, Fragment } = React;
+const RFNS = window.ReactFlow;
+const Flow = RFNS.default || RFNS.ReactFlow;
+const { ReactFlowProvider, MiniMap, Controls, Background, Handle, Position, MarkerType, useReactFlow, useStore } = RFNS;
+
+/* ============================== data model ============================== */
+const DATA = window.ICECORE_DATA || { nodes: [], runs: [], node_executions: [], test_results: [], metrics: [], source_freshness: [], schema_changes: [], slas: [], incidents: [], capabilities: {} };
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const pad = n => String(n).padStart(2, '0');
+function ts(s) {
+  const m = /(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)(?:\.(\d+))?/.exec(s || '');
+  if (!m) return NaN;
+  return new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6], m[7] ? Math.round(+('0.' + m[7]) * 1000) : 0).getTime();
+}
+const fmtDay = t => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+const fmtDT = t => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtMin = m => { m = Math.max(0, Math.round(m)); if (m < 60) return `${m} min`; if (m < 1440) return `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; return `${(m / 1440).toFixed(1)} days`; };
+const fmtS = s => s == null ? '—' : s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+const fmtCr = v => v == null ? 'pending' : `${v < 0.01 ? v.toFixed(4) : v.toFixed(3)} cr`;
+const fmtN = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(v);
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const sum = a => a.reduce((x, y) => x + y, 0);
+const mean = a => a.length ? sum(a) / a.length : null;
+const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+const durMin = s => { const m = /^(\d+)\s*([mhd])$/.exec(s || ''); return m ? +m[1] * ({ m: 1, h: 60, d: 1440 })[m[2]] : 0; };
+
+const NOW = ts(DATA.generated_at);
+const RUNS = [...DATA.runs].sort((a, b) => a.started_at.localeCompare(b.started_at));
+const NR = RUNS.length, LAST = NR - 1;
+const RUN_IDX = {}; RUNS.forEach((r, i) => RUN_IDX[r.invocation_id] = i);
+const BY_ID = {}; DATA.nodes.forEach(n => BY_ID[n.unique_id] = n);
+const GRAPH = DATA.nodes.filter(n => n.type !== 'test');
+const GRAPH_SET = new Set(GRAPH.map(n => n.unique_id));
+const TESTS = DATA.nodes.filter(n => n.type === 'test');
+const BY_NAME = {}; GRAPH.forEach(n => BY_NAME[n.name] = n.unique_id);
+
+const LANES = [
+  { key: 'inputs', label: 'Inputs' },
+  { key: 'transient', label: 'Transient' },
+  { key: 'bronze', label: 'Bronze' },
+  { key: 'silver', label: 'Silver' },
+  { key: 'gold', label: 'Gold' },
+  { key: 'snapshot', label: 'Snapshots', under: 'gold' },
+];
+const LANE_OF_LAYER = { source: 'inputs', seed: 'inputs', transient: 'transient', bronze: 'bronze', silver: 'silver', gold: 'gold', gold_analytics: 'gold', snapshot: 'snapshot' };
+const laneOf = uid => LANE_OF_LAYER[(BY_ID[uid] || {}).layer] || 'inputs';
+const LAYER_LABEL = { source: 'source', seed: 'seed', transient: 'transient', bronze: 'bronze', silver: 'silver', gold: 'gold', gold_analytics: 'gold analytics', snapshot: 'snapshot' };
+
+const EXEC = {}; GRAPH.forEach(n => EXEC[n.unique_id] = new Array(NR).fill(null));
+DATA.node_executions.forEach(e => { const i = RUN_IDX[e.invocation_id]; if (EXEC[e.unique_id] && i != null) EXEC[e.unique_id][i] = e; });
+const TRES = {}; TESTS.forEach(t => TRES[t.unique_id] = new Array(NR).fill(null));
+DATA.test_results.forEach(r => { const i = RUN_IDX[r.invocation_id]; if (TRES[r.test_unique_id] && i != null) TRES[r.test_unique_id][i] = r; });
+const TESTS_OF = {}; GRAPH.forEach(n => TESTS_OF[n.unique_id] = []);
+TESTS.forEach(t => t.depends_on.forEach(d => { if (TESTS_OF[d]) TESTS_OF[d].push(t.unique_id); }));
+const PROJECT_CHECKS = TESTS.filter(t => !t.depends_on.length);
+const isBad = r => r && r.status && r.status !== 'pass' && r.status !== 'success';
+const testTargets = t => t.depends_on.filter(d => GRAPH_SET.has(d));
+
+const TEST_WORDS = { not_null: 'Not null', unique: 'Unique', accepted_values: 'Accepted values', relationships: 'Relationship', is_empty: 'Is empty',
+  expect_column_values_to_be_between: 'Value in range', non_negative_value: 'Not negative', positive_value: 'Positive', date_not_in_future: 'Date not in future',
+  accepted_range: 'Accepted range', valid_email: 'Valid email' };
+function testLabel(t) {
+  if (!t) return '';
+  if (t.test_name) return `${TEST_WORDS[t.test_name] || t.test_name.replace(/_/g, ' ')}${t.column ? ' (' + t.column + ')' : ''}`;
+  return t.name.replace(/^is_empty_fct_/, 'Empty: ').replace(/_$/, '').replace(/_/g, ' ');
+}
+const testType = t => t.test_name ? (TEST_WORDS[t.test_name] || t.test_name) : (t.depends_on.length ? 'Custom' : 'Project check');
+
+/* adjacency */
+function buildAdj(withTests) {
+  const parents = {}, children = {};
+  const add = (p, c) => { (parents[c] = parents[c] || []).push(p); (children[p] = children[p] || []).push(c); };
+  GRAPH.forEach(n => n.depends_on.forEach(d => { if (GRAPH_SET.has(d)) add(d, n.unique_id); }));
+  if (withTests) TESTS.forEach(t => testTargets(t).forEach(d => add(d, t.unique_id)));
+  return { parents, children };
+}
+const ADJ = { false: buildAdj(false), true: buildAdj(true) };
+function walk(start, map) { const out = new Set(); const st = [...(map[start] || [])]; while (st.length) { const x = st.pop(); if (out.has(x)) continue; out.add(x); (map[x] || []).forEach(y => st.push(y)); } return out; }
+const ancestors = (uid, wt) => walk(uid, ADJ[wt].parents);
+const descendants = (uid, wt) => walk(uid, ADJ[wt].children);
+
+/* incidents -> nodes */
+const KIND = { test_failure: 'Failing test', anomaly: 'Anomaly', schema_change: 'Schema change', silence: 'Missed schedule', cost: 'Cost spike' };
+function resolveInc(inc) {
+  const key = inc.node || ''; const [base, detail] = key.split('|');
+  if (inc.node_unique_id && BY_ID[inc.node_unique_id]) { const n = BY_ID[inc.node_unique_id]; return n.type === 'test' ? { nodeId: testTargets(n).slice(-1)[0] || null, testId: n.unique_id, detail } : { nodeId: n.unique_id, detail }; }
+  if (BY_ID[key]) { const n = BY_ID[key]; return n.type === 'test' ? { nodeId: testTargets(n).slice(-1)[0] || null, testId: key } : { nodeId: key }; }
+  if (BY_NAME[base]) return { nodeId: BY_NAME[base], detail };
+  return { nodeId: null, missing: base, detail };
+}
+const INCIDENTS = DATA.incidents.map(i => ({ ...i, ...resolveInc(i) }));
+
+/* SLAs, freshness */
+const SLA = {};
+DATA.slas.forEach(s => {
+  const every = durMin(s.expected_every), grace = durMin(s.grace), last = ts(s.last_success_at);
+  const due = last + every * 60000, deadline = due + grace * 60000;
+  const silence = INCIDENTS.find(i => i.kind === 'silence' && i.nodeId === s.unique_id);
+  const missed = !!silence || NOW > deadline;
+  const left = (deadline - NOW) / 60000;
+  SLA[s.unique_id] = { ...s, every, grace, last, due, deadline, silence, missed, left, ageMin: (NOW - last) / 60000, state: missed ? 'missed' : left < 120 ? 'soon' : 'ontime' };
+});
+const SRC_LAG = {}, SRC_MAX = {}; DATA.source_freshness.forEach(f => { SRC_LAG[f.unique_id] = f.freshness_lag_min; if (f.max_lag_min != null) SRC_MAX[f.unique_id] = f.max_lag_min; });
+const srcLate = uid => SRC_LAG[uid] != null && SRC_MAX[uid] != null && SRC_LAG[uid] > SRC_MAX[uid];
+function freshAge(uid) { if (SRC_LAG[uid] != null) return SRC_LAG[uid]; if (SLA[uid]) return SLA[uid].ageMin; return null; }
+
+/* metrics */
+const METRICS = {};
+DATA.metrics.forEach(m => { const k = m.unique_id + '|' + m.metric; const g = METRICS[k] = METRICS[k] || { key: k, uid: m.unique_id, relation: m.relation, metric: m.metric, engines: {} }; (g.engines[m.engine] = g.engines[m.engine] || []).push(m); });
+Object.values(METRICS).forEach(g => Object.values(g.engines).forEach(a => a.sort((x, y) => x.observed_at.localeCompare(y.observed_at))));
+const metricsOf = uid => Object.values(METRICS).filter(g => g.uid === uid);
+const metricAnomalous = g => Object.values(g.engines).some(a => a.length && a[a.length - 1].anomaly);
+const ENGINE_LABEL = e => e === 'cortex' ? 'Cortex' : 'Native';
+const METRIC_UNIT = { row_count: { axis: 'Rows', u: 'rows', name: 'Row count', fmt: fmtN }, freshness_lag_minutes: { axis: 'Minutes behind', u: 'min', name: 'Freshness lag', fmt: v => String(v) } };
+const unitOf = m => METRIC_UNIT[m] || { axis: 'Value', u: '', name: m.replace(/_/g, ' '), fmt: v => String(v) };
+const SCHEMA_OF = name => DATA.schema_changes.filter(c => c.relation === name);
+
+/* cost */
+const COST = {};
+GRAPH.forEach(n => {
+  const arr = EXEC[n.unique_id].map(e => e ? e.credits : null);
+  const has = EXEC[n.unique_id].some(Boolean);
+  const vals = arr.filter(v => v != null);
+  const recent = vals.slice(-4), base = vals.slice(0, -4);
+  const ratio = recent.length && base.length && median(base) > 0 ? mean(recent) / median(base) : null;
+  COST[n.unique_id] = { arr, total: sum(vals), recentAvg: mean(recent), baseMed: median(base), ratio, has };
+});
+const COST_MAX = Math.max(...Object.values(COST).map(c => c.total), 0.0001);
+const PENDING_RUNS = RUNS.filter(r => r.credits == null).length;
+
+function rootCauseOf(tid) {
+  const rs = TRES[tid] || []; const r = [...rs].reverse().find(x => x && isBad(x) && x.root_cause_unique_id);
+  const inc = INCIDENTS.find(i => i.testId === tid);
+  const id = (r && r.root_cause_unique_id) || (inc && BY_ID[inc.root_cause] ? inc.root_cause : null);
+  return id ? { id, kind: (r && r.root_cause_kind) || (inc && inc.root_cause_kind) || null } : null;
+}
+const RC_KIND = { stale_source: 'stale source', schema_change: 'schema change' };
+function rootEvidence(root) {
+  if (!root || !BY_ID[root.id]) return '';
+  const n = BY_ID[root.id];
+  if (root.kind === 'schema_change') { const ch = DATA.schema_changes.filter(c => c.relation === n.name); return ch.length ? ch.map(c => `${c.column} ${c.change.replace('_', ' ')}`).join(', ') : 'schema change'; }
+  if (SRC_LAG[root.id] != null) return `${fmtMin(SRC_LAG[root.id])} behind the source system`;
+  return RC_KIND[root.kind] || root.kind || '';
+}
+/* status + reasons */
+const SEV_RANK = { failed: 3, stale: 2, warn: 1, ok: 0, notrun: -1 };
+const STATUS_LABEL = { failed: 'Failed', warn: 'Warning', stale: 'Missed schedule', ok: 'OK', notrun: 'Not run' };
+const NODE = {};
+GRAPH.forEach(n => {
+  const uid = n.unique_id; const reasons = [];
+  const le = EXEC[uid][LAST];
+  if (le && le.status === 'error') reasons.push({ sev: 'failed', text: `Build failed in the latest run (${fmtDT(ts(RUNS[LAST].started_at))})` });
+  const failing = TESTS_OF[uid].filter(t => isBad(TRES[t][LAST]));
+  failing.forEach(t => {
+    const inc = INCIDENTS.find(i => i.testId === t);
+    reasons.push({ sev: 'failed', text: `${testLabel(BY_ID[t])} failing, ${TRES[t][LAST].failures} rows`, testId: t, incident: inc && inc.incident_key });
+  });
+  INCIDENTS.filter(i => i.nodeId === uid && !(i.testId && failing.includes(i.testId))).forEach(i => {
+    reasons.push({ sev: i.kind === 'silence' ? 'stale' : i.severity === 'error' ? 'failed' : 'warn', text: i.title, incident: i.incident_key });
+  });
+  TESTS.forEach(t => { if (!isBad(TRES[t.unique_id][LAST])) return; const rt = rootCauseOf(t.unique_id);
+    if (rt && rt.id === uid) reasons.push({ sev: 'warn', text: `Named root cause of the failing test ${testLabel(t)} on ${testTargets(t).map(m => BY_ID[m].name).join(', ')}: ${RC_KIND[rt.kind] || rt.kind || 'unknown'} (${rootEvidence(rt)})`, testId: t.unique_id, isRoot: true }); });
+  if (srcLate(uid)) reasons.push({ sev: 'stale', text: `${fmtMin(SRC_LAG[uid])} behind the source system, limit ${fmtMin(SRC_MAX[uid])}` });
+  let status = reasons.length ? reasons.reduce((a, r) => SEV_RANK[r.sev] > SEV_RANK[a] ? r.sev : a, 'ok') : (EXEC[uid].some(Boolean) ? 'ok' : 'notrun');
+  NODE[uid] = { status, reasons, failing };
+});
+const PROBLEMS = GRAPH.map(n => n.unique_id).filter(u => ['failed', 'stale', 'warn'].includes(NODE[u].status))
+  .sort((a, b) => SEV_RANK[NODE[b].status] - SEV_RANK[NODE[a].status] || BY_ID[a].name.localeCompare(BY_ID[b].name));
+
+/* test helpers */
+function failingSince(tid) { const r = TRES[tid]; if (!isBad(r[LAST])) return null; let i = LAST; while (i > 0 && isBad(r[i - 1])) i--; return i; }
+const LATEST_FAILING = TESTS.filter(t => isBad(TRES[t.unique_id][LAST])).map(t => t.unique_id);
+const FAILS_PER_RUN = RUNS.map((_, i) => TESTS.filter(t => isBad(TRES[t.unique_id][i])).length);
+
+/* ============================== layout ============================== */
+const NODE_W = 200, NODE_H = 54, COL = 248, ROW = 74, LANE_GAP = 28, TEST_W = 180, TEST_H = 28;
+function layoutLanes() {
+  const g = new dagre.graphlib.Graph(); g.setGraph({ rankdir: 'LR', nodesep: 20, ranksep: 50 }); g.setDefaultEdgeLabel(() => ({}));
+  GRAPH.forEach(n => g.setNode(n.unique_id, { width: NODE_W, height: NODE_H }));
+  GRAPH.forEach(n => n.depends_on.forEach(d => { if (GRAPH_SET.has(d)) g.setEdge(d, n.unique_id); }));
+  dagre.layout(g);
+  const depth = {};
+  const dep = uid => { if (depth[uid] != null) return depth[uid]; const L = laneOf(uid); let d = 0; BY_ID[uid].depends_on.forEach(p => { if (GRAPH_SET.has(p) && laneOf(p) === L) d = Math.max(d, dep(p) + 1); }); return depth[uid] = d; };
+  GRAPH.forEach(n => dep(n.unique_id));
+  const laneCols = {}; GRAPH.forEach(n => { const L = laneOf(n.unique_id); laneCols[L] = Math.max(laneCols[L] || 0, depth[n.unique_id] + 1); });
+  const laneX = {}; let x = 0;
+  LANES.forEach(L => { if (!laneCols[L.key] || L.under) return; laneX[L.key] = x; x += laneCols[L.key] * COL + LANE_GAP; });
+  LANES.forEach(L => { if (L.under && laneCols[L.key]) laneX[L.key] = laneX[L.under] != null ? laneX[L.under] : x; });
+  const pos = {}; const cols = {};
+  GRAPH.forEach(n => { const k = laneOf(n.unique_id) + '|' + depth[n.unique_id]; (cols[k] = cols[k] || []).push(n.unique_id); });
+  Object.entries(cols).forEach(([k, ids]) => {
+    const [L, d] = k.split('|');
+    ids.sort((a, b) => g.node(a).y - g.node(b).y);
+    let prev = -Infinity;
+    ids.forEach(id => { let y = g.node(id).y - NODE_H / 2; if (y < prev + ROW) y = prev + ROW; prev = y; pos[id] = { x: laneX[L] + (+d) * COL, y }; });
+  });
+  const lanes = []; const main = GRAPH.filter(n => !LANES.find(L => L.key === laneOf(n.unique_id)).under);
+  const y0 = Math.min(...main.map(n => pos[n.unique_id].y)) - 78, y1 = Math.max(...main.map(n => pos[n.unique_id].y)) + NODE_H + 26;
+  LANES.forEach(L => {
+    const ids = GRAPH.filter(n => laneOf(n.unique_id) === L.key).map(n => n.unique_id); if (!ids.length) return;
+    if (L.under) {
+      const host = GRAPH.filter(n => laneOf(n.unique_id) === L.under).map(n => pos[n.unique_id].y);
+      const need = 78 + ids.length * ROW + 10;
+      const top = Math.max(host.length ? Math.max(...host) + NODE_H + 44 : y0, Math.min(y1 - need, y1 - 40));
+      ids.forEach((id, i) => pos[id] = { x: laneX[L.key], y: top + 78 + i * ROW });
+      const hostLane = lanes.find(x => x.key === L.under); if (hostLane) hostLane.h = top - 14 - hostLane.y;
+      lanes.push({ key: L.key, label: L.label, x: laneX[L.key] - 22, y: top, w: laneCols[L.under] * COL - 4, h: Math.max(need, y1 - top), count: ids.length });
+    } else {
+      lanes.push({ key: L.key, label: L.label, x: laneX[L.key] - 22, y: y0, w: laneCols[L.key] * COL - 4, h: y1 - y0, count: ids.length });
+    }
+  });
+  return { pos, lanes };
+}
+function layoutWithTests() {
+  const g = new dagre.graphlib.Graph(); g.setGraph({ rankdir: 'LR', nodesep: 8, ranksep: 70 }); g.setDefaultEdgeLabel(() => ({}));
+  GRAPH.forEach(n => g.setNode(n.unique_id, { width: NODE_W, height: NODE_H }));
+  const tests = TESTS.filter(t => testTargets(t).length);
+  tests.forEach(t => g.setNode(t.unique_id, { width: TEST_W, height: TEST_H }));
+  GRAPH.forEach(n => n.depends_on.forEach(d => { if (GRAPH_SET.has(d)) g.setEdge(d, n.unique_id); }));
+  tests.forEach(t => testTargets(t).forEach(d => g.setEdge(d, t.unique_id)));
+  dagre.layout(g);
+  const pos = {};
+  g.nodes().forEach(id => { const nd = g.node(id); pos[id] = { x: nd.x - nd.width / 2, y: nd.y - nd.height / 2 }; });
+  return { pos, lanes: [], tests: tests.map(t => t.unique_id) };
+}
+const LAYOUT_LANES = layoutLanes();
+let LAYOUT_TESTS = null;
+
+/* ============================== theme ============================== */
+const PAL = {
+  light: { surface: '#FFFFFF', surface2: '#F3F6F8', line: '#D6DEE5', lineStrong: '#AEBBC7', ink: '#16202A', ink2: '#4A5866', ink3: '#74818E', ice: '#1668A0', iceSoft: '#DCEBF6',
+    failed: '#CF3A2B', warn: '#B9740A', stale: '#7656D0', ok: '#2C8A5F', notrun: '#8E99A5', failedSoft: '#FBE3E0', warnSoft: '#FCEFD6', staleSoft: '#ECE6FB', okSoft: '#DFF2E8', notrunSoft: '#EDF0F3',
+    lane: { inputs: '#64717E', transient: '#3F93A3', bronze: '#A4652A', silver: '#8795A4', gold: '#BE9116', snapshot: '#6A7BA0' },
+    freshLo: '#E2F0F8', freshHi: '#145A88', costLo: '#FCF1DF', costHi: '#B4400F', mask: 'rgba(232,237,241,0.72)' },
+  dark: { surface: '#1A2430', surface2: '#202C39', line: '#2C3946', lineStrong: '#43525F', ink: '#E4EAF0', ink2: '#A9B6C2', ink3: '#7F8C99', ice: '#62B2E8', iceSoft: '#173247',
+    failed: '#F0685A', warn: '#E9A53A', stale: '#A48BF0', ok: '#4CC08A', notrun: '#7D8996', failedSoft: '#3D2120', warnSoft: '#3A2C14', staleSoft: '#2A2342', okSoft: '#173327', notrunSoft: '#222C36',
+    lane: { inputs: '#8D9AA7', transient: '#5DB3C2', bronze: '#CC8A4C', silver: '#A7B4C2', gold: '#DDB33E', snapshot: '#8C9CC2' },
+    freshLo: '#1D3446', freshHi: '#7CC6F2', costLo: '#33281A', costHi: '#F08A4B', mask: 'rgba(19,27,36,0.72)' },
+};
+const ThemeCtx = createContext({ theme: 'light', P: PAL.light });
+const ViewCtx = createContext(null);
+function hexMix(a, b, t) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * Math.max(0, Math.min(1, t))).toString(16).padStart(2, '0')).join('');
+}
+const lum = h => { const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const statusColor = (P, s) => P[s] || P.notrun;
+const statusSoft = (P, s) => P[s + 'Soft'] || P.notrunSoft;
+const FONT = '"Schibsted Grotesk", system-ui, sans-serif';
+
+/* ============================== icons ============================== */
+const ICONS = {
+  search: 'M11 4a7 7 0 1 0 4.2 12.6l4.1 4.1 1.4-1.4-4.1-4.1A7 7 0 0 0 11 4zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10z',
+  x: 'M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z',
+  left: 'M14.6 6 9 12l5.6 6 1.4-1.4L11.8 12 16 7.4z', right: 'M9.4 6 8 7.4 12.2 12 8 16.6 9.4 18l5.6-6z',
+  up: 'M6 14.6 12 9l6 5.6-1.4 1.4L12 11.8 7.4 16z', down: 'M6 9.4 7.4 8l4.6 4.2L16.6 8 18 9.4 12 15z',
+  sun: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zm0 19h2v3h-2zM1 11h3v2H1zm19 0h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zm12.1 12.1 1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z',
+  moon: 'M12.5 3a9 9 0 1 0 8.5 11.9A7 7 0 0 1 12.5 3z',
+  target: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4z',
+  expand: 'M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z',
+  route: 'M6 3a3 3 0 0 0-1 5.8V15a5 5 0 0 0 5 5h4.2A3 3 0 1 0 14.2 18H10a3 3 0 0 1-3-3V8.8A3 3 0 0 0 6 3z',
+};
+const Icon = ({ n, s = 16 }) => <svg width={s} height={s} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d={ICONS[n]} /></svg>;
+const Logo = () => <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z" fill="var(--ice)" /><path d="M12 7.5 16 10v4.5L12 17l-4-2.5V10z" fill="var(--surface)" /></svg>;
+
+/* ============================== small charts ============================== */
+function Spark({ values, w = 96, h = 24, color, label }) {
+  const pts = values.map((v, i) => [i, v]).filter(p => p[1] != null);
+  if (pts.length < 2) return <span className="muted">—</span>;
+  const max = Math.max(...pts.map(p => p[1])), min = Math.min(...pts.map(p => p[1]));
+  const X = i => 2 + (i / (values.length - 1)) * (w - 4), Y = v => h - 3 - ((v - min) / ((max - min) || 1)) * (h - 6);
+  const d = pts.map((p, k) => (k ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+  const lp = pts[pts.length - 1];
+  return <svg width={w} height={h} role="img" aria-label={label}><title>{label}</title><path d={d} fill="none" stroke={color || 'var(--ice)'} strokeWidth="1.5" /><circle cx={X(lp[0])} cy={Y(lp[1])} r="2.4" fill={color || 'var(--ice)'} /></svg>;
+}
+function RunStrip({ cells, label }) {
+  const C = { ok: 'var(--ok)', fail: 'var(--failed)', none: 'var(--line)', warn: 'var(--warn)' };
+  return <svg width={cells.length * 6} height="14" role="img" aria-label={label}>
+    {cells.map((c, i) => <rect key={i} x={i * 6} y="0" width="4" height="14" rx="1" fill={C[c.s] || C.none}><title>{c.t}</title></rect>)}
+  </svg>;
+}
+function EChart({ option, height = 220, onClick }) {
+  const ref = useRef(null), inst = useRef(null), cb = useRef(onClick);
+  cb.current = onClick;
+  useEffect(() => {
+    inst.current = echarts.init(ref.current, null, { renderer: 'canvas' });
+    inst.current.on('click', p => cb.current && cb.current(p));
+    const ro = new ResizeObserver(() => inst.current && inst.current.resize()); ro.observe(ref.current);
+    return () => { ro.disconnect(); inst.current.dispose(); inst.current = null; };
+  }, []);
+  useEffect(() => { inst.current && inst.current.setOption(option, true); }, [option]);
+  return <div ref={ref} style={{ height, width: '100%' }} />;
+}
+const cTitle = (P, text, sub) => ({ text, subtext: sub, left: 0, top: 0, textStyle: { fontSize: 13, fontWeight: 600, color: P.ink, fontFamily: FONT }, subtextStyle: { color: P.ink3, fontSize: 11.5, fontFamily: FONT } });
+const cAxis = (P, name, extra = {}) => ({ name, nameLocation: 'middle', nameGap: 32, nameTextStyle: { color: P.ink3, fontSize: 11.5, fontFamily: FONT },
+  axisLine: { lineStyle: { color: P.line } }, axisTick: { show: false }, axisLabel: { color: P.ink3, fontSize: 11, fontFamily: FONT },
+  splitLine: { lineStyle: { color: P.line, type: 'dashed' } }, ...extra });
+const cTip = P => ({ backgroundColor: P.surface, borderColor: P.line, textStyle: { color: P.ink, fontFamily: FONT, fontSize: 12 }, extraCssText: 'box-shadow:0 6px 20px rgba(0,0,0,.15);border-radius:8px;' });
+
+function bandOption(P, pts, title, metric) {
+  const U = unitOf(metric || 'row_count');
+  const cats = pts.map(p => fmtDay(ts(p.observed_at)));
+  const f = v => v == null ? '—' : `${Number(v).toLocaleString()} ${U.u}`;
+  return {
+    animation: false, title: cTitle(P, title), grid: { left: 58, right: 12, top: 40, bottom: 44 },
+    tooltip: { ...cTip(P), trigger: 'axis', formatter: ps => { const i = ps[0].dataIndex, p = pts[i];
+      return `<b>${fmtDay(ts(p.observed_at))}</b>, ${ENGINE_LABEL(p.engine)} engine<br>Observed: ${f(p.value)}<br>Expected: ${f(p.expected)}<br>Normal range: ${f(p.lower)} to ${f(p.upper)}${p.score != null ? '<br>Anomaly score: ' + p.score : ''}${p.anomaly ? '<br><b style="color:' + P.failed + '">Outside the range</b>' : ''}`; } },
+    xAxis: cAxis(P, 'Day observed', { type: 'category', data: cats, boundaryGap: false, splitLine: { show: false }, nameGap: 28 }),
+    yAxis: cAxis(P, U.axis, { type: 'value', scale: metric !== 'freshness_lag_minutes', nameGap: 46, axisLabel: { color: P.ink3, fontSize: 11, formatter: U.fmt } }),
+    series: [
+      { name: 'Lower', type: 'line', data: pts.map(p => p.lower), stack: 'band', symbol: 'none', lineStyle: { opacity: 0 }, silent: true },
+      { name: 'Normal range', type: 'line', data: pts.map(p => p.upper - p.lower), stack: 'band', symbol: 'none', lineStyle: { opacity: 0 }, areaStyle: { color: P.ice, opacity: 0.14 }, silent: true },
+      { name: 'Expected', type: 'line', data: pts.map(p => p.expected), symbol: 'none', lineStyle: { color: P.ink3, width: 1, type: 'dashed' } },
+      { name: 'Observed', type: 'line', data: pts.map(p => ({ value: p.value, symbolSize: p.anomaly ? 11 : 4, itemStyle: { color: p.anomaly ? P.failed : P.ice } })), symbol: 'circle', lineStyle: { color: P.ice, width: 2 } },
+    ],
+  };
+}
+function MetricBlock({ g, onFocus, narrow, showName }) {
+  const { P } = useContext(ThemeCtx);
+  const engs = Object.keys(g.engines).sort((a, b) => a === 'native' ? -1 : b === 'native' ? 1 : 0);
+  const U = unitOf(g.metric);
+  const last = e => g.engines[e][g.engines[e].length - 1];
+  const both = engs.length > 1;
+  return <div className="box" style={{ marginBottom: 12 }}>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+      {showName && <NodeLink uid={GRAPH_SET.has(g.uid) ? g.uid : null} missing={g.relation} onFocus={onFocus} />}
+      <span style={{ fontWeight: 600 }}>{U.name}</span><span style={{ flex: 1 }} />
+      {engs.map(e => <span key={e} className="engine" style={last(e).anomaly ? { color: P.failed, borderColor: P.failed } : undefined}>{ENGINE_LABEL(e)}: {last(e).anomaly ? 'anomaly' : 'normal'}{last(e).score != null ? `, score ${last(e).score}` : ''}</span>)}
+    </div>
+    {both && <p className="note" style={{ margin: '0 0 6px' }}>Shadow scoring: both engines scored the same points. {engs.every(e => last(e).anomaly) ? 'They agree the latest point is an anomaly.' : engs.some(e => last(e).anomaly) ? 'They disagree on the latest point.' : 'They agree the latest point is normal.'}</p>}
+    <div className={'cols' + (both && !narrow ? ' two' : '')}>
+      {engs.map(e => <EChart key={e} height={narrow ? 200 : 220} option={bandOption(P, g.engines[e], `${U.name} of ${g.relation}, ${ENGINE_LABEL(e)} engine`, g.metric)} />)}
+    </div>
+  </div>;
+}
+
+/* ============================== canvas nodes ============================== */
+function overlayLook(P, overlay, uid) {
+  const st = NODE[uid].status;
+  if (overlay === 'status') {
+    if (st === 'ok') return { bg: P.surface, border: P.lineStrong, ink: P.ink, dot: P.ok };
+    return { bg: statusSoft(P, st), border: statusColor(P, st), ink: P.ink, dot: statusColor(P, st) };
+  }
+  if (overlay === 'fresh') {
+    const a = freshAge(uid); if (a == null) return { unmeasured: true };
+    const bg = hexMix(P.freshLo, P.freshHi, Math.sqrt(a / 720)); return { bg, border: srcLate(uid) || (SLA[uid] && SLA[uid].missed) ? P.failed : hexMix(P.freshLo, P.freshHi, 1), ink: lum(bg) < 0.45 ? '#FFFFFF' : '#16202A' };
+  }
+  if (overlay === 'cost') {
+    const c = COST[uid]; if (!c.has) return { unmeasured: true };
+    const bg = hexMix(P.costLo, P.costHi, Math.sqrt(c.total / COST_MAX)); return { bg, border: hexMix(P.costLo, P.costHi, 1), ink: lum(bg) < 0.45 ? '#FFFFFF' : '#16202A' };
+  }
+  if (overlay === 'tests') {
+    const n = TESTS_OF[uid].length; if (!n) return { unmeasured: true };
+    return NODE[uid].failing.length ? { bg: P.failedSoft, border: P.failed, ink: P.ink } : { bg: P.okSoft, border: P.ok, ink: P.ink };
+  }
+  if (overlay === 'sched') {
+    const s = SLA[uid]; if (!s) return { unmeasured: true };
+    const k = s.state === 'missed' ? 'failed' : s.state === 'soon' ? 'warn' : 'ok';
+    return { bg: statusSoft(P, k), border: statusColor(P, k), ink: P.ink };
+  }
+  return {};
+}
+function overlaySub(overlay, uid) {
+  const n = BY_ID[uid], st = NODE[uid].status;
+  if (overlay === 'status') return st === 'ok' ? (n.materialization || n.type) : `${STATUS_LABEL[st]}${n.type === 'source' ? ' (source)' : ''}`;
+  if (overlay === 'fresh') { if (SRC_LAG[uid] != null) return `${fmtMin(SRC_LAG[uid])} behind${SRC_MAX[uid] != null ? `, limit ${fmtMin(SRC_MAX[uid])}` : ''}`; if (SLA[uid]) return `last success ${fmtMin(SLA[uid].ageMin)} ago`; return 'not measured'; }
+  if (overlay === 'cost') { const c = COST[uid]; return c.has ? `${c.total.toFixed(3)} cr in ${RUNS.length} runs` : 'no compute'; }
+  if (overlay === 'tests') { const t = TESTS_OF[uid].length, f = NODE[uid].failing.length; return !t ? 'no tests' : f ? `${f} of ${t} failing` : `${t} passing`; }
+  if (overlay === 'sched') { const s = SLA[uid]; if (!s) return 'no schedule declared'; return s.state === 'missed' ? `missed ${s.expected_every} schedule` : `due by ${fmtDT(s.deadline)}`; }
+  return '';
+}
+
+function ModelNode({ id }) {
+  const v = useContext(ViewCtx); const { P } = useContext(ThemeCtx);
+  const zoom = useStore(s => s.transform[2]);
+  const far = zoom < 0.82;
+  const n = BY_ID[id], st = NODE[id].status;
+  const look = overlayLook(P, v.overlay, id);
+  const lane = laneOf(id);
+  const nt = TESTS_OF[id].length, nf = NODE[id].failing.length;
+  const cls = ['n'];
+  if (far) cls.push('far');
+  if (look.unmeasured) cls.push('unmeasured');
+  if (v.hiddenLanes.has(lane)) cls.push('off');
+  else if (v.focusSet && !v.focusSet.has(id)) cls.push('dim');
+  else if (v.legendFilter && v.overlay === 'status' && st !== v.legendFilter) cls.push('dim');
+  if (v.selected === id) cls.push('sel'); else if (v.focusSet && v.focusSet.has(id) && !v.rc) cls.push('inpath');
+  const isProblem = PROBLEMS.includes(id);
+  if (isProblem) cls.push('glow');
+  const style = { background: look.bg, borderColor: look.border, color: look.ink, '--g': statusColor(P, st) };
+  const ratio = COST[id].ratio;
+  const rcFlag = v.rc && v.rcModels.includes(id) ? v.rcFlag : v.rc && v.rcRoot === id ? v.rcRootFlag : null;
+  return (
+    <div className={cls.join(' ')} style={style}>
+      <Handle type="target" position={Position.Left} />
+      <div className="n-stripe" style={{ background: P.lane[lane] }} />
+      <div className="n-main">
+        <div className="n-name">{n.name}</div>
+        {!far && <div className="n-sub">{overlaySub(v.overlay, id)}</div>}
+      </div>
+      <div className="n-side">
+        {v.overlay === 'status' && !look.unmeasured && <span className="dot" style={{ background: look.dot }} />}
+        {v.overlay === 'cost' && ratio && ratio >= 1.5 ? <span className="n-badge hot" title="Credits in the last 4 attributed runs vs the earlier median">{ratio.toFixed(1)}×</span>
+          : nt > 0 && !v.showTests ? <span className={'n-badge' + (nf ? ' bad' : '')} title={`${nt} tests, ${nf} failing in the latest run`}>{nf ? `${nf}/${nt}` : nt}{far ? '' : ' tests'}</span> : null}
+      </div>
+      {rcFlag && <div className={'n-flag' + (v.rcRoot === id ? ' root' : '')}>{rcFlag}</div>}
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+function TestNode({ id }) {
+  const v = useContext(ViewCtx);
+  const t = BY_ID[id]; const bad = isBad(TRES[id][LAST]);
+  const cls = ['t']; if (bad) cls.push('fail');
+  if (v.focusSet && !v.focusSet.has(id)) cls.push('dim');
+  if (v.selected === id) cls.push('sel');
+  return <div className={cls.join(' ')} title={t.name}><Handle type="target" position={Position.Left} /><span className="dot" style={{ background: bad ? 'var(--failed)' : 'var(--ok)' }} /><span>{testLabel(t)}</span></div>;
+}
+function LaneNode({ data }) {
+  const v = useContext(ViewCtx); const { P } = useContext(ThemeCtx);
+  return <div className={'lane' + (v.hiddenLanes.has(data.key) ? ' off' : '')} style={{ width: data.w, height: data.h, '--lc': P.lane[data.key] }}>
+    <div className="lane-title">{data.label}</div><div className="lane-count">{data.count} {data.count === 1 ? 'node' : 'nodes'}</div>
+  </div>;
+}
+const NODE_TYPES = { model: ModelNode, test: TestNode, lane: LaneNode };
+
+/* ============================== legend + floating ============================== */
+const OVERLAYS = [
+  { key: 'status', label: 'Status' }, { key: 'fresh', label: 'Freshness' }, { key: 'cost', label: 'Cost heat' }, { key: 'tests', label: 'Tests' }, { key: 'sched', label: 'Schedules' },
+];
+function Legend({ overlay, legendFilter, setLegendFilter, showTests, narrow }) {
+  const { P } = useContext(ThemeCtx);
+  const [min, setMin] = useState(false);
+  useEffect(() => { if (narrow) setMin(true); }, [narrow]);
+  const counts = useMemo(() => { const c = {}; GRAPH.forEach(n => c[NODE[n.unique_id].status] = (c[NODE[n.unique_id].status] || 0) + 1); return c; }, []);
+  let body;
+  if (overlay === 'status') body = <>
+    <h4>Status in the latest run</h4>
+    {['failed', 'stale', 'warn', 'ok', 'notrun'].map(s => <button key={s} className="row" aria-pressed={legendFilter === s} onClick={() => setLegendFilter(legendFilter === s ? null : s)}>
+      <span className="dot" style={{ background: statusColor(P, s) }} />{STATUS_LABEL[s]}<b>{counts[s] || 0}</b></button>)}
+    <p>Click a status to fade the rest. Sources are never built, so they show as not run.</p></>;
+  else if (overlay === 'fresh') body = <>
+    <h4>Freshness</h4><div className="ramp" style={{ background: `linear-gradient(90deg, ${P.freshLo}, ${P.freshHi})` }} />
+    <div className="ends"><span>0 min</span><span>12 h or more</span></div>
+    <p>Sources: time behind the source system; a red border means over its limit. Scheduled models: time since the last success. Dashed nodes are not measured.</p></>;
+  else if (overlay === 'cost') body = <>
+    <h4>Credits, all {RUNS.length} runs</h4><div className="ramp" style={{ background: `linear-gradient(90deg, ${P.costLo}, ${P.costHi})` }} />
+    <div className="ends"><span>0 cr</span><span>{COST_MAX.toFixed(3)} cr</span></div>
+    <p>A badge like 2.4× means the last 4 attributed runs cost that much more than the earlier median. {PENDING_RUNS} runs are still waiting for credit attribution.</p></>;
+  else if (overlay === 'tests') body = <>
+    <h4>Tests in the latest run</h4>
+    <div className="row" as="div"><span className="dot" style={{ background: P.failed }} />At least one failing<b>{GRAPH.filter(n => NODE[n.unique_id].failing.length).length}</b></div>
+    <div className="row"><span className="dot" style={{ background: P.ok }} />All passing<b>{GRAPH.filter(n => TESTS_OF[n.unique_id].length && !NODE[n.unique_id].failing.length).length}</b></div>
+    <div className="row"><span className="dot" style={{ border: `1.5px dashed ${P.lineStrong}` }} />No tests<b>{GRAPH.filter(n => !TESTS_OF[n.unique_id].length).length}</b></div>
+    <p>{TESTS.length} tests in total. {PROJECT_CHECKS.length} project checks are not tied to a model{showTests ? ' and are not drawn' : ''}. Turn on “Tests on canvas” to draw the rest.</p></>;
+  else body = <>
+    <h4>Schedules</h4>
+    {[['failed', 'Missed schedule', 'missed'], ['warn', 'Due within 2 hours', 'soon'], ['ok', 'On time', 'ontime']].map(([c, l, k]) =>
+      <div key={k} className="row"><span className="dot" style={{ background: statusColor(P, c) }} />{l}<b>{Object.values(SLA).filter(s => s.state === k).length}</b></div>)}
+    <p>{Object.keys(SLA).length} models declare a schedule; the others are faded. Report time: {fmtDT(NOW)}.</p></>;
+  const title = { status: 'Status', fresh: 'Freshness', cost: 'Cost heat', tests: 'Tests', sched: 'Schedules' }[overlay];
+  if (min) return <div className="float card legend min"><h4>{title} legend<button className="iconbtn" style={{ marginLeft: 6 }} aria-label="Show legend" onClick={() => setMin(false)}><Icon n="down" /></button></h4></div>;
+  return <div className="float card legend"><button className="iconbtn" style={{ position: 'absolute', top: 4, right: 4, width: 26, height: 26 }} aria-label="Hide legend" onClick={() => setMin(true)}><Icon n="up" s={14} /></button>{body}</div>;
+}
+
+function ProblemsPill({ idx, onJump }) {
+  const n = PROBLEMS.length;
+  const cur = idx != null ? PROBLEMS[idx] : null;
+  return <div className="float card pill" role="group" aria-label="Problems">
+    {n > 0 && <button className="iconbtn" aria-label="Previous problem" onClick={() => onJump(idx == null ? n - 1 : (idx - 1 + n) % n)}><Icon n="left" /></button>}
+    <button className="pmain" onClick={() => n && onJump(idx == null ? 0 : (idx + 1) % n)}>
+      <span className={'pnum' + (n ? '' : ' zero')}>{n}</span>
+      {n === 1 ? 'problem' : 'problems'}
+      {cur && <span className="pcur">{BY_ID[cur].name}, {idx + 1} of {n}</span>}
+    </button>
+    {n > 0 && <button className="iconbtn" aria-label="Next problem" onClick={() => onJump(idx == null ? 0 : (idx + 1) % n)}><Icon n="right" /></button>}
+  </div>;
+}
+
+function Toolbar({ overlay, setOverlay, showTests, setShowTests, hiddenLanes, toggleLane, compact }) {
+  const { P } = useContext(ThemeCtx);
+  const [pop, setPop] = useState(false);
+  return <div className={'float card toolbar' + (compact ? ' compact' : '')}>
+    <div className="seg" role="group" aria-label="Map layer">
+      {OVERLAYS.map((o, i) => <button key={o.key} aria-pressed={overlay === o.key} onClick={() => setOverlay(o.key)} title={`${o.label} (key ${i + 1})`}>{o.label}</button>)}
+    </div>
+    <div className="vsep" />
+    <div className="chips lanechips" role="group" aria-label="Layers">
+      {LANES.filter(L => L.key !== 'snapshot').map(L => <button key={L.key} className="chip lanechip" aria-pressed={!hiddenLanes.has(L.key)} onClick={() => toggleLane(L.key)}>
+        <span className="dot" style={{ background: P.lane[L.key] }} />{L.label}</button>)}
+    </div>
+    {compact && <div style={{ position: 'relative' }}><button className="toggle" aria-expanded={pop} onClick={() => setPop(!pop)}>Layers{hiddenLanes.size ? ` (${hiddenLanes.size} hidden)` : ''}<Icon n={pop ? 'down' : 'up'} s={14} /></button>
+      {pop && <div className="card layerpop">{LANES.filter(L => L.key !== 'snapshot').map(L => <button key={L.key} className="chip lanechip" aria-pressed={!hiddenLanes.has(L.key)} onClick={() => toggleLane(L.key)}>
+        <span className="dot" style={{ background: P.lane[L.key] }} />{L.label}</button>)}</div>}</div>}
+    <div className="vsep lanechips" />
+    <button className="toggle" aria-pressed={showTests} onClick={() => setShowTests(!showTests)} title="Key T"><span className="sw" />Tests on canvas</button>
+  </div>;
+}
+
+function sameColumnChecks(tid) {
+  const t = BY_ID[tid]; if (!t || !t.column) return [];
+  const col = t.column.toLowerCase();
+  const models = testTargets(t);
+  const up = new Set(); models.forEach(m => ancestors(m, false).forEach(a => up.add(a)));
+  const down = new Set(); models.forEach(m => descendants(m, false).forEach(a => down.add(a)));
+  const out = [];
+  TESTS.forEach(o => { if (o.unique_id === tid || (o.column || '').toLowerCase() !== col) return;
+    testTargets(o).forEach(m => { const where = models.includes(m) ? 'same model' : up.has(m) ? 'upstream' : down.has(m) ? 'downstream' : null;
+      if (where) out.push({ test: o.unique_id, model: m, where, bad: isBad(TRES[o.unique_id][LAST]) }); }); });
+  return out;
+}
+function RootCauseCard({ tid, onFocus, onClose, openSheet }) {
+  const t = BY_ID[tid]; const models = testTargets(t);
+  const chain = useMemo(() => { const s = new Set(models); models.forEach(m => ancestors(m, false).forEach(a => s.add(a)));
+    const order = { inputs: 0, transient: 1, bronze: 2, silver: 3, gold: 4, snapshot: 5 };
+    return [...s].sort((a, b) => order[laneOf(a)] - order[laneOf(b)] || LAYOUT_LANES.pos[a].x - LAYOUT_LANES.pos[b].x); }, [tid]);
+  const since = failingSince(tid); const checks = sameColumnChecks(tid);
+  const inc = INCIDENTS.find(i => i.testId === tid);
+  const root = rootCauseOf(tid); const rootLinked = root && models.some(m => ancestors(m, false).has(root.id));
+  return <aside className="panel rpanel" role="region" aria-label="Root-cause path">
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <div style={{ flex: 1 }}><div className="muted" style={{ fontSize: 12 }}>Root-cause path</div><h4>{testLabel(t)} on {models.map(m => BY_ID[m].name).join(', ')}</h4></div>
+      <button className="iconbtn" aria-label="Close root-cause path" onClick={onClose}><Icon n="x" /></button>
+    </div>
+    <p className="note" style={{ color: 'var(--ink-2)' }}>{since != null ? <>Failing in the last {LAST - since + 1} runs, since {fmtDT(ts(RUNS[since].started_at))}, with {TRES[tid][LAST].failures} bad rows each time.</> : 'Passing in the latest run.'}</p>
+    {root && BY_ID[root.id] && <div className="reason" style={{ background: 'var(--failed-soft)', margin: '8px 0 0' }}><span className="dot" style={{ background: 'var(--failed)' }} />
+      <div><div>Named root cause: <button className="linkish" onClick={() => onFocus(root.id)}>{BY_ID[root.id].name}</button>{root.kind ? `, ${RC_KIND[root.kind] || root.kind}` : ''}</div>
+        <div className="muted" style={{ fontSize: 12 }}>{root.kind === 'schema_change' ? DATA.schema_changes.filter(c => c.relation === BY_ID[root.id].name).map(c => `${c.column} ${c.change.replace('_', ' ')} on ${fmtDT(ts(c.detected_at))}`).join('; ') + '. ' : ''}
+          {SRC_LAG[root.id] != null ? `${fmtMin(SRC_LAG[root.id])} behind the source system${SRC_MAX[root.id] != null ? `, limit ${fmtMin(SRC_MAX[root.id])}` : ''}. ` : ''}
+          {rootLinked ? 'The red path on the graph runs from it to the failing test along real lineage edges.' : 'The lineage has no edge from it to the models, so the link drawn on the graph comes from the root cause icecore recorded.'}</div></div></div>}
+    <ol className="steps">
+      {chain.map(u => { const e = EXEC[u][LAST]; const nt = TESTS_OF[u].length; const nf = NODE[u].failing.length;
+        const col = e && e.status === 'error' ? 'var(--failed)' : nf ? 'var(--failed)' : srcLate(u) ? 'var(--stale)' : 'var(--ok)';
+        const isRoot = root && root.id === u; const before = rootLinked && !isRoot && !descendants(root.id, false).has(u);
+        return <li key={u} style={{ opacity: before ? 0.55 : 1 }}><i style={{ background: isRoot ? 'var(--ink)' : col }} /><button onClick={() => onFocus(u)}>{BY_ID[u].name}</button>{isRoot && <span className="engine" style={{ marginLeft: 6, color: 'var(--failed)', borderColor: 'var(--failed)' }}>root cause</span>}
+          <div className="muted" style={{ fontSize: 12 }}>{LAYER_LABEL[BY_ID[u].layer]}, {e ? `built ${e.status === 'error' ? 'with an error' : 'fine'} in ${fmtS(e.execution_time_s)}` : SRC_LAG[u] != null ? `${fmtMin(SRC_LAG[u])} behind` : 'not built'}, {nt ? `${nt - nf} of ${nt} tests pass` : 'no tests'}</div></li>; })}
+    </ol>
+    <div style={{ fontSize: 12.5 }}>
+      <b>Same column ({t.column}) checked elsewhere</b>
+      {checks.filter(c => c.where !== 'same model').length ? <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+        {checks.filter(c => c.where !== 'same model').map(c => <li key={c.test + c.model}>{c.where}: <button className="linkish" onClick={() => onFocus(c.model)}>{BY_ID[c.model].name}</button>, {testLabel(BY_ID[c.test])} {c.bad ? 'fails too' : 'passes'}</li>)}
+      </ul> : null}
+      <p className="note">{checks.some(c => c.where === 'upstream') ? '' : `No upstream model tests ${t.column}. A not-null test on the first bronze model would show where the bad rows enter.`}</p>
+    </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+      {inc && <button className="btn sm" onClick={() => openSheet('incidents')}>Open incident</button>}
+      <button className="btn sm" onClick={() => onFocus(tid, { tab: 'overview' })}>Test history</button>
+      <button className="btn sm" onClick={onClose}>Back to {models.map(m => BY_ID[m].name).join(', ')}</button>
+    </div>
+  </aside>;
+}
+
+/* ============================== node panel ============================== */
+function NodePanel({ uid, tab, setTab, onFocus, onTrace, onClose, openSheet, acks }) {
+  const { P } = useContext(ThemeCtx);
+  const n = BY_ID[uid];
+  if (!n) return null;
+  if (n.type === 'test') return <TestPanel uid={uid} onFocus={onFocus} onTrace={onTrace} onClose={onClose} />;
+  const st = NODE[uid].status; const lane = laneOf(uid);
+  const tabs = [['overview', 'Overview'], ['tests', `Tests ${TESTS_OF[uid].length}`], ['metrics', 'Metrics'], ['schema', 'Schema'], ['cost', 'Cost']];
+  const up = ancestors(uid, false), down = descendants(uid, false);
+  const parents = (ADJ.false.parents[uid] || []), kids = (ADJ.false.children[uid] || []);
+  return <aside className="panel" aria-label={`Details for ${n.name}`}>
+    <div className="ph">
+      <div className="kind"><span className="dot" style={{ background: P.lane[lane] }} />{n.type}, {LAYER_LABEL[n.layer]}{n.materialization && n.type === 'model' ? `, ${n.materialization}` : ''}
+        <span className="spacer" /><button className="iconbtn" aria-label="Close panel" onClick={onClose}><Icon n="x" /></button></div>
+      <h2>{n.name}</h2>
+      <span className="status-chip" style={{ background: statusSoft(P, st), color: statusColor(P, st) }}><span className="dot" style={{ background: statusColor(P, st) }} />{STATUS_LABEL[st]}</span>
+      <div className="acts">
+        <button className="btn" onClick={() => onFocus(uid, { center: true })}><Icon n="target" s={14} />Center on graph</button>
+        {NODE[uid].failing.map(t => <button key={t} className="btn danger" onClick={() => onTrace(t)}><Icon n="route" s={14} />Trace {testLabel(BY_ID[t])}</button>)}
+      </div>
+    </div>
+    <div className="tabs" role="tablist">{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}</div>
+    <div className="pb">
+      {tab === 'overview' && <>
+        <div className="sec">
+          {NODE[uid].reasons.length ? NODE[uid].reasons.map((r, i) => <div key={i} className="reason" style={{ background: statusSoft(P, r.sev) }}>
+            <span className="dot" style={{ background: statusColor(P, r.sev) }} /><div style={{ flex: 1 }}>{r.text}{r.isRoot && <> <button className="linkish" onClick={() => onTrace(r.testId)}>Trace the path</button></>}
+              {r.incident && <div className="muted" style={{ fontSize: 12 }}>Incident {r.incident}{acks[r.incident] || (INCIDENTS.find(i => i.incident_key === r.incident) || {}).acknowledged_by ? `, acknowledged by ${acks[r.incident] || INCIDENTS.find(i => i.incident_key === r.incident).acknowledged_by}` : ', not acknowledged'} <button className="linkish" onClick={() => openSheet('incidents')}>open</button></div>}</div></div>)
+            : <div className="ink2">{st === 'notrun' ? 'Sources are not built by dbt; icecore watches their freshness and tests.' : 'Healthy in the latest run.'}</div>}
+        </div>
+        {n.type !== 'source' && <div className="sec"><h3>Last {NR} runs</h3>
+          <RunStrip label="Build and test result per run, oldest first" cells={RUNS.map((r, i) => { const e = EXEC[uid][i]; const tf = TESTS_OF[uid].filter(t => isBad(TRES[t][i])).length;
+            return { s: !e ? 'none' : e.status === 'error' ? 'fail' : tf ? 'fail' : 'ok', t: `${fmtDT(ts(r.started_at))}: ${!e ? 'not built' : e.status === 'error' ? 'build failed' : 'built'}${tf ? `, ${tf} test failing` : ''}` }; })} />
+          <div className="note">Oldest on the left. Red: build error or a failing test.</div></div>}
+        {n.type !== 'source' && <div className="sec"><EChart height={170} option={{
+          animation: false, title: cTitle(P, 'Build time per run'), grid: { left: 44, right: 8, top: 34, bottom: 36 }, tooltip: { ...cTip(P), trigger: 'axis', valueFormatter: v => v == null ? '—' : v + ' s' },
+          xAxis: cAxis(P, 'Run start', { type: 'category', data: RUNS.map(r => fmtDay(ts(r.started_at))), splitLine: { show: false }, nameGap: 24, axisLabel: { color: P.ink3, fontSize: 10, interval: 5 } }),
+          yAxis: cAxis(P, 'Seconds', { type: 'value', nameGap: 30 }),
+          series: [{ type: 'line', data: EXEC[uid].map(e => e ? e.execution_time_s : null), symbol: 'circle', symbolSize: 4, itemStyle: { color: P.ice }, lineStyle: { color: P.ice, width: 2 },
+            markPoint: undefined }],
+        }} /></div>}
+        {(SLA[uid] || SRC_LAG[uid] != null) && <div className="sec"><h3>{SLA[uid] ? 'Schedule' : 'Freshness'}</h3>
+          {SLA[uid] ? <dl className="kv"><dt>Expected every</dt><dd>{SLA[uid].expected_every}, grace {SLA[uid].grace}</dd><dt>Last success</dt><dd>{fmtDT(SLA[uid].last)}</dd><dt>Due by</dt><dd>{fmtDT(SLA[uid].deadline)}</dd>
+            <dt>State</dt><dd style={{ color: statusColor(P, SLA[uid].missed ? 'failed' : SLA[uid].state === 'soon' ? 'warn' : 'ok'), fontWeight: 600 }}>{SLA[uid].missed ? 'Missed schedule' : SLA[uid].state === 'soon' ? 'Due soon' : 'On time'}</dd></dl>
+            : <dl className="kv"><dt>Behind source</dt><dd style={{ color: srcLate(uid) ? P.failed : undefined, fontWeight: srcLate(uid) ? 600 : 400 }}>{fmtMin(SRC_LAG[uid])}</dd>{SRC_MAX[uid] != null && <><dt>Limit</dt><dd>{fmtMin(SRC_MAX[uid])}</dd></>}</dl>}</div>}
+        <div className="sec"><h3>Lineage around it</h3>
+          <dl className="kv">
+            <dt>Reads from</dt><dd><div className="nb">{parents.length ? parents.map(p => <button key={p} className="chip" onClick={() => onFocus(p)}><span className="dot" style={{ background: statusColor(P, NODE[p].status) }} />{BY_ID[p].name}</button>) : <span className="muted">nothing</span>}</div></dd>
+            <dt>Feeds</dt><dd><div className="nb">{kids.length ? kids.map(p => <button key={p} className="chip" onClick={() => onFocus(p)}><span className="dot" style={{ background: statusColor(P, NODE[p].status) }} />{BY_ID[p].name}</button>) : <span className="muted">nothing</span>}</div></dd>
+            <dt>In total</dt><dd>{up.size} upstream, {down.size} downstream</dd>
+          </dl></div>
+        <div className="sec"><h3>Identity</h3><dl className="kv"><dt>Unique id</dt><dd className="mono">{uid}</dd><dt>Layer</dt><dd>{LAYER_LABEL[n.layer]}</dd></dl></div>
+      </>}
+      {tab === 'tests' && <TestsList uid={uid} onTrace={onTrace} onFocus={onFocus} />}
+      {tab === 'metrics' && (metricsOf(uid).length ? metricsOf(uid).map(g => <MetricBlock key={g.key} g={g} onFocus={onFocus} narrow />)
+        : <div className="empty">No metrics are collected for {n.name}. {INCIDENTS.some(i => i.kind === 'anomaly' && i.nodeId === uid) ? 'An anomaly incident is open for it, but its metric points are not in this report.' : 'Add a volume monitor to see row counts and their normal range here.'}</div>)}
+      {tab === 'schema' && (SCHEMA_OF(n.name).length ? <table className="tbl"><thead><tr><th>Detected</th><th>Column</th><th>Change</th><th>Detail</th></tr></thead><tbody>
+        {SCHEMA_OF(n.name).map((c, i) => <tr key={i}><td>{fmtDT(ts(c.detected_at))}</td><td className="mono">{c.column}</td><td>{c.change.replace('_', ' ')}</td><td className="mono">{c.type || `${c.from} to ${c.to}`}</td></tr>)}</tbody></table>
+        : <div className="empty">No column was added, removed or retyped on {n.name} since monitoring started.</div>)}
+      {tab === 'cost' && (COST[uid].has ? <>
+        <dl className="kv" style={{ marginBottom: 12 }}><dt>All runs</dt><dd>{fmtCr(COST[uid].total)}</dd><dt>Recent average</dt><dd>{fmtCr(COST[uid].recentAvg)} per run</dd><dt>Earlier median</dt><dd>{fmtCr(COST[uid].baseMed)} per run</dd>
+          <dt>Change</dt><dd style={{ fontWeight: 600, color: COST[uid].ratio >= 1.5 ? P.warn : P.ink }}>{COST[uid].ratio ? COST[uid].ratio.toFixed(2) + '×' : '—'}</dd></dl>
+        <EChart height={210} option={{ animation: false, title: cTitle(P, 'Credits per run'), grid: { left: 54, right: 8, top: 34, bottom: 36 }, tooltip: { ...cTip(P), trigger: 'axis', valueFormatter: v => v == null ? 'pending' : v + ' cr' },
+          xAxis: cAxis(P, 'Run start', { type: 'category', data: RUNS.map(r => fmtDay(ts(r.started_at))), splitLine: { show: false }, nameGap: 24, axisLabel: { color: P.ink3, fontSize: 10, interval: 5 } }),
+          yAxis: cAxis(P, 'Credits', { type: 'value', nameGap: 42 }),
+          series: [{ type: 'bar', data: COST[uid].arr.map(v => ({ value: v, itemStyle: { color: COST[uid].ratio >= 1.5 && v > (COST[uid].baseMed || 0) * 1.5 ? P.warn : P.ice } })), barWidth: '60%' }] }} />
+        <p className="note">{PENDING_RUNS} latest runs have no credits yet; attribution usually lands a few hours after the run.</p></>
+        : <div className="empty">{n.type === 'source' ? 'Sources use no warehouse compute in dbt runs.' : 'No credits recorded.'}</div>)}
+    </div>
+  </aside>;
+}
+function TestsList({ uid, onTrace, onFocus }) {
+  const ids = [...TESTS_OF[uid]].sort((a, b) => isBad(TRES[b][LAST]) - isBad(TRES[a][LAST]) || testLabel(BY_ID[a]).localeCompare(testLabel(BY_ID[b])));
+  if (!ids.length) return <div className="empty">{BY_ID[uid].name} has no tests. Start with not-null and unique tests on its key columns.</div>;
+  return <div>{ids.map(t => { const bad = isBad(TRES[t][LAST]);
+    return <div key={t} className="trow">
+      <span className="dot" style={{ background: bad ? 'var(--failed)' : 'var(--ok)' }} />
+      <div className="tn"><div style={{ fontWeight: bad ? 600 : 500 }}><button className="linkish" style={{ color: 'inherit' }} onClick={() => onFocus(t)}>{testLabel(BY_ID[t])}</button></div><div className="muted" style={{ fontSize: 12 }}>{bad ? `${TRES[t][LAST].failures} bad rows, failing since ${fmtDT(ts(RUNS[failingSince(t)].started_at))}` : 'passing'}</div></div>
+      <RunStrip label="Result per run" cells={TRES[t].map((r, i) => ({ s: !r ? 'none' : isBad(r) ? 'fail' : 'ok', t: `${fmtDT(ts(RUNS[i].started_at))}: ${!r ? 'not run' : r.status}${r && r.failures ? `, ${r.failures} rows` : ''}` }))} />
+      {bad && <button className="btn sm danger" onClick={() => onTrace(t)}>Trace</button>}
+    </div>; })}</div>;
+}
+function TestPanel({ uid, onFocus, onTrace, onClose }) {
+  const { P } = useContext(ThemeCtx);
+  const t = BY_ID[uid]; const bad = isBad(TRES[uid][LAST]); const models = testTargets(t);
+  return <aside className="panel" aria-label={`Details for test ${t.name}`}>
+    <div className="ph">
+      <div className="kind">test, {testType(t)}<span className="spacer" /><button className="iconbtn" aria-label="Close panel" onClick={onClose}><Icon n="x" /></button></div>
+      <h2>{testLabel(t)}</h2>
+      <span className="status-chip" style={{ background: statusSoft(P, bad ? 'failed' : 'ok'), color: statusColor(P, bad ? 'failed' : 'ok') }}><span className="dot" style={{ background: statusColor(P, bad ? 'failed' : 'ok') }} />{bad ? 'Failing' : 'Passing'}</span>
+      <div className="acts">{models.map(m => <button key={m} className="btn" onClick={() => onFocus(m)}>Open {BY_ID[m].name}</button>)}{bad && <button className="btn danger" onClick={() => onTrace(uid)}><Icon n="route" s={14} />Trace root cause</button>}</div>
+    </div>
+    <div className="pb">
+      <div className="sec"><EChart height={200} option={{ animation: false, title: cTitle(P, 'Failing rows per run'), grid: { left: 44, right: 8, top: 34, bottom: 36 }, tooltip: { ...cTip(P), trigger: 'axis', valueFormatter: v => v + ' rows' },
+        xAxis: cAxis(P, 'Run start', { type: 'category', data: RUNS.map(r => fmtDay(ts(r.started_at))), splitLine: { show: false }, nameGap: 24, axisLabel: { color: P.ink3, fontSize: 10, interval: 5 } }),
+        yAxis: cAxis(P, 'Rows', { type: 'value', minInterval: 1, nameGap: 30 }),
+        series: [{ type: 'bar', data: TRES[uid].map(r => ({ value: r ? r.failures : 0, itemStyle: { color: r && isBad(r) ? P.failed : P.ok } })), barWidth: '60%' }] }} /></div>
+      <div className="sec"><h3>Details</h3><dl className="kv"><dt>Unique id</dt><dd className="mono">{uid}</dd><dt>Column</dt><dd>{t.column || '—'}</dd><dt>Tests</dt><dd>{models.length ? models.map(m => BY_ID[m].name).join(', ') : 'the whole project'}</dd>
+        <dt>Failed</dt><dd>{TRES[uid].filter(isBad).length} of {NR} runs</dd></dl></div>
+    </div>
+  </aside>;
+}
+
+/* ============================== sheets ============================== */
+function Sheet({ title, sum: summary, big, setBig, onClose, children, extra }) {
+  return <section className="sheet" style={{ height: big ? '92%' : '62%' }} aria-label={title}>
+    <span className="grab" />
+    <div className="sheet-h"><h2>{title}</h2><span className="sum">{summary}</span><span className="spacer" />{extra}
+      <button className="iconbtn" aria-label={big ? 'Shrink sheet' : 'Expand sheet'} onClick={() => setBig(!big)}><Icon n={big ? 'down' : 'up'} /></button>
+      <button className="iconbtn" aria-label="Close sheet" onClick={onClose}><Icon n="x" /></button></div>
+    <div className="sheet-b">{children}</div>
+  </section>;
+}
+function NodeLink({ uid, onFocus, missing }) {
+  if (!uid) return <span className="muted" title="This relation is not part of the project lineage">{missing} (not in lineage)</span>;
+  return <button className="linkish" onClick={e => { e.stopPropagation(); onFocus(uid); }}>{BY_ID[uid].name}</button>;
+}
+function SevMark({ s }) { const { P } = useContext(ThemeCtx); const c = s === 'error' ? P.failed : P.warn; return <span className="sev" style={{ color: c }}><span className="dot" style={{ background: c }} />{s === 'error' ? 'Error' : 'Warning'}</span>; }
+
+function IncidentsSheet({ acks, ack, onFocus, onTrace }) {
+  const [sev, setSev] = useState('all'); const [kind, setKind] = useState('all');
+  const list = INCIDENTS.filter(i => (sev === 'all' || i.severity === sev) && (kind === 'all' || i.kind === kind))
+    .sort((a, b) => (a.severity === 'error' ? 0 : 1) - (b.severity === 'error' ? 0 : 1) || b.first_detected_at.localeCompare(a.first_detected_at));
+  const who = i => acks[i.incident_key] || i.acknowledged_by;
+  const groups = [['Open', list.filter(i => !who(i))], ['Acknowledged', list.filter(i => who(i))]];
+  return <>
+    <div className="bar-filters">
+      <div className="chips">{[['all', 'All severities'], ['error', 'Errors'], ['warn', 'Warnings']].map(([k, l]) => <button key={k} className="chip" aria-pressed={sev === k} onClick={() => setSev(k)}>{l}</button>)}</div>
+      <div className="vsep" />
+      <div className="chips">{[['all', 'All kinds'], ...Object.entries(KIND)].map(([k, l]) => <button key={k} className="chip" aria-pressed={kind === k} onClick={() => setKind(k)}>{l}</button>)}</div>
+    </div>
+    {groups.map(([g, rows]) => <div key={g} style={{ marginBottom: 18 }}>
+      <div className="grp"><h3>{g}</h3><span className="muted">{rows.length}: {plural(rows.filter(r => r.severity === 'error').length, 'error')}, {plural(rows.filter(r => r.severity !== 'error').length, 'warning')}</span></div>
+      {rows.length ? <table className="tbl"><thead><tr><th>Severity</th><th>Kind</th><th>What happened</th><th>Node</th><th>First seen</th><th className="num">Times seen</th><th>Channel</th><th>Root cause</th><th>{g === 'Open' ? '' : 'By'}</th></tr></thead>
+        <tbody>{rows.map(i => <tr key={i.incident_key} className="click" onClick={() => i.nodeId && onFocus(i.nodeId)}>
+          <td><SevMark s={i.severity} /></td><td>{KIND[i.kind] || i.kind}</td><td style={{ fontWeight: 500 }}>{i.title}</td>
+          <td><NodeLink uid={i.nodeId} missing={i.missing} onFocus={onFocus} /></td><td>{fmtDT(ts(i.first_detected_at))}</td><td className="num">{i.occurrences}</td><td>{i.channel}</td>
+          <td>{i.root_cause ? <span>{BY_ID[i.root_cause] ? <NodeLink uid={GRAPH_SET.has(i.root_cause) ? i.root_cause : null} missing={i.root_cause} onFocus={onFocus} /> : i.root_cause}{i.root_cause_kind ? <span className="muted">, {RC_KIND[i.root_cause_kind] || i.root_cause_kind}</span> : null}
+            {i.testId && isBad(TRES[i.testId][LAST]) && <div><button className="btn sm" style={{ marginTop: 4 }} onClick={e => { e.stopPropagation(); onTrace(i.testId); }}><Icon n="route" s={13} />Trace on graph</button></div>}</span> : (i.testId && isBad(TRES[i.testId][LAST]) ? <button className="btn sm" onClick={e => { e.stopPropagation(); onTrace(i.testId); }}><Icon n="route" s={13} />Trace on graph</button> : <span className="muted">Not set</span>)}</td>
+          <td>{who(i) ? <span className="ink2">{who(i)}</span> : <button className="btn sm primary" onClick={e => { e.stopPropagation(); ack(i.incident_key); }}>Acknowledge</button>}</td>
+        </tr>)}</tbody></table> : <div className="empty">{g === 'Open' ? 'Nothing open with these filters.' : 'Nobody has acknowledged an incident with these filters yet.'}</div>}
+    </div>)}
+    <p className="note">Acknowledging here is kept in this browser session only. Resolved incidents are not part of this report.</p>
+  </>;
+}
+
+function TestsSheet({ onFocus, onTrace }) {
+  const { P } = useContext(ThemeCtx);
+  const [sub, setSub] = useState('tests'); const [f, setF] = useState('failing'); const [q, setQ] = useState(''); const [ty, setTy] = useState('all'); const [open, setOpen] = useState(null);
+  const types = useMemo(() => [...new Set(TESTS.map(testType))].sort(), []);
+  const rows = TESTS.filter(t => { const bad = isBad(TRES[t.unique_id][LAST]);
+    if (f === 'failing' && !bad) return false; if (f === 'passing' && bad) return false;
+    if (ty !== 'all' && testType(t) !== ty) return false;
+    if (q && !(t.name + ' ' + testLabel(t)).toLowerCase().includes(q.toLowerCase())) return false; return true; })
+    .sort((a, b) => isBad(TRES[b.unique_id][LAST]) - isBad(TRES[a.unique_id][LAST]) || a.name.localeCompare(b.name));
+  const opt = useMemo(() => ({ animation: false, title: cTitle(P, 'Failing tests per run'), grid: { left: 44, right: 10, top: 34, bottom: 38 }, tooltip: { ...cTip(P), trigger: 'axis', valueFormatter: v => v + ' tests' },
+    xAxis: cAxis(P, 'Run start', { type: 'category', data: RUNS.map(r => fmtDT(ts(r.started_at))), splitLine: { show: false }, nameGap: 26, axisLabel: { color: P.ink3, fontSize: 10, interval: 3, formatter: v => v.split(',')[0] } }),
+    yAxis: cAxis(P, 'Tests', { type: 'value', minInterval: 1, nameGap: 28 }),
+    series: [{ type: 'bar', data: FAILS_PER_RUN.map(v => ({ value: v, itemStyle: { color: v ? P.failed : P.line } })), barWidth: '60%' }] }), [P]);
+  const nFail = LATEST_FAILING.length;
+  const anomalyInc = INCIDENTS.filter(i => i.kind === 'anomaly');
+  const metricGroups = Object.values(METRICS).sort((a, b) => metricAnomalous(b) - metricAnomalous(a) || Object.keys(b.engines).length - Object.keys(a.engines).length || a.relation.localeCompare(b.relation));
+  const dual = metricGroups.filter(g => Object.keys(g.engines).length > 1);
+  return <>
+    <div className="seg" style={{ display: 'inline-flex', marginBottom: 12 }}>
+      <button aria-pressed={sub === 'tests'} onClick={() => setSub('tests')}>Test results</button>
+      <button aria-pressed={sub === 'anom'} onClick={() => setSub('anom')}>Anomaly monitors</button></div>
+    {sub === 'tests' ? <>
+      <EChart height={170} option={opt} />
+      <div className="bar-filters" style={{ marginTop: 8 }}>
+        <div className="chips">{[['failing', `Failing ${nFail}`], ['passing', `Passing ${TESTS.length - nFail}`], ['all', `All ${TESTS.length}`]].map(([k, l]) => <button key={k} className="chip" aria-pressed={f === k} onClick={() => setF(k)}>{l}</button>)}</div>
+        <select className="input" value={ty} onChange={e => setTy(e.target.value)} aria-label="Test type"><option value="all">All test types</option>{types.map(t => <option key={t}>{t}</option>)}</select>
+        <input className="input" placeholder="Filter by name" value={q} onChange={e => setQ(e.target.value)} aria-label="Filter tests by name" />
+        <span className="muted">{rows.length} shown</span>
+      </div>
+      <table className="tbl"><thead><tr><th>Status</th><th>Test</th><th>Model</th><th>Last {NR} runs</th><th className="num">Bad rows</th><th>Failing since</th><th></th></tr></thead>
+        <tbody>{rows.slice(0, 250).map(t => { const id = t.unique_id; const r = TRES[id][LAST]; const bad = isBad(r); const ms = testTargets(t);
+          return <Fragment key={id}><tr className={'click' + (open === id ? ' on' : '')} onClick={() => setOpen(open === id ? null : id)}>
+            <td><span className="sev" style={{ color: bad ? P.failed : P.ok }}><span className="dot" style={{ background: bad ? P.failed : P.ok }} />{bad ? 'Failing' : 'Passing'}</span></td>
+            <td style={{ fontWeight: bad ? 600 : 400 }}>{testLabel(t)}</td>
+            <td>{ms.length ? ms.map((m, k) => <Fragment key={m}>{k ? ', ' : ''}<NodeLink uid={m} onFocus={onFocus} /></Fragment>) : <span className="muted">Project check</span>}</td>
+            <td><RunStrip label="Result per run" cells={TRES[id].map((x, i) => ({ s: !x ? 'none' : isBad(x) ? 'fail' : 'ok', t: `${fmtDT(ts(RUNS[i].started_at))}: ${x ? x.status : 'not run'}` }))} /></td>
+            <td className="num">{r ? r.failures : '—'}</td><td>{bad ? fmtDT(ts(RUNS[failingSince(id)].started_at)) : <span className="muted">—</span>}</td>
+            <td>{bad && <button className="btn sm danger" onClick={e => { e.stopPropagation(); onTrace(id); }}>Trace</button>}</td></tr>
+            {open === id && <tr><td colSpan="7" style={{ background: 'var(--surface-2)' }}>
+              <div className="cols two" style={{ alignItems: 'start' }}>
+                <div><dl className="kv"><dt>Unique id</dt><dd className="mono">{id}</dd><dt>Type</dt><dd>{testType(t)}</dd><dt>Column</dt><dd>{t.column || '—'}</dd><dt>Failed</dt><dd>{TRES[id].filter(isBad).length} of {NR} runs</dd>
+                  <dt>Incident</dt><dd>{(INCIDENTS.find(i => i.testId === id) || {}).title || 'none'}</dd>
+                  <dt>Root cause</dt><dd>{rootCauseOf(id) ? <><NodeLink uid={rootCauseOf(id).id} onFocus={onFocus} />{rootCauseOf(id).kind ? `, ${RC_KIND[rootCauseOf(id).kind] || rootCauseOf(id).kind}` : ''}</> : 'not recorded'}</dd></dl></div>
+                <EChart height={150} option={{ animation: false, title: cTitle(P, 'Bad rows per run'), grid: { left: 40, right: 8, top: 30, bottom: 30 }, tooltip: { ...cTip(P), trigger: 'axis', valueFormatter: v => v + ' rows' },
+                  xAxis: cAxis(P, 'Run', { type: 'category', data: RUNS.map(r => fmtDay(ts(r.started_at))), splitLine: { show: false }, nameGap: 18, axisLabel: { show: false } }), yAxis: cAxis(P, 'Rows', { type: 'value', minInterval: 1, nameGap: 26 }),
+                  series: [{ type: 'bar', data: TRES[id].map(x => ({ value: x ? x.failures : 0, itemStyle: { color: x && isBad(x) ? P.failed : P.ok } })) }] }} />
+              </div></td></tr>}
+          </Fragment>; })}</tbody></table>
+      {!rows.length && <div className="empty" style={{ marginTop: 10 }}>No test matches these filters. Clear the name filter or pick “All”.</div>}
+    </> : <>
+      <div className="box" style={{ marginBottom: 14, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div><b>Scoring engines.</b> <span className="ink2">Native scores all {metricGroups.length} monitored metrics. Cortex is {DATA.capabilities.cortex ? 'available' : 'not available'} in this account{dual.length ? ` and scores ${dual.length} of them in shadow, shown side by side below` : ' but has not scored any metric yet'}. {metricGroups.filter(metricAnomalous).length} metrics are anomalous at their latest point.</span></div>
+      </div>
+      {anomalyInc.length > 0 && <div className="box" style={{ marginBottom: 14, borderColor: 'var(--warn)' }}>
+        <b>Open anomaly incidents</b>
+        {anomalyInc.map(i => <div key={i.incident_key} style={{ marginTop: 4 }}><SevMark s={i.severity} /> {i.title}, first seen {fmtDT(ts(i.first_detected_at))}. <NodeLink uid={i.nodeId} missing={i.missing} onFocus={onFocus} />
+          {i.nodeId && !metricsOf(i.nodeId).length && <span className="muted"> (its metric points are not in this report)</span>}</div>)}
+      </div>}
+      {metricGroups.filter(g => Object.keys(g.engines).length > 1).map(g => <MetricBlock key={g.key} g={g} onFocus={onFocus} showName />)}
+      <div className="cols two">{metricGroups.filter(g => Object.keys(g.engines).length === 1).map(g => <MetricBlock key={g.key} g={g} onFocus={onFocus} showName narrow />)}</div>
+    </>}
+  </>;
+}
+
+function RunsSheet({ onFocus }) {
+  const { P } = useContext(ThemeCtx);
+  const [sel, setSel] = useState(LAST);
+  const run = RUNS[sel];
+  const execs = useMemo(() => GRAPH.map(n => EXEC[n.unique_id][sel]).filter(Boolean).sort((a, b) => ts(a.started_at) - ts(b.started_at)), [sel]);
+  const t0 = ts(run.started_at);
+  const trend = useMemo(() => ({ animation: false, title: cTitle(P, 'Run duration and credits'), legend: { top: 0, right: 0, textStyle: { color: P.ink2, fontFamily: FONT } },
+    grid: { left: 50, right: 60, top: 40, bottom: 40 }, tooltip: { ...cTip(P), trigger: 'axis' },
+    xAxis: cAxis(P, 'Run start', { type: 'category', data: RUNS.map(r => fmtDT(ts(r.started_at))), splitLine: { show: false }, nameGap: 26, axisLabel: { color: P.ink3, fontSize: 10, interval: 3, formatter: v => v.split(',')[0] } }),
+    yAxis: [cAxis(P, 'Duration (s)', { type: 'value', scale: true, nameGap: 36 }), cAxis(P, 'Credits', { type: 'value', nameGap: 44, splitLine: { show: false } })],
+    series: [
+      { name: 'Credits', type: 'bar', yAxisIndex: 1, data: RUNS.map(r => r.credits), itemStyle: { color: P.iceSoft === '#173247' ? '#24506F' : '#C9DFEF' }, barWidth: '55%' },
+      { name: 'Duration', type: 'line', data: RUNS.map((r, i) => ({ value: r.duration_s, symbolSize: i === sel ? 11 : 6, itemStyle: { color: r.status === 'success' ? P.ok : P.failed } })), lineStyle: { color: P.ink3, width: 1.5 }, symbol: 'circle', tooltip: { valueFormatter: v => v + ' s' } },
+    ] }), [P, sel]);
+  const gantt = useMemo(() => {
+    const cats = execs.map(e => BY_ID[e.unique_id].name);
+    return { animation: false, title: cTitle(P, `Node timeline, run of ${fmtDT(t0)}`), grid: { left: 190, right: 16, top: 34, bottom: 40 },
+      tooltip: { ...cTip(P), formatter: p => { const e = execs[p.value[0]]; return `<b>${esc(BY_ID[e.unique_id].name)}</b><br>Started ${esc(p.value[1].toFixed(1))} s after the run<br>Took ${esc(fmtS(e.execution_time_s))}<br>${esc(e.status === 'error' ? 'Failed' : 'Built')}, ${esc(fmtCr(e.credits))}`; } },
+      xAxis: cAxis(P, 'Seconds since the run started', { type: 'value', min: 0, nameGap: 26 }),
+      yAxis: cAxis(P, '', { type: 'category', data: cats, inverse: true, splitLine: { show: false }, axisLabel: { color: P.ink2, fontSize: 11, fontFamily: FONT } }),
+      series: [{ type: 'custom', encode: { x: [1, 2], y: 0 }, data: execs.map((e, i) => { const s = (ts(e.started_at) - t0) / 1000; return { value: [i, s, s + e.execution_time_s], itemStyle: { color: e.status === 'error' ? P.failed : P.lane[laneOf(e.unique_id)] } }; }),
+        renderItem: (params, api) => { const y = api.value(0); const a = api.coord([api.value(1), y]), b = api.coord([api.value(2), y]); const h = api.size([0, 1])[1] * 0.64;
+          return { type: 'rect', shape: { x: a[0], y: a[1] - h / 2, width: Math.max(2, b[0] - a[0]), height: h, r: 2 }, style: api.style() }; } }] };
+  }, [P, sel, execs]);
+  const slow = [...execs].sort((a, b) => b.execution_time_s - a.execution_time_s).slice(0, 6);
+  const testsFailing = FAILS_PER_RUN[sel];
+  return <>
+    <div className="box" style={{ marginBottom: 14 }}><EChart height={190} option={trend} onClick={p => p.dataIndex != null && setSel(p.dataIndex)} />
+      <p className="note">Dots: red for a failed run. Click a run to see its timeline. Credits for the {PENDING_RUNS} latest runs are not attributed yet.</p></div>
+    <div className="cols side">
+      <div style={{ maxHeight: 560, overflow: 'auto' }}>
+        <table className="tbl"><thead><tr><th>Started</th><th>Result</th><th className="num">Took</th><th className="num">Credits</th></tr></thead>
+          <tbody>{RUNS.map((r, i) => i).reverse().map(i => { const r = RUNS[i]; return <tr key={r.invocation_id} className={'click' + (i === sel ? ' on' : '')} onClick={() => setSel(i)}>
+            <td>{fmtDT(ts(r.started_at))}</td><td><span className="sev" style={{ color: r.status === 'success' ? P.ok : P.failed }}><span className="dot" style={{ background: r.status === 'success' ? P.ok : P.failed }} />{r.status === 'success' ? 'Passed' : `Failed (${r.nodes_failed})`}</span></td>
+            <td className="num">{fmtS(r.duration_s)}</td><td className="num">{r.credits == null ? <span className="muted">pending</span> : r.credits.toFixed(3)}</td></tr>; })}</tbody></table>
+      </div>
+      <div className="box">
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 8, fontSize: 13 }}>
+          <span><b>{run.command}</b> on {run.target}</span><span className="ink2">{fmtS(run.duration_s)}</span><span className="ink2">{fmtCr(run.credits)}</span>
+          <span className="ink2">{execs.length} models built, {execs.filter(e => e.status === 'error').length} failed, {plural(testsFailing, 'test')} failing</span><span className="mono muted">{run.invocation_id}</span></div>
+        <EChart height={Math.max(260, execs.length * 17 + 80)} option={gantt} onClick={p => p.value && onFocus(execs[p.value[0]].unique_id)} />
+        <h3 style={{ fontSize: 13.5, margin: '10px 0 4px' }}>Slowest nodes in this run</h3>
+        <table className="tbl"><tbody>{slow.map(e => { const med = median(EXEC[e.unique_id].filter(Boolean).map(x => x.execution_time_s)); return <tr key={e.unique_id}>
+          <td><NodeLink uid={e.unique_id} onFocus={onFocus} /></td><td className="num">{fmtS(e.execution_time_s)}</td><td className="num muted">usual {fmtS(med)}</td>
+          <td className="num" style={{ color: e.execution_time_s > med * 1.5 ? P.warn : P.ink3, fontWeight: 600 }}>{(e.execution_time_s / med).toFixed(1)}×</td></tr>; })}</tbody></table>
+      </div>
+    </div>
+  </>;
+}
+
+function CostSheet({ onFocus }) {
+  const { P } = useContext(ThemeCtx);
+  const days = useMemo(() => { const m = {}; RUNS.forEach(r => { const k = r.started_at.slice(0, 10); m[k] = m[k] || { cr: 0, pending: 0 }; if (r.credits == null) m[k].pending++; else m[k].cr += r.credits; }); return Object.entries(m); }, []);
+  const opt = useMemo(() => ({ animation: false, title: cTitle(P, `Credits per day, last ${days.length} days (all stored history)`), grid: { left: 52, right: 12, top: 36, bottom: 40 },
+    tooltip: { ...cTip(P), trigger: 'axis', formatter: ps => { const d = days[ps[0].dataIndex]; return `<b>${esc(fmtDay(ts(d[0] + 'T00:00:00')))}</b><br>${esc(d[1].cr.toFixed(3))} credits${d[1].pending ? `<br>${esc(d[1].pending)} run not attributed yet` : ''}`; } },
+    xAxis: cAxis(P, 'Day', { type: 'category', data: days.map(d => fmtDay(ts(d[0] + 'T00:00:00'))), splitLine: { show: false }, nameGap: 26 }),
+    yAxis: cAxis(P, 'Credits', { type: 'value', nameGap: 40 }),
+    series: [{ type: 'bar', barWidth: '58%', data: days.map(d => ({ value: +d[1].cr.toFixed(4), itemStyle: { color: d[1].pending ? P.lineStrong : P.ice } })),
+      label: { show: true, position: 'top', color: P.ink3, fontSize: 10, formatter: p => days[p.dataIndex][1].pending ? 'pending' : '' } }] }), [P, days]);
+  const models = GRAPH.filter(n => COST[n.unique_id].has).map(n => n.unique_id);
+  const regress = models.filter(u => COST[u].ratio >= 1.3).sort((a, b) => COST[b].ratio - COST[a].ratio);
+  const all = [...models].sort((a, b) => COST[b].total - COST[a].total);
+  const total = sum(models.map(u => COST[u].total));
+  return <>
+    <div className="cols two">
+      <div className="box"><EChart height={230} option={opt} /><p className="note">Grey days include a run whose credits are not attributed yet.</p></div>
+      <div className="box"><h3 style={{ margin: '0 0 6px', fontSize: 13.5 }}>Top regressions</h3>
+        <p className="note" style={{ marginTop: 0 }}>Average of the last 4 attributed runs against the earlier median, 1.3× or more.</p>
+        {regress.length ? <table className="tbl"><thead><tr><th>Model</th><th className="num">Before</th><th className="num">Now</th><th className="num">Change</th><th>Credits per run</th></tr></thead>
+          <tbody>{regress.map(u => <tr key={u} className="click" onClick={() => onFocus(u, { tab: 'cost' })}><td><NodeLink uid={u} onFocus={onFocus} /></td><td className="num">{COST[u].baseMed.toFixed(4)}</td><td className="num">{COST[u].recentAvg.toFixed(4)}</td>
+            <td className="num" style={{ color: P.warn, fontWeight: 700 }}>{COST[u].ratio.toFixed(1)}×</td><td><Spark values={COST[u].arr} color={P.warn} label={`Credits per run for ${BY_ID[u].name}`} /></td></tr>)}</tbody></table>
+          : <div className="empty">No model costs noticeably more than before.</div>}
+        {INCIDENTS.filter(i => i.kind === 'cost').map(i => <p key={i.incident_key} className="note">Incident {i.incident_key}: {i.title}.</p>)}
+      </div>
+    </div>
+    <h3 style={{ fontSize: 14, margin: '18px 0 6px' }}>Credits per model, all {NR} runs ({total.toFixed(3)} credits)</h3>
+    <table className="tbl"><thead><tr><th>Model</th><th>Layer</th><th className="num">Credits</th><th className="num">Share</th><th className="num">Usual build time</th><th className="num">Change</th><th>Credits per run</th></tr></thead>
+      <tbody>{all.map(u => <tr key={u} className="click" onClick={() => onFocus(u, { tab: 'cost' })}><td><NodeLink uid={u} onFocus={onFocus} /></td><td className="ink2">{LAYER_LABEL[BY_ID[u].layer]}</td>
+        <td className="num">{COST[u].total.toFixed(4)}</td><td className="num">{(COST[u].total / total * 100).toFixed(1)}%</td><td className="num">{fmtS(median(EXEC[u].filter(Boolean).map(e => e.execution_time_s)))}</td>
+        <td className="num" style={{ color: COST[u].ratio >= 1.3 ? P.warn : P.ink3, fontWeight: COST[u].ratio >= 1.3 ? 700 : 400 }}>{COST[u].ratio ? COST[u].ratio.toFixed(2) + '×' : '—'}</td>
+        <td><Spark values={COST[u].arr} label={`Credits per run for ${BY_ID[u].name}`} /></td></tr>)}</tbody></table>
+  </>;
+}
+
+function SchedulesSheet({ onFocus }) {
+  const { P } = useContext(ThemeCtx);
+  const slas = Object.values(SLA).sort((a, b) => (b.missed - a.missed) || a.deadline - b.deadline);
+  const silences = INCIDENTS.filter(i => i.kind === 'silence');
+  const fresh = [...DATA.source_freshness].sort((a, b) => b.freshness_lag_min - a.freshness_lag_min);
+  const slaOpt = useMemo(() => ({ animation: false, title: cTitle(P, 'Time since last success against the allowed window'), grid: { left: 160, right: 20, top: 36, bottom: 40 },
+    tooltip: { ...cTip(P), trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: v => v + ' h' },
+    xAxis: cAxis(P, 'Hours', { type: 'value', nameGap: 26 }), yAxis: cAxis(P, '', { type: 'category', data: slas.map(s => s.name), inverse: true, splitLine: { show: false }, axisLabel: { color: P.ink2, fontSize: 11 } }),
+    series: [{ type: 'bar', barWidth: '50%', data: slas.map(s => ({ value: +(s.ageMin / 60).toFixed(1), itemStyle: { color: s.missed ? P.failed : s.state === 'soon' ? P.warn : P.ok } })),
+      markLine: { symbol: 'none', label: { formatter: 'allowed 12 h 30 min', color: P.ink3, fontSize: 10.5 }, lineStyle: { color: P.ink3, type: 'dashed' }, data: [{ xAxis: (slas[0] ? (slas[0].every + slas[0].grace) / 60 : 12.5) }] } }] }), [P]);
+  const fOpt = useMemo(() => ({ animation: false, title: cTitle(P, 'Source freshness'), grid: { left: 160, right: 70, top: 36, bottom: 40 },
+    tooltip: { ...cTip(P), trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: v => v + ' min' },
+    xAxis: cAxis(P, 'Minutes behind the source system', { type: 'value', nameGap: 26 }), yAxis: cAxis(P, '', { type: 'category', data: fresh.map(f => f.name), inverse: true, splitLine: { show: false }, axisLabel: { color: P.ink2, fontSize: 11 } }),
+    series: [{ type: 'bar', barWidth: '50%', data: fresh.map(f => ({ value: f.freshness_lag_min, itemStyle: { color: f.max_lag_min != null && f.freshness_lag_min > f.max_lag_min ? P.failed : P.ok } })),
+      label: { show: true, position: 'right', color: P.ink2, fontSize: 11, formatter: p => fmtMin(p.value) },
+      markLine: fresh.some(f => f.max_lag_min != null) ? { symbol: 'none', label: { formatter: `limit ${fmtMin(fresh.find(f => f.max_lag_min != null).max_lag_min)}`, position: 'insideEndTop', color: P.ink3, fontSize: 10.5 }, lineStyle: { color: P.ink3, type: 'dashed' }, data: [{ xAxis: fresh.find(f => f.max_lag_min != null).max_lag_min }] } : undefined }] }), [P]);
+  return <>
+    <div className="cols two">
+      <div className="box"><EChart height={240} option={slaOpt} onClick={p => onFocus(slas[p.dataIndex].unique_id)} /></div>
+      <div className="box"><EChart height={240} option={fOpt} onClick={p => onFocus(fresh[p.dataIndex].unique_id)} />
+        <p className="note">{fresh.filter(f => f.max_lag_min != null && f.freshness_lag_min > f.max_lag_min).length} of {fresh.length} sources are over their limit.</p></div>
+    </div>
+    <h3 style={{ fontSize: 14, margin: '18px 0 6px' }}>Source freshness ({fresh.length})</h3>
+    <table className="tbl"><thead><tr><th>Source</th><th className="num">Behind by</th><th className="num">Limit</th><th>State</th></tr></thead>
+      <tbody>{fresh.map(f => { const late = f.max_lag_min != null && f.freshness_lag_min > f.max_lag_min; return <tr key={f.unique_id} className="click" onClick={() => onFocus(f.unique_id)}><td><NodeLink uid={f.unique_id} onFocus={onFocus} /></td>
+        <td className="num">{fmtMin(f.freshness_lag_min)}</td><td className="num">{f.max_lag_min != null ? fmtMin(f.max_lag_min) : '—'}</td>
+        <td><span className="sev" style={{ color: late ? P.failed : P.ok }}><span className="dot" style={{ background: late ? P.failed : P.ok }} />{late ? 'Late' : 'Fresh'}</span></td></tr>; })}</tbody></table>
+    <h3 style={{ fontSize: 14, margin: '18px 0 6px' }}>Declared schedules ({slas.length})</h3>
+    <table className="tbl"><thead><tr><th>Model</th><th>Expected every</th><th>Grace</th><th>Last success</th><th>Due by</th><th>State</th></tr></thead>
+      <tbody>{slas.map(s => <tr key={s.unique_id} className="click" onClick={() => onFocus(s.unique_id)}><td><NodeLink uid={s.unique_id} onFocus={onFocus} /></td><td>{s.expected_every}</td><td>{s.grace}</td><td>{fmtDT(s.last)}</td><td>{fmtDT(s.deadline)}</td>
+        <td><span className="sev" style={{ color: s.missed ? P.failed : s.state === 'soon' ? P.warn : P.ok }}><span className="dot" style={{ background: s.missed ? P.failed : s.state === 'soon' ? P.warn : P.ok }} />{s.missed ? 'Missed schedule' : s.state === 'soon' ? `Due in ${fmtMin(s.left)}` : `On time, ${fmtMin(s.left)} left`}</span></td></tr>)}</tbody></table>
+    <h3 style={{ fontSize: 14, margin: '18px 0 6px' }}>Missed runs ({silences.length})</h3>
+    {silences.length ? <table className="tbl"><thead><tr><th>Model</th><th>What happened</th><th>Detected</th><th>Acknowledged by</th></tr></thead>
+      <tbody>{silences.map(i => <tr key={i.incident_key}><td><NodeLink uid={i.nodeId} missing={i.missing} onFocus={onFocus} /></td><td>{i.title}</td><td>{fmtDT(ts(i.first_detected_at))}</td><td>{i.acknowledged_by || <span className="muted">nobody yet</span>}</td></tr>)}</tbody></table>
+      : <div className="empty">No schedule was missed.</div>}
+    <p className="note">Times are relative to the report time, {fmtDT(NOW)}. A model counts as missed when a missed-run event was raised or its window plus grace has passed.</p>
+  </>;
+}
+
+function SchemaSheet({ onFocus }) {
+  const { P } = useContext(ThemeCtx);
+  const ch = [...DATA.schema_changes].sort((a, b) => b.detected_at.localeCompare(a.detected_at));
+  const rels = [...new Set(ch.map(c => c.relation))];
+  const C = { added: P.ok, removed: P.failed, type_changed: P.warn };
+  const opt = useMemo(() => {
+    const t0 = RUNS.length ? ts(RUNS[0].started_at) : NOW;
+    return { animation: false, title: cTitle(P, 'Column changes over time'), grid: { left: 120, right: 20, top: 36, bottom: 44 },
+      tooltip: { ...cTip(P), formatter: p => { const c = ch[p.dataIndex]; return `<b>${esc(c.relation)}.${esc(c.column)}</b><br>${esc(c.change.replace('_', ' '))}${esc(c.type ? ', ' + c.type : '')}${c.from ? `, ${esc(c.from)} to ${esc(c.to)}` : ''}<br>${esc(fmtDT(ts(c.detected_at)))}`; } },
+      xAxis: cAxis(P, 'Date detected', { type: 'time', min: t0, max: NOW, nameGap: 28, axisLabel: { color: P.ink3, fontSize: 11, formatter: v => fmtDay(v) } }),
+      yAxis: cAxis(P, 'Table', { type: 'category', data: rels, nameGap: 100, splitLine: { show: true, lineStyle: { color: P.line, type: 'dashed' } } }),
+      series: [{ type: 'scatter', symbolSize: 16, data: ch.map(c => ({ value: [ts(c.detected_at), c.relation], itemStyle: { color: C[c.change] || P.ice } })),
+        label: { show: true, position: 'right', color: P.ink2, fontSize: 11, formatter: p => ch[p.dataIndex].column } }] };
+  }, [P]);
+  return <>
+    <div className="box" style={{ marginBottom: 14 }}><EChart height={Math.max(170, rels.length * 50 + 90)} option={opt} />
+      <div style={{ display: 'flex', gap: 14, fontSize: 12.5 }} className="ink2">{[['added', 'Column added'], ['removed', 'Column removed'], ['type_changed', 'Type changed']].map(([k, l]) => <span key={k} style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span className="dot" style={{ background: C[k] }} />{l}</span>)}</div></div>
+    {rels.map(r => <div key={r} style={{ marginBottom: 14 }}>
+      <div className="grp"><h3>{BY_NAME[r] ? <NodeLink uid={BY_NAME[r]} onFocus={u => onFocus(u, { tab: 'schema' })} /> : r}</h3>{!BY_NAME[r] && <span className="muted">not in this project's lineage, so it cannot be shown on the graph</span>}</div>
+      <table className="tbl"><thead><tr><th>Detected</th><th>Column</th><th>Change</th><th>Detail</th><th>Incident</th></tr></thead>
+        <tbody>{ch.filter(c => c.relation === r).map((c, i) => { const inc = INCIDENTS.find(x => x.kind === 'schema_change' && x.node === `${c.relation}|${c.column}`);
+          return <tr key={i}><td>{fmtDT(ts(c.detected_at))}</td><td className="mono">{c.column}</td><td><span className="sev" style={{ color: C[c.change] }}><span className="dot" style={{ background: C[c.change] }} />{c.change.replace('_', ' ')}</span></td>
+            <td className="mono">{c.type || `${c.from} to ${c.to}`}</td><td>{inc ? <SevMark s={inc.severity} /> : <span className="muted">none raised</span>}</td></tr>; })}</tbody></table>
+    </div>)}
+  </>;
+}
+
+function SettingsSheet({ theme, setTheme, showTests, setShowTests, overlay, setOverlay }) {
+  const C = DATA.capabilities || {};
+  const channels = {}; INCIDENTS.forEach(i => channels[i.channel] = (channels[i.channel] || 0) + 1);
+  return <div className="cols two">
+    <div>
+      <div className="box" style={{ marginBottom: 14 }}><h3 style={{ margin: '0 0 8px', fontSize: 14 }}>This installation</h3>
+        <dl className="kv"><dt>Edition</dt><dd>{C.edition}</dd><dt>Event table</dt><dd className="mono">{C.event_table}</dd><dt>Cortex</dt><dd>{C.cortex ? 'Available, can score anomalies next to the native engine' : 'Not available, anomalies use the native engine only'}</dd>
+          <dt>icecore</dt><dd>{C.icecore_version}</dd><dt>dbt</dt><dd>{(C.dbt_versions || []).join('; ')}</dd></dl></div>
+      <div className="box" style={{ marginBottom: 14 }}><h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Alert channels in use</h3>
+        <table className="tbl"><tbody>{Object.entries(channels).map(([c, n]) => <tr key={c}><td>{c}</td><td className="num">{n} incidents</td></tr>)}</tbody></table></div>
+      <div className="box"><h3 style={{ margin: '0 0 8px', fontSize: 14 }}>This report</h3>
+        <dl className="kv"><dt>Project</dt><dd>{DATA.project}</dd><dt>Generated</dt><dd>{fmtDT(NOW)}</dd><dt>Runs covered</dt><dd>{NR}, {fmtDT(ts(RUNS[0].started_at))} to {fmtDT(ts(RUNS[LAST].started_at))}</dd>
+          <dt>Nodes</dt><dd>{GRAPH.length} on the graph, {TESTS.length} tests</dd></dl></div>
+    </div>
+    <div>
+      <div className="box" style={{ marginBottom: 14 }}><h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Display</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+          <div className="seg"><button aria-pressed={theme === 'light'} onClick={() => setTheme('light')}>Light</button><button aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>Dark</button></div>
+          <button className="toggle" aria-pressed={showTests} onClick={() => setShowTests(!showTests)}><span className="sw" />Draw tests on the canvas</button>
+          <label className="ink2" style={{ fontSize: 13 }}>Map layer&nbsp;<select className="input" value={overlay} onChange={e => setOverlay(e.target.value)}>{OVERLAYS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}</select></label>
+        </div></div>
+      <div className="box"><h3 style={{ margin: '0 0 8px', fontSize: 14 }}>How statuses are worked out</h3>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }} className="ink2">
+          <li><b>Failed</b>: the latest build errored, a test on the node failed in the latest run, or an error incident points at it.</li>
+          <li><b>Missed schedule</b>: a missed-run event exists, or the declared window plus grace has passed at report time.</li>
+          <li><b>Warning</b>: a warning incident (anomaly, cost spike, schema change) points at it.</li>
+          <li><b>Not run</b>: dbt never builds it (sources).</li>
+          <li><b>Cost change</b>: average credits of the last 4 attributed runs divided by the median of the earlier ones.</li>
+        </ul></div>
+    </div>
+  </div>;
+}
+
+/* ============================== palette ============================== */
+const SECTIONS = [
+  { key: 'incidents', label: 'Incidents', hint: 'triage, acknowledge' }, { key: 'tests', label: 'Tests & anomalies', hint: 'results, band charts' },
+  { key: 'runs', label: 'Runs', hint: 'list, node timeline' }, { key: 'cost', label: 'Cost', hint: 'credits, regressions' },
+  { key: 'sched', label: 'Schedules & freshness', hint: 'SLAs, missed runs' }, { key: 'schema', label: 'Schema changes', hint: 'columns over time' },
+  { key: 'settings', label: 'Settings', hint: 'edition, channels' },
+];
+function Palette({ onClose, items }) {
+  const [q, setQ] = useState(''); const [i, setI] = useState(0); const ref = useRef(null); const listRef = useRef(null);
+  useEffect(() => { ref.current && ref.current.focus(); }, []);
+  const ql = q.trim().toLowerCase();
+  const score = it => { if (!ql) return it.group === 'Nodes' || it.group === 'Tests' ? -1 : 1; const s = (it.label + ' ' + (it.hint || '')).toLowerCase(); if (s.startsWith(ql)) return 3; if (s.includes(ql)) return 2;
+    let k = 0; for (const ch of s) if (ch === ql[k]) k++; return k === ql.length ? 1 : -1; };
+  const res = items.map(it => [it, score(it)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 40).map(x => x[0]);
+  const groups = []; res.forEach(it => { let g = groups.find(x => x.g === it.group); if (!g) groups.push(g = { g: it.group, items: [] }); g.items.push(it); });
+  const flat = groups.flatMap(g => g.items);
+  useEffect(() => { setI(0); }, [q]);
+  useEffect(() => { const el = listRef.current && listRef.current.querySelector('[aria-selected="true"]'); el && el.scrollIntoView({ block: 'nearest' }); }, [i]);
+  const run = it => { onClose(); setTimeout(() => it.run(), 0); };
+  const onKey = e => { if (e.key === 'ArrowDown') { e.preventDefault(); setI(Math.min(flat.length - 1, i + 1)); } else if (e.key === 'ArrowUp') { e.preventDefault(); setI(Math.max(0, i - 1)); }
+    else if (e.key === 'Enter' && flat[i]) { e.preventDefault(); run(flat[i]); } else if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
+  let k = -1;
+  return <div className="scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+    <div className="card pal" role="dialog" aria-label="Jump to">
+      <input ref={ref} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder="Jump to a section, model, source or test" aria-label="Search" />
+      <ul ref={listRef} role="listbox">
+        {groups.map(g => <Fragment key={g.g}><li className="g">{g.g}</li>
+          {g.items.map(it => { k++; const me = k; return <li key={it.id} className="it" role="option" aria-selected={me === i} onMouseEnter={() => setI(me)} onClick={() => run(it)}>
+            {it.dot && <span className="dot" style={{ background: it.dot }} />}<span>{it.label}</span><span className="h">{it.hint}</span></li>; })}</Fragment>)}
+        {!flat.length && <li className="g">Nothing matches “{q}”. Try a model name like fct_orders.</li>}
+      </ul>
+    </div>
+  </div>;
+}
+
+/* ============================== shell ============================== */
+function Strip({ open, acks, openSheet }) {
+  const { P } = useContext(ThemeCtx);
+  const openInc = INCIDENTS.filter(i => !(acks[i.incident_key] || i.acknowledged_by));
+  const lr = RUNS[LAST];
+  const ok = RUNS.filter(r => r.status === 'success').length;
+  const worstSrc = DATA.source_freshness.reduce((a, f) => !a || f.freshness_lag_min > a.freshness_lag_min ? f : a, null);
+  const missed = Object.values(SLA).filter(s => s.missed).length;
+  const totalCr = sum(RUNS.map(r => r.credits || 0));
+  const att = RUNS.filter(r => r.credits != null).map(r => r.credits);
+  const last5 = mean(att.slice(-5)), prev5 = mean(att.slice(-10, -5));
+  const delta = prev5 ? (last5 / prev5 - 1) * 100 : 0;
+  if (!open) return null;
+  return <div className="strip" role="region" aria-label="Overview">
+    <button className="readout" onClick={() => openSheet('incidents')}><span className="lbl">Open incidents</span><span className="val" style={{ color: openInc.length ? P.failed : P.ok }}>{openInc.length}<small>{plural(openInc.filter(i => i.severity === 'error').length, 'error')}, {INCIDENTS.length - openInc.length} acknowledged</small></span></button>
+    <button className="readout" onClick={() => openSheet('runs')}><span className="lbl">Latest run, {fmtDT(ts(lr.started_at))}</span><span className="val" style={{ color: lr.status === 'success' ? P.ok : P.failed }}>{lr.status === 'success' ? 'Passed' : 'Failed'}<small>{fmtS(lr.duration_s)}, {lr.nodes_failed} failed</small></span></button>
+    <button className="readout" onClick={() => openSheet('runs')}><span className="lbl">Runs, last {NR}</span><span className="val">{ok} passed<small>{NR - ok} failed</small></span>
+      <RunStrip label="Run result, oldest first" cells={RUNS.map(r => ({ s: r.status === 'success' ? 'ok' : 'fail', t: `${fmtDT(ts(r.started_at))}: ${r.status}` }))} /></button>
+    <button className="readout" onClick={() => openSheet('tests')}><span className="lbl">Tests, latest run</span><span className="val"><span style={{ color: LATEST_FAILING.length ? P.failed : P.ok }}>{LATEST_FAILING.length} failing</span><small>{TESTS.length - LATEST_FAILING.length} passing</small></span></button>
+    <button className="readout" onClick={() => openSheet('sched')}><span className="lbl">Schedules</span><span className="val" style={{ color: missed ? P.failed : P.ok }}>{missed} missed<small>of {Object.keys(SLA).length} declared</small></span></button>
+    <button className="readout" onClick={() => openSheet('sched')}><span className="lbl">Freshness, worst source</span><span className="val" style={{ color: worstSrc && srcLate(worstSrc.unique_id) ? P.failed : undefined }}>{worstSrc ? fmtMin(worstSrc.freshness_lag_min) : '—'}<small>{worstSrc ? `${worstSrc.name}${SRC_MAX[worstSrc.unique_id] != null ? `, limit ${fmtMin(SRC_MAX[worstSrc.unique_id])}` : ''}` : ''}</small></span></button>
+    <button className="readout" onClick={() => openSheet('cost')}><span className="lbl">Credits, {NR} runs</span><span className="val">{totalCr.toFixed(2)}<small style={{ color: delta > 5 ? P.warn : undefined }}>{delta >= 0 ? '+' : ''}{delta.toFixed(0)}% last 5 runs</small></span>
+      <Spark values={RUNS.map(r => r.credits)} w={110} h={18} label="Credits per run" /></button>
+    <button className="readout" onClick={() => openSheet('schema')} style={{ borderRight: 0 }}><span className="lbl">Schema changes</span><span className="val">{DATA.schema_changes.length}<small>columns, last {fmtDay(ts(DATA.schema_changes.map(c => c.detected_at).sort().slice(-1)[0] || DATA.generated_at))}</small></span></button>
+  </div>;
+}
+
+function Shell() {
+  const rf = useReactFlow();
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('icecore-b-theme') || 'light'; } catch (e) { return 'light'; } });
+  const [overlay, setOverlay] = useState('status');
+  const [showTests, setShowTests] = useState(false);
+  const [hiddenLanes, setHiddenLanes] = useState(new Set());
+  const [selected, setSelected] = useState(null);
+  const [tab, setTab] = useState('overview');
+  const [sheet, setSheet] = useState(null);
+  const [sheetBig, setSheetBig] = useState(false);
+  const [stripOpen, setStripOpen] = useState(true);
+  const [palette, setPalette] = useState(false);
+  const [rc, setRc] = useState(null);
+  const [acks, setAcks] = useState({});
+  const [pIdx, setPIdx] = useState(null);
+  const [legendFilter, setLegendFilter] = useState(null);
+  const [hover, setHover] = useState(null);
+  const stageRef = useRef(null);
+  const [stageW, setStageW] = useState(1200);
+  useEffect(() => { const el = stageRef.current; if (!el) return; const ro = new ResizeObserver(() => setStageW(el.clientWidth)); ro.observe(el); return () => ro.disconnect(); }, []);
+  const P = PAL[theme];
+
+  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('icecore-b-theme', theme); } catch (e) {} }, [theme]);
+
+  const layout = useMemo(() => { if (!showTests) return LAYOUT_LANES; if (!LAYOUT_TESTS) LAYOUT_TESTS = layoutWithTests(); return LAYOUT_TESTS; }, [showTests]);
+  useEffect(() => { const t = setTimeout(() => rf.fitView({ padding: 0.06, duration: 400 }), 60); return () => clearTimeout(t); }, [showTests]);
+
+  const nodes = useMemo(() => {
+    const out = [];
+    layout.lanes.forEach(L => out.push({ id: 'lane-' + L.key, type: 'lane', position: { x: L.x, y: L.y }, data: L, draggable: false, selectable: false, focusable: false, zIndex: -1, style: { width: L.w, height: L.h } }));
+    GRAPH.forEach(n => out.push({ id: n.unique_id, type: 'model', position: layout.pos[n.unique_id], data: {}, draggable: false, width: NODE_W, height: NODE_H }));
+    if (showTests) layout.tests.forEach(t => out.push({ id: t, type: 'test', position: layout.pos[t], data: {}, draggable: false }));
+    return out;
+  }, [layout, showTests]);
+
+  const rcInfo = useMemo(() => {
+    if (!rc) return null; const t = BY_ID[rc]; const models = testTargets(t);
+    const set = new Set(models); models.forEach(m => ancestors(m, false).forEach(a => set.add(a))); if (showTests) set.add(rc);
+    const root = rootCauseOf(rc); if (root && GRAPH_SET.has(root.id)) set.add(root.id);
+    let hot = set;
+    if (root && models.some(m => ancestors(m, false).has(root.id))) { const d = descendants(root.id, false); hot = new Set([root.id, ...models, ...[...set].filter(x => d.has(x))]); if (showTests) hot.add(rc); }
+    const r = TRES[rc][LAST];
+    return { set, hot, models, root, flag: `${testLabel(t)} failing, ${r ? r.failures : 0} rows`, rootFlag: root ? `Root cause: ${rootEvidence(root)}` : null };
+  }, [rc, showTests]);
+
+  const focusSet = useMemo(() => {
+    if (rcInfo) return rcInfo.set;
+    if (!selected) return null;
+    const s = new Set([selected]); ancestors(selected, showTests).forEach(x => s.add(x)); descendants(selected, showTests).forEach(x => s.add(x)); return s;
+  }, [selected, showTests, rcInfo]);
+  const upSet = useMemo(() => selected && !rcInfo ? new Set([selected, ...ancestors(selected, showTests)]) : null, [selected, showTests, rcInfo]);
+  const downSet = useMemo(() => selected && !rcInfo ? new Set([selected, ...descendants(selected, showTests)]) : null, [selected, showTests, rcInfo]);
+
+  const edges = useMemo(() => {
+    const out = [];
+    const add = (s, t, isTest) => {
+      const off = hiddenLanes.has(laneOf(s)) || (!isTest && hiddenLanes.has(laneOf(t)));
+      let stroke = P.lineStrong, w = 1.4, animated = false, cls = '';
+      if (rcInfo) { if (rcInfo.hot.has(s) && rcInfo.hot.has(t)) { stroke = P.failed; w = 2.8; animated = true; cls = 'rc'; } else if (rcInfo.set.has(s) && rcInfo.set.has(t)) { stroke = P.lineStrong; w = 1.6; } else cls = 'dim'; }
+      else if (focusSet && upSet) { const isUp = upSet.has(s) && upSet.has(t); const isDown = downSet.has(s) && downSet.has(t);
+          if (isUp || isDown) { stroke = isUp ? P.ice : P.warn; w = 2.4; } else cls = 'dim'; }
+      if (off) cls = 'dim';
+      out.push({ id: s + '>' + t, source: s, target: t, animated, className: cls, style: { stroke, strokeWidth: w }, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: stroke }, zIndex: cls === 'rc' ? 2 : 0 });
+    };
+    GRAPH.forEach(n => n.depends_on.forEach(d => { if (GRAPH_SET.has(d)) add(d, n.unique_id, false); }));
+    if (showTests) layout.tests.forEach(t => testTargets(BY_ID[t]).forEach(d => add(d, t, true)));
+    if (rcInfo && rcInfo.root && GRAPH_SET.has(rcInfo.root.id) && !rcInfo.models.some(m => ancestors(m, false).has(rcInfo.root.id))) {
+      rcInfo.models.forEach(m => out.push({ id: 'rc-link-' + m, source: rcInfo.root.id, target: m, animated: true, className: 'rc', zIndex: 3,
+        label: `named root cause${rcInfo.root.kind ? ': ' + (RC_KIND[rcInfo.root.kind] || rcInfo.root.kind) : ''}`, labelStyle: { fill: P.failed, fontWeight: 600, fontSize: 12 },
+        labelBgStyle: { fill: P.surface }, labelBgPadding: [6, 3], labelBgBorderRadius: 6,
+        style: { stroke: P.failed, strokeWidth: 2.6 }, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: P.failed } }));
+    }
+    return out;
+  }, [layout, showTests, focusSet, upSet, downSet, rcInfo, hiddenLanes, P, selected]);
+
+  const centerOn = useCallback((uid, zoomTo) => {
+    const node = rf.getNode(uid); if (!node) return;
+    const z = zoomTo || Math.max(rf.getZoom(), 0.95);
+    const h = stageRef.current ? stageRef.current.clientHeight : 800;
+    const dy = sheet ? (h * 0.31) / z : 0;
+    const w = node.width || NODE_W, hh = node.height || NODE_H;
+    rf.setCenter(node.position.x + w / 2, node.position.y + hh / 2 + dy, { zoom: z, duration: 500 });
+  }, [rf, sheet]);
+
+  const focusNode = useCallback((uid, opts = {}) => {
+    if (!BY_ID[uid]) return;
+    if (BY_ID[uid].type === 'test' && !showTests) { setSelected(uid); setTab('overview'); const m = testTargets(BY_ID[uid])[0]; if (m) setTimeout(() => centerOn(m), 80); return; }
+    setSelected(uid); setTab(opts.tab || 'overview'); if (!opts.keepRc) setRc(null);
+    if (hiddenLanes.has(laneOf(uid))) { const s = new Set(hiddenLanes); s.delete(laneOf(uid)); setHiddenLanes(s); }
+    setTimeout(() => centerOn(uid), 80);
+  }, [centerOn, showTests, hiddenLanes]);
+
+  const trace = useCallback(tid => {
+    setRc(tid); const models = testTargets(BY_ID[tid]);
+    setSelected(models[0] || tid); setTab('tests'); setOverlay('status');
+    setTimeout(() => {
+      const ids = new Set(models); models.forEach(m => ancestors(m, false).forEach(a => ids.add(a)));
+      const root = rootCauseOf(tid); if (root && GRAPH_SET.has(root.id)) ids.add(root.id);
+      const h = stageRef.current ? stageRef.current.clientHeight : 800;
+      rf.fitView({ nodes: [...ids].map(id => ({ id })), padding: sheet ? 0.25 : 0.18, duration: 600, maxZoom: 1.05 });
+      if (sheet) setSheet(null);
+    }, 90);
+  }, [rf, sheet]);
+
+  const jumpProblem = useCallback(i => { setPIdx(i); const u = PROBLEMS[i]; setRc(null); focusNode(u); }, [focusNode]);
+  const openSheet = useCallback(k => { setSheet(k); setPalette(false); }, []);
+  const ack = useCallback(k => setAcks(a => ({ ...a, [k]: 'you' })), []);
+  const toggleLane = useCallback(k => setHiddenLanes(prev => { const s = new Set(prev); s.has(k) ? s.delete(k) : s.add(k); if (k === 'gold') { s.has('gold') ? s.add('snapshot') : s.delete('snapshot'); } return s; }), []);
+
+  useEffect(() => {
+    const onKey = e => {
+      const typing = /INPUT|SELECT|TEXTAREA/.test((e.target || {}).tagName || '');
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); return; }
+      if (e.key === 'Escape') { if (palette) return; if (rc) { setRc(null); return; } if (sheet) { setSheet(null); return; } if (selected) { setSelected(null); return; } }
+      if (typing || palette || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === '/') { e.preventDefault(); setPalette(true); }
+      else if (/^[1-5]$/.test(e.key)) setOverlay(OVERLAYS[+e.key - 1].key);
+      else if (e.key.toLowerCase() === 't') setShowTests(s => !s);
+      else if (e.key === ']' && PROBLEMS.length) jumpProblem(pIdx == null ? 0 : (pIdx + 1) % PROBLEMS.length);
+      else if (e.key === '[' && PROBLEMS.length) jumpProblem(pIdx == null ? PROBLEMS.length - 1 : (pIdx - 1 + PROBLEMS.length) % PROBLEMS.length);
+    };
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+  }, [palette, rc, sheet, selected, pIdx, jumpProblem]);
+
+  const items = useMemo(() => {
+    const it = [];
+    it.push({ id: 's-overview', group: 'Go to', label: 'Overview', hint: 'whole graph, overview strip', run: () => { setSheet(null); setSelected(null); setRc(null); setStripOpen(true); rf.fitView({ padding: 0.06, duration: 400 }); } });
+    SECTIONS.forEach(s => it.push({ id: 's-' + s.key, group: 'Go to', label: s.label, hint: s.hint, run: () => openSheet(s.key) }));
+    PROBLEMS.forEach(u => it.push({ id: 'p-' + u, group: 'Problems', label: BY_ID[u].name, hint: NODE[u].reasons[0] ? NODE[u].reasons[0].text : '', dot: statusColor(P, NODE[u].status), run: () => focusNode(u) }));
+    LATEST_FAILING.forEach(t => it.push({ id: 'rc-' + t, group: 'Problems', label: `Trace root cause of ${testLabel(BY_ID[t])}`, hint: testTargets(BY_ID[t]).map(m => BY_ID[m].name).join(', '), dot: P.failed, run: () => trace(t) }));
+    OVERLAYS.forEach((o, i) => it.push({ id: 'o-' + o.key, group: 'Map layer', label: `Show ${o.label.toLowerCase()}`, hint: `key ${i + 1}`, run: () => setOverlay(o.key) }));
+    it.push({ id: 'a-tests', group: 'Actions', label: 'Toggle tests on canvas', hint: 'key T', run: () => setShowTests(s => !s) });
+    it.push({ id: 'a-theme', group: 'Actions', label: 'Switch light or dark theme', hint: '', run: () => setTheme(t => t === 'light' ? 'dark' : 'light') });
+    it.push({ id: 'a-fit', group: 'Actions', label: 'Fit the whole graph', hint: '', run: () => rf.fitView({ padding: 0.06, duration: 400 }) });
+    it.push({ id: 'a-strip', group: 'Actions', label: 'Show or hide the overview strip', hint: '', run: () => setStripOpen(s => !s) });
+    GRAPH.forEach(n => it.push({ id: 'n-' + n.unique_id, group: 'Nodes', label: n.name, hint: `${n.type}, ${LAYER_LABEL[n.layer]}`, dot: statusColor(P, NODE[n.unique_id].status), run: () => focusNode(n.unique_id) }));
+    TESTS.forEach(t => it.push({ id: 't-' + t.unique_id, group: 'Tests', label: testLabel(t), hint: testTargets(t).map(m => BY_ID[m].name).join(', ') || 'project check', dot: isBad(TRES[t.unique_id][LAST]) ? P.failed : P.ok, run: () => focusNode(t.unique_id) }));
+    return it;
+  }, [P, focusNode, trace, openSheet, rf]);
+
+  const view = useMemo(() => ({ overlay, selected, focusSet, hiddenLanes, legendFilter, showTests, rc, rcModels: rcInfo ? rcInfo.models : [], rcFlag: rcInfo ? rcInfo.flag : null, rcRoot: rcInfo && rcInfo.root ? rcInfo.root.id : null, rcRootFlag: rcInfo ? rcInfo.rootFlag : null }),
+    [overlay, selected, focusSet, hiddenLanes, legendFilter, showTests, rc, rcInfo]);
+
+  const sheetMeta = {
+    incidents: ['Incidents', `${INCIDENTS.filter(i => !(acks[i.incident_key] || i.acknowledged_by)).length} open, ${INCIDENTS.length} in total`],
+    tests: ['Tests & anomalies', `${LATEST_FAILING.length} failing of ${TESTS.length} in the latest run, ${Object.values(METRICS).filter(metricAnomalous).length} of ${Object.keys(METRICS).length} monitored metrics anomalous`],
+    runs: ['Runs', `${NR} runs, ${RUNS.filter(r => r.status !== 'success').length} failed`],
+    cost: ['Cost', `${sum(RUNS.map(r => r.credits || 0)).toFixed(3)} credits over ${NR} runs`],
+    sched: ['Schedules & freshness', `${Object.values(SLA).filter(s => s.missed).length} missed of ${Object.keys(SLA).length} schedules, ${DATA.source_freshness.length} sources`],
+    schema: ['Schema changes', `${DATA.schema_changes.length} column changes on ${new Set(DATA.schema_changes.map(c => c.relation)).size} tables`],
+    settings: ['Settings & about', `icecore ${(DATA.capabilities || {}).icecore_version || ''}`],
+  };
+  const sheetBody = {
+    incidents: () => <IncidentsSheet acks={acks} ack={ack} onFocus={focusNode} onTrace={trace} />,
+    tests: () => <TestsSheet onFocus={focusNode} onTrace={trace} />,
+    runs: () => <RunsSheet onFocus={focusNode} />,
+    cost: () => <CostSheet onFocus={focusNode} />,
+    sched: () => <SchedulesSheet onFocus={focusNode} />,
+    schema: () => <SchemaSheet onFocus={focusNode} />,
+    settings: () => <SettingsSheet theme={theme} setTheme={setTheme} showTests={showTests} setShowTests={setShowTests} overlay={overlay} setOverlay={setOverlay} />,
+  };
+
+  return <ThemeCtx.Provider value={{ theme, P }}>
+    <ViewCtx.Provider value={view}>
+      <div className="app">
+        <header className="topbar">
+          <div className="brand"><Logo />icecore</div>
+          <div className="proj"><b>{DATA.project}</b>, report of {fmtDT(NOW)}</div>
+          <button className="kbtn" onClick={() => setPalette(true)} aria-label="Open the jump-to palette"><Icon n="search" s={15} />Jump to a section or node<kbd>{/Mac/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></button>
+          <span className="spacer" />
+          <div className="chips">{SECTIONS.slice(0, 6).map(s => <button key={s.key} className="chip" aria-pressed={sheet === s.key} onClick={() => setSheet(sheet === s.key ? null : s.key)} style={{ display: window.innerWidth < 1500 ? 'none' : undefined }}>{s.label}</button>)}</div>
+          <button className="iconbtn" aria-label="Settings" title="Settings" onClick={() => setSheet(sheet === 'settings' ? null : 'settings')}><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)" /></svg></button>
+          <button className="iconbtn" aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'} title="Theme" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}><Icon n={theme === 'light' ? 'moon' : 'sun'} /></button>
+          <button className="iconbtn" aria-label={stripOpen ? 'Hide overview strip' : 'Show overview strip'} title="Overview strip" onClick={() => setStripOpen(!stripOpen)}><Icon n={stripOpen ? 'up' : 'down'} /></button>
+        </header>
+        <Strip open={stripOpen} acks={acks} openSheet={openSheet} />
+        <div className="main">
+          <div className="stage" ref={stageRef}>
+            <Flow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} fitView fitViewOptions={{ padding: 0.08 }} minZoom={0.15} maxZoom={2}
+              nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}
+              onNodeClick={(e, n) => { if (n.type === 'lane') return; setRc(null); setSelected(n.id); setTab('overview'); }}
+              onPaneClick={() => { if (rc) setRc(null); else setSelected(null); setLegendFilter(null); }}
+              onNodeMouseEnter={(e, n) => n.type !== 'lane' && setHover({ id: n.id, x: e.clientX, y: e.clientY })}
+              onNodeMouseLeave={() => setHover(null)}>
+              <Background variant="dots" gap={22} size={1.3} color={theme === 'light' ? '#C3CDD6' : '#27333F'} />
+              <MiniMap pannable zoomable position="bottom-right" maskColor={P.mask} style={{ width: 190, height: 120 }}
+                nodeColor={n => n.type === 'lane' ? P.lane[n.data.key] + '22' : n.type === 'test' ? (isBad(TRES[n.id][LAST]) ? P.failed : P.line) : statusColor(P, NODE[n.id].status)}
+                nodeStrokeWidth={0} nodeBorderRadius={4} ariaLabel="Mini map of the lineage" />
+              <Controls showInteractive={false} position="bottom-left" />
+            </Flow>
+            {!sheet && <Legend overlay={overlay} legendFilter={legendFilter} setLegendFilter={setLegendFilter} showTests={showTests} narrow={stageW < 760} />}
+            {!sheet && <ProblemsPill idx={pIdx} onJump={jumpProblem} />}
+            {!sheet && <Toolbar overlay={overlay} setOverlay={setOverlay} showTests={showTests} setShowTests={setShowTests} hiddenLanes={hiddenLanes} toggleLane={toggleLane} compact={!!selected || stageW < 1060} />}
+            {sheet && <Sheet title={sheetMeta[sheet][0]} sum={sheetMeta[sheet][1]} big={sheetBig} setBig={setSheetBig} onClose={() => setSheet(null)}>{sheetBody[sheet]()}</Sheet>}
+          </div>
+          {rc ? <RootCauseCard tid={rc} onFocus={(u, o) => focusNode(u, { ...(o || {}), keepRc: !o })} onClose={() => setRc(null)} openSheet={openSheet} />
+            : selected && <NodePanel key={selected} uid={selected} tab={tab} setTab={setTab} onFocus={focusNode} onTrace={trace} onClose={() => { setSelected(null); setRc(null); }} openSheet={openSheet} acks={acks} />}
+        </div>
+      </div>
+      {palette && <Palette items={items} onClose={() => setPalette(false)} />}
+      {hover && BY_ID[hover.id] && <HoverCard id={hover.id} x={hover.x} y={hover.y} overlay={overlay} />}
+    </ViewCtx.Provider>
+  </ThemeCtx.Provider>;
+}
+function HoverCard({ id, x, y, overlay }) {
+  const { P } = useContext(ThemeCtx);
+  const n = BY_ID[id];
+  if (n.type === 'test') { const bad = isBad(TRES[id][LAST]); return <div className="card hover" style={{ left: x + 14, top: y + 14 }}><b>{testLabel(n)}</b><div className="ink2">{bad ? `Failing, ${TRES[id][LAST].failures} rows` : 'Passing'}</div></div>; }
+  const st = NODE[id].status; const le = EXEC[id][LAST];
+  const left = Math.min(x + 14, window.innerWidth - 320);
+  return <div className="card hover" style={{ left, top: y + 14 }}>
+    <b>{n.name}</b>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 4px' }}><span className="dot" style={{ background: statusColor(P, st) }} /><span style={{ fontWeight: 600 }}>{STATUS_LABEL[st]}</span><span className="muted">{LAYER_LABEL[n.layer]}</span></div>
+    {NODE[id].reasons.slice(0, 2).map((r, i) => <div key={i} className="ink2">{r.text}</div>)}
+    <div className="muted" style={{ marginTop: 4 }}>{le ? `Last build ${fmtS(le.execution_time_s)}, ` : ''}{TESTS_OF[id].length} tests{COST[id].has ? `, ${COST[id].total.toFixed(3)} credits in all runs` : ''}{SRC_LAG[id] != null ? `${fmtMin(SRC_LAG[id])} behind source` : ''}</div>
+    <div className="muted" style={{ marginTop: 2 }}>Click to open its panel and path.</div>
+  </div>;
+}
+
+function App() { return <ReactFlowProvider><Shell /></ReactFlowProvider>; }
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

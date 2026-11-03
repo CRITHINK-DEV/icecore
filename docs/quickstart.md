@@ -2,7 +2,7 @@
 
 This guide takes an empty dbt project on Snowflake to its first icecore records. It takes about 15 minutes. Most of that is the one-time Snowflake setup.
 
-icecore is pre-release and not on dbt Hub yet. Step 2 shows the entry for the first release and what to use until then.
+icecore is not on dbt Hub: you install it from its Git repository, pinned to a release tag (step 2).
 
 You need:
 
@@ -49,15 +49,15 @@ The role that runs dbt needs USAGE on the database, on the icecore schema and on
 
 ## 2. Install the package
 
-Add icecore to `packages.yml`:
+Add icecore to `packages.yml`, pinned to a release tag:
 
 ```yaml
 packages:
-  - package: crithink-dev/icecore
-    version: [">=0.1.0-alpha", "<1.0.0"]
+  - git: "https://github.com/crithink-dev/icecore.git"
+    revision: v0.1.0
 ```
 
-Until the first release is on dbt Hub, install from a clone of the repository:
+To use a clone of the repository instead, point at it:
 
 ```yaml
 packages:
@@ -71,8 +71,8 @@ dbt deps
 ```
 
 ```text
-Installing /path/to/icecore
-Installed from <local @ /path/to/icecore>
+Installing https://github.com/CRITHINK-DEV/icecore.git
+Installed from revision v0.1.0
 ```
 
 ## 3. Add the two hooks
@@ -107,15 +107,15 @@ icecore: setup step 5/9 record_capabilities: icecore.capabilities: ok 1
 icecore: telemetry cost: 12,960 rows per month (18 rows per run for 3 nodes (...) x 24 runs per day x 30 days).
 icecore: telemetry cost: 0.02 to 0.85 GB, 0.0004 to 0.0180 credits per month at 0.0212 Platform Credits per GB (1500 bytes per row to the 64 KB payload cap).
 icecore: setup step 7/9 create_views: CREATE OR REPLACE VIEW ... COPY GRANTS "MY_DB"."ICECORE_OBS"."METRICS", ... "TEST_RESULTS", ... "CAPABILITIES"
-icecore: setup step 8/9 create_alerts: planned, not available yet (Snowflake alerts)
-icecore: setup step 9/9 create_tasks: planned, not available yet (Snowflake tasks)
+icecore: setup step 8/9 create_tasks: cortex_refresh: ... (suspended); silence: not created, var alerts is false
+icecore: setup step 9/9 create_alerts: var alerts is false: no alert created (set vars: icecore: alerts: true to create the alerts and the silence task and resume them)
 ```
 
 Read the output for three things:
 
 - Step 4 says `levels sufficient`, or prints the `ALTER SCHEMA` statement for an admin. With sufficient levels, `printed 1 for an admin` is not a problem: it is the recommendation to cluster the event table, an `ALTER TABLE ... CLUSTER BY (TO_DATE(TIMESTAMP), RECORD_TYPE)` that an admin may run.
 - The cost line is an estimate of what icecore will write to your event table each month. `runs_per_day` is how often dbt runs.
-- Steps 8 and 9 are not built yet. They are reported as planned and do nothing.
+- Steps 8 and 9 create the silence task and the alerts only when the `alerts` var is `true`. By default it is `false`, so they create no alert and no silence task. With `alerts: true` they are also **resumed**, and a resumed alert or task runs on a warehouse every period: that is warehouse time on your account. See [Alerts and tasks](configuration.md#alerts-and-tasks).
 
 Running `setup` again changes nothing. To use another schema, pass `schema` and set the `obs_schema` var to the same name: see [Configuration](configuration.md#where-icecore-writes).
 
@@ -195,6 +195,10 @@ DATABASE_NAME | EDITION    | EVENT_TABLE                       | LOG_LEVEL | TRA
 MY_DB         | ENTERPRISE | MY_DB.TELEMETRY.EVENTS            | INFO      | ALWAYS
 ```
 
+## Anomaly tests
+
+`icecore.freshness`, `icecore.volume`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` score each metric against their own history (30 days, at least 7 points). Until a test has 7 points it only records metrics. An anomaly **warns** by default (status `warn`, and `METRICS` and the alerts carry it). To make it fail the test, set `vars: icecore: anomaly_severity: error`. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test (status `fail`), and `severity: warn` on a test makes everything warn. See [configuration](configuration.md#monitor-and-anomaly-settings).
+
 ## Turn telemetry off
 
 To skip icecore for one run:
@@ -216,5 +220,5 @@ Run `dbt run-operation icecore.doctor` first. A failed check names the missing p
 ## Next
 
 - [Configuration](configuration.md): every var, argument and view, including how much of dbt's result message is stored.
-- To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests).
-- The other monitor tests and the app are coming.
+- To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests) and the [generic test reference](reference/tests.md).
+- The other monitor tests (`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) are in [Configuration](configuration.md#monitor-and-anomaly-settings). The app is in [The app](app.md).

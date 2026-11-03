@@ -17,3 +17,4 @@ rsa_key*
 .env.*
 spikes/results/.*.lock
 spikes/results/*.json.tmp
+.venv-app/

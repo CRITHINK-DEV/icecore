@@ -54,8 +54,12 @@ def literals(sql: str):
             assert i < len(sql), "unterminated literal"
             c = sql[i]
             if c == "\\":
-                value.append(sql[i + 1])
-                i += 2
+                if sql[i + 1:i + 4] == "x24":  # icecore writes `$` as \x24
+                    value.append("$")
+                    i += 4
+                else:
+                    value.append({"n": "\n", "r": "\r"}.get(sql[i + 1], sql[i + 1]))
+                    i += 2
             elif c == "'" and sql[i + 1:i + 2] == "'":
                 value.append("'")
                 i += 2
@@ -180,7 +184,7 @@ def test_setup_marks_create_tasks_ready_and_suspended_by_default():
     from helpers.macros import call_macro
     steps = {s["name"]: s for s in call_macro("_icecore_setup_steps")}
     assert steps["create_tasks"]["ready"] is True
-    assert "silence_task_resume: false" in open(
+    assert "silence_task_resume: null" in open(
         os.path.join(os.path.dirname(__file__), "..", "..", "dbt_project.yml")).read()
 
 

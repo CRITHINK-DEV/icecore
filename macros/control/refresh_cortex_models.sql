@@ -35,8 +35,7 @@
 
 
 {#- The task body: a Scripting block that reads the obs schema's METRICS view. It is constant text: the database and the
-    schema are checked against [A-Za-z0-9_] (_icecore_refresh_names, which stops with a compile error otherwise; TODO(#75):
-    use _sql(..., 'ident') once it merges) before they are written, quoted, into it, and there is no `source` argument.
+    schema are checked against [A-Za-z0-9_] (_icecore_refresh_names, which stops with a compile error otherwise; quoted by icecore._sql(..., 'ident')) before they are written, quoted, into it, and there is no `source` argument.
 
     No SQL text is built from a record value. `relation` comes from event records the dbt role can write, so it is only
     ever (1) checked against the strict quoted-identifier shape "DB"."SCHEMA"."NAME" (anything else is skipped and counted),
@@ -58,12 +57,18 @@
   {%- set names = icecore._icecore_refresh_names(schema) -%}
   {%- set source = names['metrics'] -%}
   {%- set emit = names['emit'] -%}
-  {%- set prefix = names['prefix'] -%}
+  {%- set qualified = names['qualified'] -%}
   {%- set version = icecore._icecore_package_version() | string -%}
   {%- if not modules.re.match('^[A-Za-z0-9._+-]+\\Z', version) -%}
     {{ exceptions.raise_compiler_error("icecore: the package version must be letters, digits and . _ + - to be written into the task body, got '" ~ version ~ "'") }}
   {%- endif -%}
   {%- set window = 'value is not null and observed_at > dateadd(day, -' ~ lookback_days ~ ', sysdate()) and observed_at <= dateadd(minute, -' ~ delay ~ ', sysdate())' -%}
+  {#- The training query, in two constant pieces around the digest. Each goes through icecore._sql, so even a `$` in a name
+      is written \x24 and nothing in the body can end it. -#}
+  {%- set train_head = 'select md5(nvl(metric, chr(126)) || chr(124) || nvl("COLUMN", chr(126)) || chr(124) || nvl(dimension, chr(126))) as series, '
+      ~ 'observed_at as ts, value as y from (select metric, "COLUMN", dimension, observed_at, value, '
+      ~ 'count(*) over (partition by metric, "COLUMN", dimension) as n from ' ~ source ~ ' where md5(relation) = ' -%}
+  {%- set train_tail = ' and ' ~ window ~ ') where n >= ' ~ min_points -%}
   {%- set sql -%}
 DECLARE
   q STRING DEFAULT CHR(39);
@@ -93,11 +98,8 @@ BEGIN
       BEGIN
         digest := MD5(r.relation);
         model_id := 'ICECORE_M_' || UPPER(LEFT(digest, 16));
-        train := 'select md5(nvl(metric, chr(126)) || chr(124) || nvl("COLUMN", chr(126)) || chr(124) || nvl(dimension, chr(126))) as series, '
-                 || 'observed_at as ts, value as y from (select metric, "COLUMN", dimension, observed_at, value, '
-                 || 'count(*) over (partition by metric, "COLUMN", dimension) as n from {{ source }} '
-                 || 'where md5(relation) = ' || qq || digest || qq || ' and {{ window }}) where n >= {{ min_points }}';
-        EXECUTE IMMEDIATE 'CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION {{ prefix }}' || model_id || '"'
+        train := {{ icecore._sql(train_head, 'string') }} || qq || digest || qq || {{ icecore._sql(train_tail, 'string') }};
+        EXECUTE IMMEDIATE {{ icecore._sql('CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION ' ~ qualified ~ '.', 'string') }} || CHR(34) || model_id || CHR(34)
           || '(INPUT_DATA => SYSTEM$QUERY_REFERENCE(' || q || train || q || '), SERIES_COLNAME => ' || q || 'SERIES' || q
           || ', TIMESTAMP_COLNAME => ' || q || 'TS' || q || ', TARGET_COLNAME => ' || q || 'Y' || q || ', LABEL_COLNAME => ' || q || q || ')';
         created := ARRAY_APPEND(created, model_id);
@@ -108,7 +110,7 @@ BEGIN
             'dbt.node.relation', r.relation,
             'icecore.cortex.model', model_id,
             'icecore.schema_version', 1,
-            'icecore.version', '{{ version }}',
+            'icecore.version', {{ icecore._sql(version, 'string') }},
             'icecore.level', 'info',
             'icecore.message', 'icecore: Cortex model ' || model_id || ' refreshed')));
       EXCEPTION
@@ -219,15 +221,14 @@ END;
 
 {#- Every name that goes into the task text, validated: the database and the obs schema against [A-Za-z0-9_] (a compile error
     otherwise: no quote, no $, no control character), then quoted. `database` is the target's; the argument exists for tests.
-    TODO(#75): use _sql(..., 'ident') once icecore._sql merges. -#}
+    Quoted by icecore._sql(..., 'ident'). -#}
 {% macro _icecore_refresh_names(schema=none, database=none) %}
   {%- set db = icecore._icecore_score_constant(target.database if database is none else database) -%}
   {%- set sch = icecore._icecore_score_constant(schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) -%}
-  {%- set qualified = '"' ~ db ~ '"."' ~ sch ~ '"' -%}
   {{ return({
-      'qualified': qualified, 'schema_name': sch,
-      'metrics': qualified ~ '."METRICS"', 'emit': qualified ~ '."ICECORE_EMIT"', 'score': qualified ~ '."ICECORE_SCORE"',
-      'task': qualified ~ '."ICECORE_REFRESH_CORTEX"', 'prefix': qualified ~ '."',
+      'qualified': icecore._sql([db, sch], 'ident'), 'schema_name': sch,
+      'metrics': icecore._sql([db, sch, 'METRICS'], 'ident'), 'emit': icecore._sql([db, sch, 'ICECORE_EMIT'], 'ident'),
+      'score': icecore._sql([db, sch, 'ICECORE_SCORE'], 'ident'), 'task': icecore._sql([db, sch, 'ICECORE_REFRESH_CORTEX'], 'ident'),
   }) }}
 {% endmacro %}
 
@@ -245,7 +246,7 @@ exception
   when other then return 'unknown';
 end;
   {%- endset -%}
-  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) }}
+  {{ return(run_query('execute immediate ' ~ icecore._sql(block, 'string')).rows[0][0]) }}
 {% endmacro %}
 
 
@@ -256,9 +257,15 @@ end;
   {%- if '$$' in body -%}
     {{ exceptions.raise_compiler_error('icecore: the task body must not contain $$ (it would end the EXECUTE IMMEDIATE body early)') }}
   {%- endif -%}
-  {{ return('CREATE OR REPLACE TASK ' ~ task
-      ~ ('\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '')
-      ~ '\n  SCHEDULE = ' ~ icecore._icecore_sql_literal(schedule_minutes ~ ' MINUTE')
-      ~ "\n  COMMENT = 'icecore: retrains the Cortex anomaly models from the metric history'"
-      ~ '\nAS\nEXECUTE IMMEDIATE $$\n' ~ body ~ '\n$$') }}
+  {#- The body is constant text (render_refresh_cortex_models_sql): validated names and integers only, no `$$` (checked above). -#}
+  {%- set ddl -%}
+CREATE OR REPLACE TASK {{ task }}{{ '\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '' }}
+  SCHEDULE = {{ icecore._sql(schedule_minutes ~ ' MINUTE', 'string') }}
+  COMMENT = 'icecore: retrains the Cortex anomaly models from the metric history'
+AS
+EXECUTE IMMEDIATE $$
+{{ body }}
+$$
+  {%- endset -%}
+  {{ return(ddl) }}
 {% endmacro %}

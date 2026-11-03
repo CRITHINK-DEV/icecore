@@ -6,6 +6,8 @@
     whatever the split. Two views, both over icecore.base_events():
       LINEAGE         one row per edge per invocation (a repeated edge in one invocation collapses to one row);
       LINEAGE_LATEST  the edge set of the latest invocation that emitted lineage, per dbt project.
+    parent_layer and child_layer are the layers of the edge's two nodes, read from `dbt.lineage.node_layer` (a JSON
+    object {unique_id: layer} on the record); null for a record written before that key existed.
     recorded_at is the event's TIMESTAMP: OBSERVED_TIMESTAMP is NULL on icecore records (spike S3). -#}
 
 
@@ -20,7 +22,9 @@ select
     project,
     parent_unique_id,
     child_unique_id,
-    recorded_at
+    recorded_at,
+    parent_layer,
+    child_layer
 from edges
   {%- endset -%}
   {{ return(sql) }}
@@ -36,7 +40,9 @@ select
     project,
     parent_unique_id,
     child_unique_id,
-    recorded_at
+    recorded_at,
+    parent_layer,
+    child_layer
 from edges
 qualify dense_rank() over (partition by project order by invocation_at desc, invocation_id desc) = 1
   {%- endset -%}
@@ -59,7 +65,9 @@ flat as (
         events.project,
         events.event_at,
         edge.value[0]::string as parent_unique_id,
-        edge.value[1]::string as child_unique_id
+        edge.value[1]::string as child_unique_id,
+        get(try_parse_json(events.attributes:"dbt.lineage.node_layer"::string), edge.value[0]::string)::string as parent_layer,
+        get(try_parse_json(events.attributes:"dbt.lineage.node_layer"::string), edge.value[1]::string)::string as child_layer
     from events,
         lateral flatten(input => try_parse_json(events.attributes:"dbt.lineage.edges"::string)) as edge
     where events.record_type = 'LOG'
@@ -72,6 +80,8 @@ edges as (
         parent_unique_id,
         child_unique_id,
         max(event_at) as recorded_at,
+        max(parent_layer) as parent_layer,
+        max(child_layer) as child_layer,
         max(max(event_at)) over (partition by invocation_id) as invocation_at
     from flat
     where parent_unique_id is not null and child_unique_id is not null

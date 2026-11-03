@@ -92,3 +92,13 @@
       {'type': 'log', 'level': 'info', 'message': 'values', 'attrs': attrs}]) %}
   {% do _it_result({'emit_run': out, 'date': row[1] | string}) %}
 {% endmacro %}
+
+{#- The hook path of icecore.emit_run: items as ICECORE_EMIT_RUN takes them. -#}
+{% macro it_emit_run_hook(items) %}
+  {% do _it_result(icecore.emit_run(items)) %}
+{% endmacro %}
+
+{#- One guarded CALL (a chunk of ICECORE_EMIT records) of a procedure named by the test, as already built and quoted. -#}
+{% macro it_guarded_call_named(procedure, items) %}
+  {% do _it_result(icecore._icecore_guarded_call(procedure, items)) %}
+{% endmacro %}

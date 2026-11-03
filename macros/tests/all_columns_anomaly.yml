@@ -9,8 +9,9 @@ macros:
       changed rows only (one query per column), written through `icecore.emit_metric` one per metric with the column,
       and checked against the static `bounds`, which apply to every column that has that metric. The default metrics
       are `window_rows` and `null_rate`; avg, min and max are skipped, with a logged warning, on columns that are not
-      numeric. Until the anomaly engines are wired in (UC3) the bounds are the only verdict, and the scoring hook is
-      marked in the test body and not called. The previous observation is the newest column metric record of the
+      numeric. Each value is also scored against its own history (`icecore.score_monitor_metrics`: one query per 25
+      metrics) and written with its result (`METRICS.anomaly_*`); the test fails on a bound breach (hard threshold); an anomaly only warns by default (status `warn`); it fails the test when var `anomaly_severity` is `error`. A hard threshold of this test fails it. The test sets `config(severity='error', warn_if='>=1', error_if='>=2' or '>=1')` and returns 1 row for anomalies and 2 or more for a hard breach; `severity`, `warn_if` or `error_if` written on the test in your project win. The history is this test's own (its `unique_id`), never another test's on the same series. Native engine cost: one query per 25 metrics; engine cortex or auto adds the Cortex calls for series of 14+ days (once per relation when the model cannot score). A metric with fewer
+      than `min_points` history points is not scored (an info line says so). The previous observation is the newest column metric record of the
       relation, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago, and `since`
       overrides both. When no window or no column list can be read the readers log why, no metric is written and the
       test passes. A failed telemetry CALL is a logged warning and never changes the verdict. Example,
@@ -39,3 +40,21 @@ macros:
       - name: lookback_hours
         type: number
         description: Window length when there is no previous observation and no `since`. Default 24.
+      - name: engine
+        type: string
+        description: "`native`, `cortex` or `auto`, for this test. Default `var('icecore').anomaly_engine` (auto)."
+      - name: sensitivity
+        type: string
+        description: "`low`, `medium` or `high`, for this test. Default `var('icecore').anomaly_sensitivity` (medium)."
+      - name: min_consecutive
+        type: integer
+        description: "Consecutive out-of-band observations needed, for this test. Default `var('icecore').anomaly_min_consecutive` (1)."
+      - name: lookback_days
+        type: integer
+        description: History window in days. Default 30.
+      - name: min_points
+        type: integer
+        description: Fewer history points than this are not scored (insufficient history). Default 7.
+      - name: shadow_engine
+        type: string
+        description: "`none`, `native` or `cortex`, for this test. Default `var('icecore').shadow_engine` (none)."

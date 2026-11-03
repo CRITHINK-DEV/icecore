@@ -38,7 +38,12 @@
   {%- if not records -%}
     {{ return(out) }}
   {%- endif -%}
-  {%- set procedure = icecore._icecore_procedure('ICECORE_EMIT') -%}
+  {%- set target_procedure = icecore._icecore_procedure_or_error('ICECORE_EMIT') -%}
+  {%- if target_procedure['error'] -%}
+    {%- do icecore._icecore_warn_no_procedure(target_procedure['error']) -%}
+    {{ return(out) }}
+  {%- endif -%}
+  {%- set procedure = target_procedure['procedure'] -%}
   {%- for chunk in icecore._icecore_emit_chunks(records) -%}
     {%- do out['statuses'].append(icecore._icecore_guarded_status(procedure, chunk)) -%}
   {%- endfor -%}
@@ -171,7 +176,7 @@
   {%- set chunks = [] -%}
   {%- set ns = namespace(current=[], size=4) -%}
   {%- for record in records -%}
-    {%- set size = icecore._icecore_block_literal(tojson(record)) | length -%}
+    {%- set size = icecore._sql(tojson(record), 'string') | length -%}
     {%- if ns.current and ((ns.current | length) >= max_events or ns.size + size > max_bytes) -%}
       {%- do chunks.append(ns.current) -%}
       {%- set ns.current = [] -%}
@@ -187,14 +192,50 @@
 {% endmacro %}
 
 
+{#- Why `procedure` cannot go into a guard block, or none when it can. A procedure name is only ever built by
+    icecore._icecore_procedure, from parts that went through icecore._sql: dotted, each part double-quoted with
+    embedded quotes doubled. Any such name is accepted (a database like MY-DB or "My DB" is valid); what is checked
+    is the structure, so a quote can never end a part early, plus the two things that matter inside a `$$` body:
+    no `$$` and no control character (a single `$` is a valid name character). -#}
+{% macro _icecore_procedure_problem(procedure) %}
+  {%- if procedure is not string or '$$' in procedure or not modules.re.match('^"(?:[^"\\x00-\\x1f\\x7f]|"")+"(?:\\."(?:[^"\\x00-\\x1f\\x7f]|"")+")*\\Z', procedure) -%}
+    {{ return('icecore: invalid procedure name ' ~ ((procedure | string)[:60] | tojson) ~ ': build it with icecore._icecore_procedure') }}
+  {%- endif -%}
+  {{ return(none) }}
+{% endmacro %}
+
+
+{#- The hook path's way to a procedure name: {procedure, error}. error is set (and procedure none) when the target
+    database, the obs schema or the name would not pass icecore._sql, so a hook can warn and skip instead of raising. -#}
+{% macro _icecore_procedure_or_error(name, schema=none) %}
+  {%- set database = target.database | string | upper -%}
+  {%- set obs = (schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) | string | upper -%}
+  {%- set error = icecore._sql_error(database, 'name') or icecore._sql_error(obs, 'ident') or icecore._sql_error(name, 'ident') -%}
+  {%- if error -%}
+    {{ return({'procedure': none, 'error': error}) }}
+  {%- endif -%}
+  {{ return({'procedure': icecore._icecore_procedure(name, schema), 'error': none}) }}
+{% endmacro %}
+
+
+{#- Hook path: no procedure name means a warning and nothing sent; never an exception. -#}
+{% macro _icecore_warn_no_procedure(error) %}
+  {%- do log('icecore: warning: telemetry not written: ' ~ error, info=True) -%}
+{% endmacro %}
+
+
 {#- The guard block S1 measured: an error inside the CALL comes back as a status, never as a failure. -#}
 {% macro _icecore_guarded_call_sql(procedure, items) %}
+  {%- set problem = icecore._icecore_procedure_problem(procedure) -%}
+  {%- if problem is not none -%}
+    {{ exceptions.raise_compiler_error(problem) }}
+  {%- endif -%}
   {%- set sql -%}
 EXECUTE IMMEDIATE $$
 DECLARE
   r STRING;
 BEGIN
-  CALL {{ procedure }}(PARSE_JSON({{ icecore._icecore_block_literal(tojson(items)) }})) INTO :r;
+  CALL {{ procedure }}(PARSE_JSON({{ icecore._sql(tojson(items), 'string') }})) INTO :r;
   RETURN r;
 EXCEPTION
   WHEN OTHER THEN RETURN 'icecore-error ' || SQLCODE || ': ' || SQLERRM;
@@ -213,8 +254,8 @@ $$
   {%- if not execute -%}
     {{ return(none) }}
   {%- endif -%}
-  {%- if procedure is not string or not procedure -%}
-    {{ return('icecore-error invalid_procedure: no procedure name') }}
+  {%- if icecore._icecore_procedure_problem(procedure) is not none -%}
+    {{ return('icecore-error invalid_procedure: ' ~ icecore._icecore_procedure_problem(procedure)) }}
   {%- endif -%}
   {%- set items = items if (items is iterable and items is not string and items is not mapping) else [] -%}
   {%- set rows = run_query(icecore._icecore_guarded_call_sql(procedure, items)).rows -%}
@@ -247,9 +288,7 @@ $$
 {% endmacro %}
 
 
-{#- Single-quoted literal safe inside a $$ block: backslash first, then quote; `$` becomes \x24 so the value can
-    never close the block; CR and LF are escaped so the statement stays on one line. -#}
+{#- Wrapper kept for one release: icecore._sql(value, 'string'). -#}
 {% macro _icecore_block_literal(value) %}
-  {%- set s = (value | string).replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\x24') -%}
-  {{ return("'" ~ s.replace('\n', '\\n').replace('\r', '\\r') ~ "'") }}
+  {{ return(icecore._sql(value, 'string')) }}
 {% endmacro %}

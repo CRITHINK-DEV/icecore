@@ -4,15 +4,19 @@ macros:
   - name: create_alerts
     description: >
       Create one Snowflake ALERT per channel of var `icecore.alert_channels` in the obs schema (the step `create_alerts`
-      of `setup`), each `CREATE OR REPLACE ALERT`, SUSPENDED, so nothing sends or
-      costs without consent; icecore never resumes an alert. Prints the CREATE NOTIFICATION INTEGRATION statements, the
+      of `setup`), each `CREATE OR REPLACE ALERT`, created suspended and resumed only
+      with consent: the var `alert_resume` when set, otherwise the var `alerts` (a resumed alert uses warehouse time on
+      every schedule period). Prints the CREATE NOTIFICATION INTEGRATION statements, the
       grants and the `ALTER ALERT ... RESUME` statements an admin must run, and never creates an integration. With no channel configured it creates nothing and prints how to configure one.
-      Returns a list of channel, alert and status. The role needs CREATE ALERT on the schema and USAGE on the
+      Returns a list of channel, alert, status and resumed. The role needs CREATE ALERT on the schema and USAGE on the
       warehouse (var `icecore.alert_warehouse`, default the target warehouse).
     arguments:
       - name: schema
         type: string
         description: The obs schema to create them in, also the schema the feed and the base filter read. Default the `obs_schema` var.
+      - name: resume
+        type: boolean
+        description: Resume the alerts after creating them. Default none, which follows the var `alert_resume` when set, otherwise the var `alerts`.
 
   - name: alert_channels
     description: >

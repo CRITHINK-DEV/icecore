@@ -5,9 +5,9 @@ fixture rows. The sandbox test creates the views with icecore.create_views in IC
 schema_change records, and reads them back through the query functions over a qmark-bound connection.
 
 Merged views (status `merged` in VIEWS): METRICS, SCHEMA_CHANGES, TEST_RESULTS, LINEAGE, LINEAGE_LATEST,
-CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS, SILENCE_EVENTS. Their columns are checked against the SQL that icecore.create_views renders
-(offline), and the sandbox test reads every one of them. ALERTS_FEED (#57) is coming: its
-function returns no rows and runs no query.
+CAPABILITIES, INVOCATIONS, NODE_EXECUTIONS, SILENCE_EVENTS, SCHEMA_COLUMNS, SLA_DECLARED, ALERTS_FEED. Their columns are checked against the SQL that icecore.create_views renders
+(offline), and the sandbox test reads every one of them. A view not yet merged returns no rows and runs no query.
+A view created by an older icecore that lacks a newer column is read with the columns it has.
 
 The sandbox test binds with the connector's qmark paramstyle (QmarkSession below), not with a Snowpark
 `session.sql(sql, params=[...])`: Snowpark is only installed inside Streamlit in Snowflake, not in the test venvs, and
@@ -48,6 +48,7 @@ BUILDERS = {
     "NODE_EXECUTIONS": lambda s: queries.build_node_executions(s, EVIL, ["error"]),
     "ALERTS_FEED": lambda s: queries.build_alerts_feed(s, False, "error", EVIL, "2026-01-01"),
     "SILENCE_EVENTS": lambda s: queries.build_silence_events(s, EVIL, "2026-01-01"),
+    "SCHEMA_COLUMNS": lambda s: queries.build_schema_columns(s, EVIL, "2026-01-01"),
     "SLA_DECLARED": lambda s: queries.build_sla_declared(s, EVIL),
 }
 
@@ -75,7 +76,7 @@ def test_each_query_reads_one_view_in_the_views_schema(view):
 
 
 MERGED = ["METRICS", "SCHEMA_CHANGES", "TEST_RESULTS", "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "INVOCATIONS",
-          "NODE_EXECUTIONS", "SILENCE_EVENTS"]
+          "NODE_EXECUTIONS", "SILENCE_EVENTS", "SCHEMA_COLUMNS"]
 
 
 def _output_columns(sql: str) -> list[str]:
@@ -118,13 +119,12 @@ def rendered_views():
 
 
 def test_every_merged_view_is_marked_merged_and_the_others_are_not():
-    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted([*MERGED, "SLA_DECLARED"])
-    assert queries.VIEWS["ALERTS_FEED"][0] == "pr"
+    assert sorted(v for v, spec in queries.VIEWS.items() if spec[0] == "merged") == sorted([*MERGED, "SLA_DECLARED", "ALERTS_FEED"])
 
 
 def test_the_rendered_create_views_list_is_the_merged_views(rendered_views):
-    # SCHEMA_COLUMNS feeds the Elementary compat view only; the app does not read it. ALERTS_FEED (UC6) is created by setup; the query layer still lists it as "pr"
-    assert sorted(v for v in rendered_views if v != "SCHEMA_COLUMNS") == sorted(MERGED + ["ALERTS_FEED"])
+    # ALERTS_FEED (UC6) is created by setup and read by the Incidents page; SCHEMA_COLUMNS is merged too (MERGED)
+    assert sorted(rendered_views) == sorted(MERGED + ["ALERTS_FEED"])
 
 
 @pytest.mark.parametrize("view", MERGED)
@@ -259,12 +259,17 @@ def test_every_merged_view_function_runs_against_the_fake_session():
         assert fn(layer=lay) == [{"relation": "r", "metric": "row_count", "value": 1.0}], fn.__name__
 
 
-def test_a_view_that_is_not_merged_yet_returns_no_rows_and_runs_no_query():
+def test_a_view_that_is_not_merged_yet_returns_no_rows_and_runs_no_query(monkeypatch):
+    monkeypatch.setitem(queries.VIEWS, "ALERTS_FEED", ("pr", "#0", queries.VIEWS["ALERTS_FEED"][2]))
     session = FakeSession()
     lay = layer(session)
     assert queries.alerts_feed(layer=lay) == []
     assert session.calls == []
     assert not queries.is_available("ALERTS_FEED") and queries.is_available("METRICS")
+
+
+def test_alerts_feed_is_merged_and_read():
+    assert queries.is_available("ALERTS_FEED")
 
 
 def test_expired_entries_are_evicted_not_kept():
@@ -297,7 +302,7 @@ def test_the_query_layer_never_names_the_event_table():
 
 def test_pages_and_the_other_libs_hold_no_sql_and_no_session():
     files = [*sorted((APP_DIR / "pages").glob("*.py")), APP_DIR / "streamlit_app.py",
-             *[p for p in sorted((APP_DIR / "lib").glob("*.py")) if p.name not in ("queries.py", "settings.py")]]
+             *[p for p in sorted((APP_DIR / "lib").glob("*.py")) if p.name not in ("queries.py", "settings.py", "ack.py")]]  # ack.py: the only write
     for path in files:
         source = path.read_text()
         for forbidden in ("get_active_session", "session.sql", "snowflake.snowpark", "snowflake.connector",
@@ -418,3 +423,50 @@ def test_node_executions_since_is_bound_and_last():
     assert "started_at >= to_timestamp_ntz(?)" in sql and "'" not in sql
     assert params == ["inv", "success", "2026-01-01", 50]
     assert queries.build_node_executions("OBS")[1] == [queries.DEFAULT_LIMIT]
+
+
+class OlderViewSession:
+    """A view created before a column existed: selecting that column fails with Snowflake's 'invalid identifier'."""
+
+    def __init__(self, view_columns, rows):
+        self.view_columns = [c.upper() for c in view_columns]
+        self.rows = rows
+        self.calls = []
+
+    def sql(self, sql, params=None):
+        self.calls.append((sql, params))
+        self._last = sql
+        return self
+
+    def collect(self):
+        sql = self._last
+        if sql.lower().startswith("describe view"):
+            return [FakeRow({"name": c}) for c in self.view_columns]
+        selected = sql.split(" from ", 1)[0].removeprefix("select ").lower()
+        for col in [c.strip().split(" as ")[0].strip('"') for c in selected.split(",")]:
+            if col.upper() not in self.view_columns:
+                raise Exception(f"SQL compilation error: error line 1 at position 7 invalid identifier '{col.upper()}'")
+        return [FakeRow(r) for r in self.rows]
+
+
+def test_an_older_view_missing_a_column_is_read_with_the_columns_it_has():
+    cols = [c for c in queries.VIEWS["NODE_EXECUTIONS"][2] if c != "layer"]
+    session = OlderViewSession(cols, [{"UNIQUE_ID": "model.p.a", "STATUS": "success"}])
+    lay = layer(session)
+    rows = queries.node_executions(layer=lay)
+    assert rows == [{"unique_id": "model.p.a", "status": "success"}]
+    selects = [s for s, _ in session.calls if s.lower().startswith("select")]
+    assert " layer" not in selects[-1].lower().split(" from ")[0]
+    # the view's columns are looked up once, then reused
+    queries.clear_cache(lay)
+    queries.node_executions(layer=lay)
+    queries._VIEW_COLUMNS.clear()  # isolate from other tests
+    assert sum(1 for s, _ in session.calls if s.lower().startswith("describe view")) == 1
+
+
+def test_an_error_that_is_not_a_missing_column_still_raises():
+    class Broken(FakeSession):
+        def collect(self):
+            raise Exception("Insufficient privileges to operate on view 'NODE_EXECUTIONS'")
+    with pytest.raises(Exception, match="Insufficient privileges"):
+        queries.node_executions(layer=layer(Broken()))

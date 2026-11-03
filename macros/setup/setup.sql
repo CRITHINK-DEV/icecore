@@ -14,7 +14,9 @@
          views of step 7 (macros/compat/create_compat_views.sql);
       9. create_tasks            every task of icecore._icecore_task_entries (one list: the silence task and, when Cortex
          is available, the Cortex refresh task), created suspended;
-      10. create_alerts          one suspended ALERT per channel of var icecore.alert_channels (icecore.create_alerts);
+      10. create_alerts          with var alerts true: one ALERT per channel of var icecore.alert_channels
+                                 (icecore.create_alerts), resumed (see alert_resume / silence_task_resume), and the silence task
+                                 of step 9 is created and resumed too; with alerts false neither is created;
                                  prints the notification integrations and grants an admin must run;
       deploy_app (app): planned. It keeps its place here and is reported as planned until its macro exists; a story
          that adds it marks it ready and adds its branch to _icecore_setup_run_step.
@@ -134,15 +136,22 @@
     {%- set parts = [] -%}
     {%- for task in t['tasks'] -%}
       {%- do parts.append(task['name'] ~ ': ' ~ ((task['task'] ~ (' (resumed)' if task['resumed'] else ' (suspended)')) if task['status'] == 'ok'
-          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else 'not created, no model declares meta.sla')) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
+          else ((('not created, Cortex is not available' if task['name'] == 'cortex_refresh' else ('not created, var alerts is false' if not icecore._icecore_control_enabled('silence_task_resume') else 'not created, no model declares meta.sla'))) if task['status'] == 'skipped' else 'could not create ' ~ task['task'] ~ ': ' ~ task['status']))) -%}
     {%- endfor -%}
     {%- for statement in t['printed'] -%}
       {% do log('icecore: an admin must run: ' ~ statement, info=True) %}
     {%- endfor -%}
     {{ return(parts | join('; ')) }}
   {%- elif name == 'create_alerts' -%}
+    {%- if not icecore._icecore_control_enabled('alert_resume') -%}
+      {%- set stale = icecore._icecore_warn_unmanaged(state['schema'], 'ALERT') -%}
+      {{ return('var alerts is false: no alert created, ' ~ (stale | length) ~ ' existing left untouched (set vars: icecore: alerts: true to create the alerts and the silence task and resume them)') }}
+    {%- endif -%}
     {%- set made = icecore.create_alerts(state['schema']) -%}
     {%- do state.update({'alerts': made}) -%}
+    {%- if made | selectattr('resumed') | list | length > 0 or (state['tasks'] and state['tasks']['tasks'] | selectattr('resumed') | list | length > 0) -%}
+      {% do log('icecore: warning: resumed alerts and tasks run on their warehouse at every schedule period and use warehouse time of the owner account', info=True) %}
+    {%- endif -%}
     {%- if not made -%}
       {{ return('no alert channel configured (var icecore.alert_channels)') }}
     {%- endif -%}

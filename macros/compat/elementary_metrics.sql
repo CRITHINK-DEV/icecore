@@ -46,7 +46,7 @@
 
 {#- DB.SCHEMA.NAME as Elementary writes a relation: icecore's quoted "DB"."SCHEMA"."NAME", unquoted and upper case. -#}
 {% macro _icecore_elementary_full_table_name(relation_sql) %}
-  {{ return("upper(replace(" ~ relation_sql ~ ", '\"', ''))") }}
+  {{ return("upper(replace(" ~ relation_sql ~ ", chr(34), ''))") }}
 {% endmacro %}
 
 

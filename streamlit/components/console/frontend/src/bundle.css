@@ -1,0 +1,9 @@
+/* Additions to prototype D's stylesheet for the Streamlit bundle (console.css stays verbatim). */
+.errbar{margin:14px 28px 0;max-width:1444px;padding:8px 12px;border:1px solid var(--fail);border-radius:8px;background:var(--fail-soft);color:var(--ink);font-size:12px}
+.errbar b{display:block;color:var(--fail);margin-bottom:2px}
+.errbar .mono{font-weight:500}
+/* The KPI "?" explains the number the way the layer health cards do: the .hpop popover on hover or focus. */
+.kpi.has-help{position:relative;cursor:help;overflow:visible}
+.kpi.has-help:hover,.kpi.has-help:focus-visible{border-color:var(--accent)}
+.kpi.has-help:hover .hpop,.kpi.has-help:focus-within .hpop,.kpi.has-help:focus .hpop{display:block}
+.kpis>.kpi.has-help:last-child .hpop{left:auto;right:0}

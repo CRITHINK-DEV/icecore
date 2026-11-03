@@ -502,3 +502,14 @@ def schema_columns(relation: str | None = None, limit: int = DEFAULT_LIMIT, sinc
                    layer: QueryLayer | None = None) -> list[Row]:
     """SCHEMA_COLUMNS: the column state of a relation per schema_changes run, newest snapshot first."""
     return _read(build_schema_columns, layer, relation, since, limit, view="SCHEMA_COLUMNS")
+
+
+def build_node_executions_newest(views_schema, since=None, limit=DEFAULT_LIMIT):
+    w = _Where()
+    w.at_least("started_at", since)
+    return _build(views_schema, "NODE_EXECUTIONS", w, "started_at desc nulls last, unique_id", limit)
+
+
+def node_executions_newest(since=None, limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
+    """NODE_EXECUTIONS, newest first, so that a limit drops the oldest rows (node_executions reads oldest first)."""
+    return _read(build_node_executions_newest, layer, since, limit, view="NODE_EXECUTIONS")

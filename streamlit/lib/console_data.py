@@ -79,21 +79,16 @@ def _bool(value: Any) -> bool | None:
 
 
 def _minutes(m: Any) -> str | None:
-    """90 -> '1h30m', 1440 -> '1d'; None -> None."""
+    """A duration in minutes as console.html's durStr reads it: one number and one unit, /^\\d+(\\.\\d+)?[smhd]$/.
+    The largest unit that divides it evenly: 1440 -> '1d', 120 -> '2h', 90 -> '90m', 0.5 -> '30s'."""
     n = _num(m)
-    if n is None:
+    if n is None or n < 0:
         return None
-    if 0 < n < 1:
-        return "<1m"
-    total = int(round(n))
-    if total <= 0:
-        return "0m"
-    parts = []
-    for unit, size in (("d", 1440), ("h", 60), ("m", 1)):
-        count, total = divmod(total, size)
-        if count:
-            parts.append(f"{count}{unit}")
-    return "".join(parts)
+    secs = int(round(n * 60))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if secs and secs % size == 0:
+            return f"{secs // size}{unit}"
+    return f"{secs}s"
 
 
 def _type_of(unique_id: str) -> str | None:
@@ -115,7 +110,11 @@ class _Reader:
 
     def read(self, view: str, fn: Callable[..., list], **kwargs) -> list[dict]:
         try:
-            return list(fn(layer=self.layer, **kwargs))
+            rows = list(fn(layer=self.layer, **kwargs))
+            if kwargs.get("limit") == queries.MAX_LIMIT and len(rows) >= queries.MAX_LIMIT:
+                tail = "; oldest rows dropped" if view != "LINEAGE_LATEST" else ""
+                self.errors.append({"view": view, "error": f"truncated at {queries.MAX_LIMIT} rows{tail}"})
+            return rows
         except Exception as exc:  # one failing view must not take the console down
             self.errors.append({"view": view, "error": f"{type(exc).__name__}: {exc}"[:500]})
             return []
@@ -172,15 +171,61 @@ def _nodes(lineage, execs, tests, test_edges) -> list[dict]:
     return out
 
 
-def _incident_node(inc: dict, relation_ids: dict[str, str]) -> str | None:
+def _norm_relation(relation: str) -> str:
+    return ".".join(part.strip('"').upper() for part in relation.split("."))
+
+
+def _make_resolver(nodes, execs, schema, mets):
+    """(node_of, resolve): node_of(unique_id) maps a test to the node it tests; resolve(relation) finds the node a
+    relation belongs to, by the relation of its executions and metrics, else by its name. None unless exactly one
+    node matches, so two models never share an id."""
+    tested = {n["unique_id"]: n["depends_on"][0] for n in nodes if n["type"] == "test" and len(n["depends_on"]) == 1}
+
+    def node_of(uid):
+        return tested.get(uid, uid) if uid else None
+
+    rel: dict[str, set] = {}
+    for rows in (execs, schema, mets):
+        for r in rows:
+            uid = node_of(r.get("unique_id") or r.get("node_unique_id"))
+            if r.get("relation") and uid and not uid.startswith("test."):
+                full = _norm_relation(r["relation"])
+                rel.setdefault(full, set()).add(uid)
+                rel.setdefault(full.rsplit(".", 1)[-1], set()).add(uid)
+    by_name: dict[str, set] = {}
+    for n in nodes:
+        if n["type"] != "test":
+            by_name.setdefault(str(n["name"]).lower(), set()).add(n["unique_id"])
+
+    def resolve(relation):
+        if not relation:
+            return None
+        full = _norm_relation(relation)
+        for ids in (rel.get(full), rel.get(full.rsplit(".", 1)[-1]), by_name.get(full.rsplit(".", 1)[-1].lower())):
+            if ids and len(ids) == 1:
+                return next(iter(ids))
+        return None
+
+    def target(r):
+        """The node a metric row is about: its node (a test maps to what it tests), a test with no known target
+        falls back to the row's relation, a row without a node to its relation."""
+        uid = node_of(r.get("node_unique_id"))
+        if uid and not uid.startswith("test."):
+            return uid
+        return resolve(r.get("relation")) or uid
+
+    return node_of, resolve, target
+
+
+def _incident_node(inc: dict, resolve) -> str | None:
     kind, key = inc.get("kind"), inc.get("node_key") or ""
     if kind in ("test_failure", "silence"):
         return key or None
     relation = key.split("|")[0]
-    return relation_ids.get(relation) or relation_ids.get(relation.upper())
+    return resolve(relation)
 
 
-def _incidents_out(feed, tests, execs, mets, declared, relation_ids, now) -> list[dict]:
+def _incidents_out(feed, tests, execs, mets, declared, resolve, now) -> list[dict]:
     tests_by_id: dict[str, list[dict]] = {}
     for r in tests:
         tests_by_id.setdefault(r.get("test_unique_id"), []).append(r)
@@ -216,7 +261,7 @@ def _incidents_out(feed, tests, execs, mets, declared, relation_ids, now) -> lis
             "root_cause": inc.get("root_cause_unique_id") or (latest_test or {}).get("root_cause_unique_id"),
             "channel": channels.get(key) if kind == "silence" else None,
             "root_cause_kind": inc.get("root_cause_kind") or (latest_test or {}).get("root_cause_kind"),
-            "node_unique_id": _incident_node(inc, relation_ids),
+            "node_unique_id": _incident_node(inc, resolve),
             "state": "open" if st == "stale" else st,
         })
     return out
@@ -231,7 +276,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
     ref = now or _incidents.as_of(inv, keys=("started_at",)) or datetime.now(timezone.utc).replace(tzinfo=None)
     since = ref - timedelta(days=days)
     inv = [r for r in inv if (_dt(r.get("started_at")) or ref) >= since]
-    execs = rd.read("NODE_EXECUTIONS", queries.node_executions, since=since, limit=queries.MAX_LIMIT)
+    execs = rd.read("NODE_EXECUTIONS", queries.node_executions_newest, since=since, limit=queries.MAX_LIMIT)
     tests = rd.read("TEST_RESULTS", queries.test_results, since=since, limit=queries.MAX_LIMIT)
     mets = rd.read("METRICS", queries.metrics, since=since, limit=queries.MAX_LIMIT)
     schema = rd.read("SCHEMA_CHANGES", queries.schema_changes, since=since, limit=queries.MAX_LIMIT)
@@ -247,12 +292,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
     nodes = _nodes(lineage, execs, tests, test_edges)
     names = {n["unique_id"]: n["name"] for n in nodes}
 
-    relation_ids: dict[str, str] = {}
-    for rows, rel_key, id_key in ((execs, "relation", "unique_id"), (schema, "relation", "node_unique_id"),
-                                  (mets, "relation", "node_unique_id")):
-        for r in rows:
-            if r.get(rel_key) and r.get(id_key):
-                relation_ids.setdefault(r[rel_key], r[id_key])
+    node_of, resolve, target = _make_resolver(nodes, execs, schema, mets)
 
     runs = [{
         "invocation_id": r.get("invocation_id"), "command": r.get("command"), "started_at": _iso(r.get("started_at")),
@@ -278,7 +318,8 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
         scale = 1 / 60 if r.get("metric") == FRESHNESS_METRIC else 1
         conv = (lambda v: _num(v, 2)) if scale != 1 else _num
         metrics_out.append({
-            "relation": r.get("relation"), "unique_id": r.get("node_unique_id"),
+            "relation": r.get("relation"),
+            "unique_id": target(r),
             "metric": FRESHNESS_OUT if scale != 1 else r.get("metric"),
             "observed_at": _iso(r.get("observed_at")),
             "value": conv(None if r.get("value") is None else float(r["value"]) * scale),
@@ -289,14 +330,20 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
             "score": _num(r.get("anomaly_score")),
         })
 
-    fresh: dict[str, dict] = {}
+    fresh: dict[str, dict] = {}   # the node the UI looks up (FRESH[unique_id]): the latest reading, one per node
+    limits: dict[str, Any] = {}
     for r in _by_time([m for m in mets if m.get("metric") == FRESHNESS_METRIC], "observed_at"):
-        fresh[r.get("node_unique_id") or r.get("relation")] = r
+        uid = target(r)
+        if uid is None:
+            continue
+        fresh[uid] = r
+        if _num(r.get("threshold")) is not None:
+            limits[uid] = _num(r["threshold"])
     freshness = []
-    for uid, r in sorted(fresh.items(), key=lambda kv: str(kv[0])):
-        lag, thr = _num(r.get("value")), _num(r.get("threshold"))
+    for uid, r in sorted(fresh.items()):
+        lag, thr = _num(r.get("value")), limits.get(uid)
         freshness.append({
-            "unique_id": uid, "name": names.get(uid) or (_name_of(uid) if r.get("node_unique_id") else uid),
+            "unique_id": uid, "name": names.get(uid) or _name_of(uid),
             "freshness_lag_min": None if lag is None else int(round(lag / 60)),
             "max_lag_min": None if thr is None else int(round(thr / 60)),
         })
@@ -324,7 +371,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
         "last_success_at": _iso(last_ok[r["unique_id"]]) if r["unique_id"] in last_ok else None,
     } for r in sorted((d for d in declared if d.get("unique_id")), key=lambda d: d["unique_id"])]
 
-    incidents_out = _incidents_out(feed, tests, execs, mets, declared, relation_ids, now or generated or ref)
+    incidents_out = _incidents_out(feed, tests, execs, mets, declared, resolve, now or generated or ref)
 
     cap = caps[0] if caps else {}
     versions = list(dict.fromkeys(str(r["dbt_version"]) for r in reversed(_by_time(inv, "started_at"))

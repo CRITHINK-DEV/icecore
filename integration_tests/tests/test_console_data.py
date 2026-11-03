@@ -81,14 +81,18 @@ class FakeSession:
 
     def sql(self, sql, params=None):
         self.queries.append((sql, params))
-        self._sql = sql
+        self._sql, self._params = sql, params
         return self
 
     def collect(self):
         view = re.search(r"from \S+\.(\w+)(?: where| order)", self._sql).group(1)
         if view in self.fail:
             raise RuntimeError(f"SQL compilation error: view {view} does not exist")
-        return [FakeRow({k.upper(): v for k, v in r.items()}) for r in self.rows.get(view, [])]
+        rows = list(self.rows.get(view, []))
+        if view == "NODE_EXECUTIONS":  # the real order, so that a limit drops what the order puts last
+            rows.sort(key=lambda r: r["started_at"], reverse="started_at desc" in self._sql)
+        limit = self._params[-1] if self._params else None
+        return [FakeRow({k.upper(): v for k, v in r.items()}) for r in rows[:limit]]
 
 
 def layer_for(rows, fail=()):
@@ -183,7 +187,7 @@ def test_mapping_of_each_key():
     ch = {c["change"]: c for c in d["schema_changes"]}
     assert (ch["type_changed"]["from"], ch["type_changed"]["to"], ch["type_changed"]["type"]) == ("NUMBER", "FLOAT", None)
     assert (ch["added"]["type"], ch["added"]["from"]) == ("VARCHAR", None)
-    assert d["slas"] == [{"unique_id": "model.shop.orders", "name": "orders", "expected_every": "1h30m", "grace": "10m",
+    assert d["slas"] == [{"unique_id": "model.shop.orders", "name": "orders", "expected_every": "90m", "grace": "10m",
                           "last_success_at": "2026-11-02T08:00:00"}]
     assert d["capabilities"] == {"edition": "Enterprise", "event_table": "DB.T.EVENTS", "cortex": True,
                                  "icecore_version": "0.9.0", "dbt_versions": ["1.8.10", "1.9.4"]}
@@ -286,3 +290,62 @@ def test_scale_2000_nodes_50000_rows():
     assert len(d["nodes"]) >= 2000
     assert len(out) < 10 * 1024 * 1024, len(out)
     assert elapsed < 2.0, elapsed
+
+
+def test_node_executions_cap_drops_the_oldest_and_says_so(monkeypatch):
+    from lib import console_data, queries
+    monkeypatch.setattr(queries, "MAX_LIMIT", 5)
+    rows = small_rows()
+    rows["NODE_EXECUTIONS"] = [{"invocation_id": f"i{k}", "unique_id": "model.shop.orders", "type": "model",
+                                "status": "success", "started_at": T0 - timedelta(hours=k)} for k in range(8)]
+    d = console_data.build(layer=layer_for(rows))
+    assert [r["invocation_id"] for r in d["node_executions"]] == ["i4", "i3", "i2", "i1", "i0"]  # newest 5, ascending
+    errs = [e for e in d["errors"] if e["view"] == "NODE_EXECUTIONS"]
+    assert errs and "truncated at 5 rows" in errs[0]["error"] and "oldest" in errs[0]["error"]
+    validate(d)
+
+
+def test_relation_metrics_resolve_to_their_own_node():
+    from lib import console_data
+    rows = small_rows()
+    q = lambda t: f'"DB"."S"."{t}"'
+    rows["NODE_EXECUTIONS"] += [
+        {"invocation_id": "inv2", "unique_id": "model.shop.cust", "type": "model", "name": "cust",
+         "relation": q("CUST"), "status": "success", "started_at": T0}]
+    rows["NODE_EXECUTIONS"][0]["relation"] = rows["NODE_EXECUTIONS"][1]["relation"] = q("ORDERS")
+    rows["METRICS"] = [
+        {"relation": q("ORDERS"), "node_unique_id": None, "metric": "row_count", "observed_at": T0, "value": 1},
+        {"relation": q("CUST"), "node_unique_id": None, "metric": "row_count", "observed_at": T0, "value": 2},
+        {"relation": q("GHOST"), "node_unique_id": None, "metric": "row_count", "observed_at": T0, "value": 3}]
+    got = {m["relation"]: m["unique_id"] for m in console_data.build(layer=layer_for(rows))["metrics"]}
+    assert got == {q("ORDERS"): "model.shop.orders", q("CUST"): "model.shop.cust", q("GHOST"): None}
+
+
+def test_source_freshness_is_keyed_on_the_node_the_ui_looks_up():
+    from lib import console_data
+    rows = small_rows()
+    q = '"DB"."S"."ORDERS"'
+    rows["NODE_EXECUTIONS"][0]["relation"] = rows["NODE_EXECUTIONS"][1]["relation"] = q
+    t = "test.shop.not_null_orders_id.abc"  # the freshness test's own metric is keyed on the test: it maps to the node
+    rows["METRICS"] = [
+        {"relation": q, "node_unique_id": None, "metric": "freshness_lag_seconds", "observed_at": T0 - timedelta(hours=2),
+         "value": 600},
+        {"relation": q, "node_unique_id": t, "metric": "freshness_lag_seconds", "observed_at": T0, "value": 3600,
+         "threshold": 7200},
+        {"relation": "unknown", "node_unique_id": None, "metric": "freshness_lag_seconds", "observed_at": T0,
+         "value": 60}]
+    fr = console_data.build(layer=layer_for(rows))["source_freshness"]
+    assert fr == [{"unique_id": "model.shop.orders", "name": "orders", "freshness_lag_min": 60, "max_lag_min": 120}]
+
+
+@pytest.mark.parametrize("minutes,expected", [(90, "90m"), (120, "2h"), (1440, "1d"), (10, "10m"), (0.5, "30s"),
+                                              (None, None)])
+def test_sla_durations_are_what_the_prototype_parses(minutes, expected):
+    from lib import console_data
+    assert console_data._minutes(minutes) == expected
+    rows = small_rows()
+    rows["SLA_DECLARED"][0].update(expected_every_minutes=minutes, grace_minutes=minutes)
+    sla = console_data.build(layer=layer_for(rows))["slas"][0]
+    assert sla["expected_every"] == expected == sla["grace"]
+    if expected:
+        assert re.fullmatch(r"\d+(?:\.\d+)?[smhd]", expected)  # console.html durStr

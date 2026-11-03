@@ -154,7 +154,8 @@ def test_neighbourhood_dot_escapes_and_marks_the_node():
 
     text = node.neighbourhood_dot(dot)
     assert text.startswith("digraph") and "orders" in text and "model.shop.customers" in text
-    assert "<script>" not in node.neighbourhood_dot({**dot, "name": '<script>"x"'})
+    bad = node.neighbourhood_dot({**dot, "name": '<script>"x"'})
+    assert "<script>" not in bad and '\\"x\\"' in bad
 
 
 # --- the page --------------------------------------------------------------------------------------------------
@@ -233,3 +234,30 @@ def test_read_schema_columns_binds_the_relation():
     assert "OBS.SCHEMA_COLUMNS" in sql and "drop" not in sql and params[0] == "A.B.C; drop"
     with pytest.raises(ValueError):
         node.read_schema_columns("x", layer=Layer(None, "bad name"))
+
+
+def test_node_switches_when_another_node_is_opened(monkeypatch):
+    _patch(monkeypatch, lineage_latest=EDGES, node_executions=NODES)
+    at = _run(UID)
+    assert at.subheader[0].value == "orders"
+    at.session_state["icecore_console_node"] = "model.shop.customers"
+    at.query_params["node"] = "model.shop.customers"
+    at.run()
+    assert not at.exception and at.subheader[0].value == "customers"
+    assert at.selectbox[0].value == "model.shop.customers"
+
+
+def test_node_renders_the_column_snapshot(monkeypatch):
+    from lib.pages import node as logic
+
+    _patch(monkeypatch, lineage_latest=EDGES, node_executions=NODES)
+    monkeypatch.setattr(logic, "read_schema_columns", lambda *a, **k: list(COLUMNS))
+    at = _run(UID)
+    assert any("latest snapshot" in c.value for c in at.caption)
+    assert any(len(d.value) == 2 for d in at.dataframe)
+
+
+def test_node_shows_errors_of_the_secondary_reads(monkeypatch):
+    _patch(monkeypatch, lineage_latest=EDGES, node_executions=NODES, metrics=RuntimeError("metrics down"))
+    at = _run(UID)
+    assert any("metrics down" in c.value for c in at.caption)

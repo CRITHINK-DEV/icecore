@@ -24,12 +24,19 @@ known = sorted({u for e in edges for u in (e.get("parent_unique_id"), e.get("chi
                | {r["unique_id"] for r in nodes if r.get("unique_id")})
 node = console.selected_node()
 options = ([node] if node and node not in known else []) + known
-picked = st.selectbox("Node", options, index=options.index(node) if node in options else None,
-                      placeholder="Pick a model, source or test", key="node_picker")
-if picked and picked != node:
-    st.session_state[console.NODE_STATE_KEY] = picked
-    st.query_params["node"] = picked
-    node = picked
+
+
+def _picked() -> None:
+    choice = st.session_state.get("node_picker")
+    if choice:
+        st.session_state[console.NODE_STATE_KEY] = choice
+        st.query_params["node"] = choice
+
+
+if node:
+    st.session_state["node_picker"] = node  # the widget's identity is its key: follow the node opened elsewhere
+st.selectbox("Node", options, index=None, placeholder="Pick a model, source or test", key="node_picker",
+             on_change=_picked)
 node = console.sync_node_param() if node else None
 if error:
     st.caption(f"Reading the views failed: {error}")
@@ -37,23 +44,28 @@ if not node:
     st.caption("Pick a node to see its history, tests, metrics, schema and neighbours.")
     st.stop()
 
-tests, _ = console.guarded(lambda: queries.test_results(since=since, limit=queries.MAX_LIMIT))
+tests, e1 = console.guarded(lambda: queries.test_results(since=since, limit=queries.MAX_LIMIT))
 lineage_rows = edges
 head = logic.node_summary(node, nodes, [], [], [], lineage_rows)
 if not head["found"]:
     st.info("No node with this id. Pick one above.", icon=":material/info:")
     st.stop()
 relation = head["relation"]
-metric_rows, _ = console.guarded(lambda: queries.metrics(relation=relation, since=since, limit=queries.MAX_LIMIT)) \
+metric_rows, e2 = console.guarded(lambda: queries.metrics(relation=relation, since=since, limit=queries.MAX_LIMIT)) \
     if relation else ([], None)
-change_rows, _ = console.guarded(lambda: queries.schema_changes(relation=relation, since=since, limit=queries.MAX_LIMIT)) \
+change_rows, e3 = console.guarded(lambda: queries.schema_changes(relation=relation, since=since, limit=queries.MAX_LIMIT)) \
     if relation else ([], None)
-column_rows, _ = console.guarded(lambda: logic.read_schema_columns(relation)) if relation else ([], None)
+column_rows, e4 = console.guarded(lambda: logic.read_schema_columns(relation)) if relation else ([], None)
+for _e in (e1, e2, e3, e4):
+    if _e:
+        st.caption(f"Reading the views failed: {_e}")
 s = logic.node_summary(node, nodes, tests, metric_rows, change_rows, lineage_rows, column_rows)
 
-st.subheader(s["name"])
-st.caption(f"`{s['unique_id']}` · {s['type']}" + (f" · {s['materialization']}" if s["materialization"] else "")
-           + (f" · layer {s['layer']}" if s["layer"] else "") + (f" · `{relation}`" if relation else ""))
+st.subheader(console.md(s["name"]))
+st.caption(f"{console.md(s['unique_id'])} · {console.md(s['type'])}"
+           + (f" · {console.md(s['materialization'])}" if s["materialization"] else "")
+           + (f" · layer {console.md(s['layer'])}" if s["layer"] else "")
+           + (f" · {console.md(relation)}" if relation else ""))
 
 lag = s["freshness_lag_s"]
 console.kpi_row([

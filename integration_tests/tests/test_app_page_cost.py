@@ -66,14 +66,16 @@ def test_regressions_merge_metric_anomalies_and_cost_alerts():
         {"relation": "db.s.ok", "metric": "credits", "anomaly_is_anomaly": False, "value": 5.0, "observed_at": NOW},
     ]
     alerts = [
-        {"incident_key": "k1", "kind": "cost", "node_key": "model.p.a", "title": "dup", "severity": "warn",
+        {"incident_key": "k1", "kind": "cost", "node_key": "db.s.a|credits||", "title": "dup", "severity": "warn",
          "last_detected_at": NOW},
-        {"incident_key": "k2", "kind": "cost", "node_key": "model.p.z", "title": "z spiked", "severity": "error",
+        {"incident_key": "k2", "kind": "cost", "node_key": "db.s.z|credits||", "title": "z spiked", "severity": "error",
          "last_detected_at": NOW},
         {"incident_key": "k3", "kind": "test_failure", "node_key": "test.p.t", "title": "no", "last_detected_at": NOW},
     ]
-    out = page.regressions(metrics, alerts)
+    out = page.regressions(metrics, alerts, [{"relation": "db.s.z", "unique_id": "model.p.z"}])
     assert [r["unique_id"] for r in out] == ["model.p.a", "model.p.z"]  # the alert for a is the metric's duplicate
+    assert [r["relation"] for r in out] == ["db.s.a", "db.s.z"]
+    assert page.regressions([], alerts[1:2])[0]["unique_id"] is None  # unknown relation: no click
     assert out[0]["excess"] == 4.0 and out[0]["source"] == "anomaly"
     assert out[1]["source"] == "alert" and out[1]["detail"] == "z spiked"
 
@@ -132,3 +134,9 @@ def test_cost_renders_tiles_chart_and_tables(monkeypatch):
     assert [m.label for m in at.metric] == ["Credits in window", "Change vs previous window", "Top model share",
                                             "Unattributed runs"]
     assert len(at.dataframe) == 2
+
+
+def test_per_model_window_matches_tiles():
+    nodes = [node("model.p.a", 1, 2.0), node("model.p.a", 20, 9.0)]
+    assert page.per_model(page.in_window(nodes, NOW, 7), now=NOW)[0]["credits"] == 2.0
+

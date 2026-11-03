@@ -22,7 +22,7 @@ if not invocations and not nodes:
 
 now = logic.now_of(invocations, nodes)
 console.kpi_row(logic.tiles(invocations, nodes, now=now, days=filters.days))
-for err in (err_n, err_m, err_a):
+for err in (err_i, err_n, err_m, err_a):
     if err:
         st.caption(f"Reading the views failed: {err}")
 
@@ -30,7 +30,7 @@ st.altair_chart(charts.daily(cost.daily_trend(invocations, now), x="day", y="cre
                              title="Credits per day, last 30 days", y_title="Credits"), use_container_width=True)
 
 st.subheader("Credits per model")
-models = logic.per_model(nodes, now=now)
+models = logic.per_model(logic.in_window(nodes, now, filters.days), now=now)
 console.table(
     models[:50], key="cost_models", limit=None,
     column_config={
@@ -44,7 +44,7 @@ console.table(
     })
 
 st.subheader("Top regressions")
-regs = logic.regressions(metric_rows, alerts)
+regs = logic.regressions(metric_rows, alerts, nodes)
 if regs:
     console.table(
         regs, key="cost_regressions",

@@ -10,7 +10,7 @@ from typing import Any
 
 from lib import cost as costlib
 from lib.console import Tile
-from lib.incidents import as_of
+from lib.incidents import _naive, as_of
 
 TREND_POINTS = 15
 SETTLED = "no_attribution"
@@ -18,12 +18,15 @@ SETTLED_NOTE = "settled at 0"
 
 
 def _at(row: dict, key: str = "started_at") -> datetime | None:
-    ts = row.get(key)
-    return ts.replace(tzinfo=None) if isinstance(ts, datetime) else None
+    return _naive(row.get(key))
 
 
 def _window(rows: list[dict], start: datetime, end: datetime) -> list[dict]:
     return [r for r in rows if (t := _at(r)) is not None and start < t <= end]
+
+
+def in_window(rows: list[dict], now: datetime, days: int) -> list[dict]:
+    return _window(rows, now - timedelta(days=days), now)
 
 
 def _credits(rows: list[dict]) -> float:
@@ -83,22 +86,28 @@ def per_model(node_rows: list[dict], *, now: datetime, points: int = TREND_POINT
     return out
 
 
-def regressions(metric_rows: list[dict], alert_rows: list[dict], limit: int = costlib.TOP_N) -> list[dict]:
+def regressions(metric_rows: list[dict], alert_rows: list[dict], node_rows: list[dict] | None = None,
+                limit: int = costlib.TOP_N) -> list[dict]:
     """Cost regressions: the credits metric points the engines flagged above their band (worst first), then the
-    ALERTS_FEED incidents of kind 'cost' for nodes the metric rows do not already cover."""
+    ALERTS_FEED incidents of kind 'cost' for relations the metric rows do not already cover.
+
+    An alert's node_key is `relation|credits||`, so it is deduplicated on the relation, and the node is found through
+    the metric or node rows by relation (`unique_id` is None, so no row click, when it cannot be found)."""
+    to_uid = {r["relation"]: r.get("node_unique_id") for r in metric_rows if r.get("relation") and r.get("node_unique_id")}
+    to_uid.update({r["relation"]: r["unique_id"] for r in node_rows or [] if r.get("relation") and r.get("unique_id")})
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
-    by_relation = {r["relation"]: r.get("node_unique_id") for r in metric_rows if r.get("metric") == "credits"}
     for r in costlib.top_regressions(metric_rows, limit):
-        uid = by_relation.get(r["relation"]) or r["relation"]
-        seen.add(uid)
-        out.append({"unique_id": uid, "relation": r["relation"], "observed_at": r["observed_at"], "credits": r["credits"],
-                    "expected": r["expected"], "excess": r["excess"], "detail": r["engine"] or "", "source": "anomaly"})
+        seen.add(r["relation"])
+        out.append({"unique_id": to_uid.get(r["relation"]), "relation": r["relation"], "observed_at": r["observed_at"],
+                    "credits": r["credits"], "expected": r["expected"], "excess": r["excess"],
+                    "detail": r["engine"] or "", "source": "anomaly"})
     for a in alert_rows:
-        if a.get("kind") != "cost" or a.get("node_key") in seen:
+        relation = str(a.get("node_key") or "").split("|")[0]
+        if a.get("kind") != "cost" or not relation or relation in seen:
             continue
-        seen.add(a["node_key"])
-        out.append({"unique_id": a["node_key"], "relation": a["node_key"], "observed_at": a.get("last_detected_at"),
+        seen.add(relation)
+        out.append({"unique_id": to_uid.get(relation), "relation": relation, "observed_at": a.get("last_detected_at"),
                     "credits": None, "expected": None, "excess": None, "detail": a.get("title") or "",
                     "source": "alert"})
     return out[:limit]

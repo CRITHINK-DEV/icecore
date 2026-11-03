@@ -98,6 +98,23 @@ function Canvas({ args, theme }) {
     if (target && pos[target]) rf.setCenter(pos[target].x + NODE_W / 2, pos[target].y + NODE_H / 2, { zoom: compact ? 1 : 0.9, duration: 350 });
   }, [args.focus, trail.join(">")]); // eslint-disable-line
 
+  const wrap = React.useRef(null);
+  useEffect(() => {
+    if (!wrap.current || typeof ResizeObserver === "undefined") return undefined;
+    let t;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const sel = selected && pos[selected] ? [{ id: selected }] : undefined;
+        rf.fitView({ padding: 0.15, duration: 250, maxZoom: compact ? 1 : 1.4, nodes: sel && undefined });
+        if (sel) rf.setCenter(pos[selected].x + NODE_W / 2, pos[selected].y + NODE_H / 2, { zoom: rf.getZoom(), duration: 250 });
+      }, 120);
+    });
+    ro.observe(wrap.current);
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, [selected, pos, compact]); // eslint-disable-line
+  useEffect(() => { if (!selected) rf.fitView({ padding: 0.15, duration: 250, maxZoom: compact ? 1 : 1.4 }); }, [selected]); // eslint-disable-line
+
   const pick = (id) => { setSelected(id); setComponentValue(id); };
   const toggle = (l) => setHidden((h) => (h.includes(l) ? h.filter((x) => x !== l) : [...h, l]));
   const jump = () => {
@@ -124,7 +141,7 @@ function Canvas({ args, theme }) {
           </div>
         </div>
       )}
-      <div className="canvas">
+      <div className="canvas" ref={wrap}>
         <ReactFlow nodes={nodes} edges={rfEdges} nodeTypes={nodeTypes} minZoom={0.1} maxZoom={2} fitView
           nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
           onlyRenderVisibleElements={allNodes.length > 400} proOptions={{ hideAttribution: true }}

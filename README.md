@@ -30,7 +30,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 ![The Console overview](docs/assets/app/v2-overview.png)
 
 > [!NOTE]
-> **This is the first public release (`vX.Y.Z`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
+> **This is the first public release (`v0.1.0`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Add icecore to `packages.yml`, pinned to the release tag, then install:
 # packages.yml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: vX.Y.Z
+    revision: v0.1.0
 ```
 
 ```bash
@@ -145,14 +145,14 @@ The role needs USAGE on the database and the views schema and SELECT on the view
 **Then deploy it to Streamlit in Snowflake** if your team wants one shared URL. Upload the files of the `streamlit/` folder, including `components/console/build/`, to a stage and create the app from it:
 
 ```sql
-CREATE STREAMLIT <db>.<schema>.ICECORE_APP
+CREATE STREAMLIT <db>.<views_schema>.ICECORE_APP
   FROM @<db>.<schema>.<stage>/icecore_app
   MAIN_FILE = 'streamlit_app.py'
   QUERY_WAREHOUSE = <warehouse>;
-GRANT USAGE ON STREAMLIT <db>.<schema>.ICECORE_APP TO ROLE <viewer_role>;
+GRANT USAGE ON STREAMLIT <db>.<views_schema>.ICECORE_APP TO ROLE <viewer_role>;
 ```
 
-The exact steps (the PUT commands, the layout and the `snow streamlit deploy` option) are in [docs/app.md](docs/app.md#deploy-it-to-streamlit-in-snowflake). A deployed app needs a warehouse while someone has it open.
+The exact steps (the PUT commands, the layout and the `snow streamlit deploy` option) are in [docs/app.md](docs/app.md#deploy-it-to-streamlit-in-snowflake). Create the app in the schema that holds the views and it finds them with no setting (other options: [Where the app reads from](docs/app.md#where-the-app-reads-from)). A deployed app needs a warehouse while someone has it open.
 
 ## Known limits
 

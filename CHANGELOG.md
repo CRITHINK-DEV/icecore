@@ -4,7 +4,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
-## [X.Y.Z] - YYYY-MM-DD
+## [0.1.0] - 2026-11-03
 
 First public release.
 

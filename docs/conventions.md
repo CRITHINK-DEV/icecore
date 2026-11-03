@@ -187,7 +187,7 @@ group by 1, 2;
 
 ```text
 SCHEMA_VERSION | ICECORE_VERSION | N
-1              | 0.0.1           | 25
+1              | 0.1.0           | 25
 ```
 
 ### The views

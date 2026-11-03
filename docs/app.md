@@ -37,9 +37,14 @@ Each tile has a help text that says how its number is computed.
 
 **Views that cannot be read.** If a view is missing or the role cannot read it, the app still opens. A red bar lists each view and its error, and the sections that depend on it show what is recorded so far.
 
-## Where the app reads the views: `ICECORE_VIEWS_SCHEMA`
+## Where the app reads from
 
-The setting is `ICECORE_VIEWS_SCHEMA`, as `DATABASE.SCHEMA` or `SCHEMA` (plain unquoted identifiers, upper-cased). The default is `<your session's database>.ICECORE_OBS`, the schema `icecore.setup` creates. Set it, before you start a local run, when your `obs_schema` var or `setup` schema argument is something else, or when the views are in another database than your session's. The Console has no field for it.
+The app takes the views schema (`DATABASE.SCHEMA`, plain unquoted identifiers, upper-cased) from the first of these that applies:
+
+1. The `ICECORE_VIEWS_SCHEMA` environment variable (local runs).
+2. `views_schema = "DB.SCHEMA"` in an optional `streamlit/icecore_app.toml`, next to `streamlit_app.py`. This is the way to set it in Streamlit in Snowflake. Upload it with the other files (`PUT file://streamlit/icecore_app.toml @<db>.<schema>.<stage>/icecore_app`), or add it to the `artifacts` of `snowflake.yml`.
+3. The app's own schema, when the app is created in the views schema (`CREATE STREAMLIT <db>.<views schema>.ICECORE_APP`). It needs no setting and is the recommended path for a deployed app.
+4. `<current database>.ICECORE_OBS`, the schema `icecore.setup` creates.
 
 ## Run the app on your laptop (recommended)
 
@@ -88,7 +93,7 @@ Do this if your team wants one shared URL. Inside Snowflake the app uses the act
 
 The files, relative to `streamlit/`:
 
-- `streamlit_app.py`, `environment.yml` and `.streamlit/config.toml`;
+- `streamlit_app.py`, `environment.yml` and `.streamlit/config.toml`, and `icecore_app.toml` if you set the views schema that way;
 - `lib/__init__.py`, `ack.py`, `console_component.py`, `console_data.py`, `incidents.py`, `queries.py`, `settings.py` and `status.py`;
 - `components/console/build/index.html` and `components/console/build/assets/*`.
 
@@ -112,7 +117,7 @@ PUT file://streamlit/components/console/build/assets/*     @<db>.<schema>.<stage
 Then create the app from the stage:
 
 ```sql
-CREATE OR REPLACE STREAMLIT <db>.<schema>.ICECORE_APP
+CREATE OR REPLACE STREAMLIT <db>.<views_schema>.ICECORE_APP
   FROM '@<db>.<schema>.<stage>/icecore_app'
   MAIN_FILE = 'streamlit_app.py'
   QUERY_WAREHOUSE = <warehouse>;
@@ -136,9 +141,9 @@ It is a sandbox-style definition: its `identifier`, `query_warehouse` and databa
 The role that views the app needs **USAGE on the STREAMLIT object**:
 
 ```sql
-GRANT USAGE ON STREAMLIT <db>.<schema>.ICECORE_APP TO ROLE <viewer_role>;
+GRANT USAGE ON STREAMLIT <db>.<views_schema>.ICECORE_APP TO ROLE <viewer_role>;
 ```
 
-A Streamlit in Snowflake app runs with the rights of its owner role, so that role needs USAGE on the database and the views schema, SELECT on the views, and USAGE on `ICECORE_ACK` for the Acknowledge button ([what `setup` creates](configuration.md#what-setup-creates)). The Console has no field for the views schema, and a deployed app has no environment variable to set it, so the views must be in the default schema, `<the app's database>.ICECORE_OBS`.
+A Streamlit in Snowflake app runs with the rights of its owner role, so that role needs USAGE on the database and the views schema, SELECT on the views, and USAGE on `ICECORE_ACK` for the Acknowledge button ([what `setup` creates](configuration.md#what-setup-creates)). See [Where the app reads from](#where-the-app-reads-from) for the views schema: create the app in the views schema and nothing else is needed.
 
 Local and deployed show the same Console.

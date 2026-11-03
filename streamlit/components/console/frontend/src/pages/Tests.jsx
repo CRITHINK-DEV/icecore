@@ -14,7 +14,7 @@ export function BandChart({ series, engine, height = 300 }) {
       grid: { left: 70, right: 20, top: 30, bottom: 50 },
       legend: { top: 0, right: 0, data: ['Observed', 'Expected', 'Expected band', 'Anomaly'], textStyle: { color: p.ink2, fontSize: 11 } },
       tooltip: { trigger: 'axis', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 },
-        formatter: a => { const x = pts[a[0].dataIndex]; return `<b>${esc(fmtDay(x.t))}</b><br/>Observed ${esc(fmtNum(x.value))}<br/>Expected ${esc(fmtNum(x.expected))}<br/>Band ${esc(fmtNum(x.lower))} to ${esc(fmtNum(x.upper))}<br/>${esc(x.anomaly ? '<b style="color:' + p.fail + '">Anomaly</b>' : 'Inside the band')}${esc(x.score != null ? '<br/>Score ' + x.score : '')}`; } },
+        formatter: a => { const x = pts[a[0].dataIndex]; return `<b>${esc(fmtDay(x.t))}</b><br/>Observed ${esc(fmtNum(x.value))}<br/>Expected ${esc(fmtNum(x.expected))}<br/>Band ${esc(fmtNum(x.lower))} to ${esc(fmtNum(x.upper))}<br/>${x.anomaly ? '<b style="color:' + p.fail + '">Anomaly</b>' : 'Inside the band'}${x.score != null ? '<br/>Score ' + esc(x.score) : ''}`; } },
       xAxis: ax(p, 'Observed at (day)', { type: 'category', boundaryGap: false, data: pts.map(x => fmtDay(x.t)), splitLine: { show: false } }),
       yAxis: ax(p, `${humanMetric(series ? series.metric : '')} (${metricUnit(series ? series.metric : '')})`, { type: 'value', scale: true, nameGap: 52, axisLabel: { color: p.ink3, fontSize: 10.5, formatter: v => fmtNum(v) } }),
       series: [

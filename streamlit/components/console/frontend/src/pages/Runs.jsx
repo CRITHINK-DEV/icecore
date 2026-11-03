@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { esc, fmtTs, fmtSec, fmtCr, sum, median } from '../lib/format.js';
 import { RUNS, LAST, RUN_IDX, NODE, ASSETS, FAILS, EX, EX_RUN, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER } from '../lib/model.js';
 import { useApp, pal, layerColor, base, ax, EChart } from '../lib/charts.jsx';
-import { RunPill, Layer, Spark, Kpi, Delta, Seg, Card, Tabs, PageHead, DataTable, WINDOWS, runsInWindow, useSticky, sendFilters } from '../components/ui.jsx';
+import { RunPill, Layer, Spark, Kpi, Delta, Seg, Card, Tabs, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Runs ---------------- */
 export function Gantt({ run, filterLayer }) {
@@ -12,7 +12,7 @@ export function Gantt({ run, filterLayer }) {
     const p = pal();
     return base(p, {
       grid: { left: 180, right: 30, top: 10, bottom: 46 },
-      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const x = ex[e.dataIndex]; const n = NODE[x.unique_id]; return `<b>${esc(n.name)}</b><br/>${esc(LAYER_LABEL[LAYER_GROUP(n.layer)])}, ${esc(n.materialization || n.type)}<br/>Starts at +${esc(((x.t - run.t) / 1000).toFixed(1))} s<br/>Took ${esc(fmtSec(x.execution_time_s))}<br/>Credits ${esc(fmtCr(x.credits))}${esc(x.status !== 'success' ? '<br/><b style="color:' + p.fail + '">Error</b>' : '')}`; } },
+      tooltip: { trigger: 'item', confine: true, backgroundColor: p.panel, borderColor: p.line, textStyle: { color: p.ink, fontSize: 12 }, formatter: e => { const x = ex[e.dataIndex]; const n = NODE[x.unique_id]; return `<b>${esc(n.name)}</b><br/>${esc(LAYER_LABEL[LAYER_GROUP(n.layer)])}, ${esc(n.materialization || n.type)}<br/>Starts at +${esc(((x.t - run.t) / 1000).toFixed(1))} s<br/>Took ${esc(fmtSec(x.execution_time_s))}<br/>Credits ${esc(fmtCr(x.credits))}${x.status !== 'success' ? '<br/><b style="color:' + p.fail + '">Error</b>' : ''}`; } },
       xAxis: ax(p, 'Seconds since run start', { type: 'value', min: 0 }),
       yAxis: ax(p, '', { type: 'category', inverse: true, data: ex.map(x => NODE[x.unique_id].name), splitLine: { show: false }, axisLabel: { color: p.ink2, fontSize: 10.5 } }),
       series: [
@@ -27,7 +27,7 @@ export function Gantt({ run, filterLayer }) {
 
 export function Runs() {
   const { route, go, nav } = useApp();
-  const [win, setWin] = useSticky('win', '15'); const [st, setSt] = useState('all'); const [lay, setLay] = useState('all'); const [tab, setTab] = useState('runs');
+  const [win, setWin] = useState('15'); const [st, setSt] = useState('all'); const [lay, setLay] = useState('all'); const [tab, setTab] = useState('runs');
   if (!RUNS.length) return <div className="page"><PageHead title="Runs" sub="Every build in the window, with its node timeline. Pick a run in the table to draw its timeline." /><div className="empty-state"><b>No run recorded yet</b>Runs appear here once icecore has recorded a dbt invocation.</div></div>;
   const runId = route.q.run || RUNS[LAST].invocation_id; const run = RUNS[RUN_IDX[runId]] || RUNS[LAST];
   const wr = runsInWindow(win); const fr = wr.filter(r => st === 'all' || r.status === st);
@@ -44,7 +44,7 @@ export function Runs() {
       <Kpi label="Slowest model, latest run" value={lastEx[0] ? fmtSec(lastEx[0].execution_time_s) : '—'} sub={lastEx[0] ? NODE[lastEx[0].unique_id].name : ''} />
     </div>
     <div className="fbar">
-      <Seg label="Window" options={WINDOWS} value={win} onChange={v => { setWin(v); sendFilters(v, lay); }} />
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
       <Seg label="Status" options={[['all', 'All'], ['success', 'Success'], ['error', 'Error']]} value={st} onChange={setSt} />
       <Seg label="Timeline layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
     </div>

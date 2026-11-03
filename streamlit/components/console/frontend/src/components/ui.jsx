@@ -1,4 +1,3 @@
-import { sendAction } from '../streamlit.js';
 import React, { useState, useMemo, Fragment } from 'react';
 import { MS, fmtRun } from '../lib/format.js';
 import { RUNS, AS_OF, NODE, LAYER_GROUP, LAYER_LABEL, STATUS_LABEL, STATUS_TONE, NOT_RECORDED } from '../lib/model.js';
@@ -98,8 +97,3 @@ export const NodeLink = ({ id, label }) => { const { go } = useApp(); if (!id ||
 
 export const WINDOWS = [['7', 'Last 7 days'], ['15', 'Last 15 days']];
 export const runsInWindow = days => RUNS.filter(r => r.t >= AS_OF - +days * MS.d);
-
-/* Window and layer choices survive a new payload from Python (the page remounts) and are sent to the server. */
-const STICKY = {};
-export function useSticky(name, init) { const [v, setV] = useState(name in STICKY ? STICKY[name] : init); return [v, x => { STICKY[name] = x; setV(x); }]; }
-export const sendFilters = (days, layer) => sendAction('filters', { days: +days, layer });

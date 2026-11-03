@@ -4,7 +4,7 @@ import { RUNS, LAST, NODE, TESTS_OF, TR, TRF, TRC, EX, SERIES, SERIES_LIST, SLA_
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
 import { Pill, StatusPill, RunPill, TestPill, EngineBadge, Layer, RunStrip, Kpi, Card, Tabs, PageHead, DataTable } from '../components/ui.jsx';
 import { BandChart, ShadowPanel } from './Tests.jsx';
-import { hood, LineageCanvas } from './Lineage.jsx';
+import { hood, around, LINEAGE_MAX, LineageCanvas } from './Lineage.jsx';
 
 /* ---------------- Node page ---------------- */
 export function NodePage({ id }) {
@@ -91,7 +91,7 @@ export function NodePage({ id }) {
         cols={[{ key: 't', label: 'Detected', render: r => fmtTs(r.t) }, { key: 'column', label: 'Column', render: r => <span className="mono">{r.column}</span> }, { key: 'change', label: 'Change', render: r => <Pill tone={r.change === 'added' ? 'ok' : r.change === 'removed' ? 'fail' : 'warn'}>{CHANGE_LABEL[r.change]}</Pill> }, { key: 'd', label: 'Details', ns: true, render: r => r.change === 'type_changed' ? `${r.from} to ${r.to}` : r.type }]} />
     </Card>}
     {tab === 'lineage' && <Card title="Lineage neighbourhood" sub="Two steps up and down from this node. Click a node to open it." flush right={<button className="btn" onClick={() => go('lineage', null, { focus: target || id, mode: 'both' })}>Open full lineage</button>}>
-      {target ? <div className="lin-wrap mini"><LineageCanvas compact ids={hood(target, 2)} focus={target} mode="both" onSelect={x => x && go('node', x)} /></div> : <div className="empty-state">This test has no model in the graph.</div>}
+      {target ? <div className="lin-wrap mini"><LineageCanvas compact ids={(h => (h.length > LINEAGE_MAX ? around(target, h) : h))(hood(target, 2))} focus={target} mode="both" onSelect={x => x && go('node', x)} /></div> : <div className="empty-state">This test has no model in the graph.</div>}
     </Card>}
   </div>;
 }

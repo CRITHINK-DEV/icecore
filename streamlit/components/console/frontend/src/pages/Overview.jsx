@@ -2,7 +2,7 @@ import React, { useState, useMemo, Fragment } from 'react';
 import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median } from '../lib/format.js';
 import { D, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, KIND_LABEL, incNode, incAsset, incTarget } from '../lib/model.js';
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
-import { Ic, ICON, Pill, StatusPill, SevPill, Layer, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow, useSticky, sendFilters } from '../components/ui.jsx';
+import { Ic, ICON, Pill, StatusPill, SevPill, Layer, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Overview ---------------- */
 export function HealthStrip({ health }) {
@@ -24,7 +24,7 @@ export function HealthStrip({ health }) {
 
 export function Overview() {
   const { incidents, status, health, go, theme } = useApp();
-  const [win, setWin] = useSticky('win', '15'); const [layer, setLayer] = useSticky('overview.layer', 'all');
+  const [win, setWin] = useState('15'); const [layer, setLayer] = useState('all');
   const wr = useMemo(() => runsInWindow(win), [win]);
   const open = incidents.filter(i => i.state !== 'resolved');
   const missed = SLAS.filter(s => s.late || incidents.some(i => i.kind === 'silence' && i.state !== 'resolved' && incAsset(i) === s.unique_id));
@@ -58,8 +58,8 @@ export function Overview() {
     </div>
     <HealthStrip health={health} />
     <div className="fbar">
-      <Seg label="Window" options={WINDOWS} value={win} onChange={v => { setWin(v); sendFilters(v, layer); }} />
-      <Seg label="Layer" options={[['all', 'All'], ['bronze', 'Bronze'], ['silver', 'Silver'], ['gold', 'Gold']]} value={layer} onChange={v => { setLayer(v); sendFilters(win, v); }} />
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
+      <Seg label="Layer" options={[['all', 'All'], ['bronze', 'Bronze'], ['silver', 'Silver'], ['gold', 'Gold']]} value={layer} onChange={setLayer} />
     </div>
     <div className="grid2">
       <Card title="Needs attention" sub="Unresolved incidents, errors first. Click a row to open the node." flush>

@@ -2,12 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { fmtRun, fmtCr, pct, sum } from '../lib/format.js';
 import { NODE, ASSETS, EX, EX_RUN, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER } from '../lib/model.js';
 import { useApp, pal, layerColor, base, ax, EChart } from '../lib/charts.jsx';
-import { Layer, Spark, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow, useSticky, sendFilters } from '../components/ui.jsx';
+import { Layer, Spark, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Cost ---------------- */
 export function Cost() {
   const { go, theme } = useApp();
-  const [win, setWin] = useSticky('win', '15'); const [lay, setLay] = useSticky('cost.layer', 'all');
+  const [win, setWin] = useState('15'); const [lay, setLay] = useState('all');
   const wr = runsInWindow(win); const wi = wr.map(r => r.idx);
   const attributed = wr.filter(r => r.credits != null);
   const half = Math.floor(attributed.length / 2);
@@ -42,8 +42,8 @@ export function Cost() {
       <Kpi label="Runs not yet attributed" value={wr.filter(r => r.credits == null).length} sub="credits arrive later" />
     </div>
     <div className="fbar">
-      <Seg label="Window" options={WINDOWS} value={win} onChange={v => { setWin(v); sendFilters(v, lay); }} />
-      <Seg label="Layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={v => { setLay(v); sendFilters(win, v); }} />
+      <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
+      <Seg label="Layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
     </div>
     <Card title="Credits per run, by layer" sub="Stacked by layer. Runs without bars are not attributed yet.">
       <EChart option={opt} height={280} onClick={e => { const r = wr[e.dataIndex]; if (r) go('runs', null, { run: r.invocation_id }); }} />

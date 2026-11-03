@@ -1,12 +1,11 @@
-"""Shared page furniture."""
+"""Shared page furniture. The anatomy lives in lib.console; these names stay for the pages not yet rebuilt."""
 import streamlit as st
 
-from lib import settings
+from lib import console
 
 
 def page_header(title: str, purpose: str, views: list[str]) -> None:
-    st.title(title)
-    st.caption(f"{purpose} Reads {', '.join(f'`{settings.view(v)}`' for v in views)}.")
+    console.page(title, purpose, views)
 
 
 def empty_state(message: str) -> None:

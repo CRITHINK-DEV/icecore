@@ -17,13 +17,28 @@ entities:
     artifacts:
       - streamlit_app.py
       - environment.yml
+      - .streamlit/config.toml
       - lib/__init__.py
+      - lib/ack.py
+      - lib/charts.py
+      - lib/console.py
+      - lib/cost.py
+      - lib/dag.py
       - lib/navigation.py
+      - lib/queries.py
+      - lib/runs_logic.py
       - lib/settings.py
+      - lib/slas.py
+      - lib/status.py
       - lib/ui.py
-      - pages/runs.py
-      - pages/tests_and_anomalies.py
-      - pages/lineage.py
+      - lib/pages/__init__.py
       - pages/cost.py
-      - pages/slas.py
+      - pages/incidents.py
+      - pages/lineage.py
+      - pages/node.py
+      - pages/overview.py
+      - pages/runs.py
+      - pages/schedules.py
+      - pages/schema_changes.py
       - pages/settings.py
+      - pages/tests_and_anomalies.py

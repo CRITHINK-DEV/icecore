@@ -60,9 +60,3 @@ def test_empty_state_has_the_meta_sla_example():
 
 def test_format_minutes():
     assert [slas.format_minutes(m) for m in (None, 1, 90, 1440)] == ["", "1m", "1h30m", "1d"]
-
-
-def test_page_wires_empty_state_and_example():
-    src = (APP_DIR / "pages" / "slas.py").read_text()
-    assert "queries.sla_declared()" in src and "if not declared:" in src
-    assert "empty_state(slas.EMPTY_MESSAGE)" in src and "SLA_EXAMPLE" in src and "No missed runs" in src

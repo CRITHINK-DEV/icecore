@@ -20,12 +20,16 @@ ENTRY = str(APP_DIR / "streamlit_app.py")
 SCHEMA_INPUT_KEY = "icecore_views_schema_input"
 
 EXPECTED_PAGES = [
+    ("pages/overview.py", "Overview"),
+    ("pages/incidents.py", "Incidents"),
+    ("pages/tests_and_anomalies.py", "Tests & anomalies"),
     ("pages/runs.py", "Runs"),
-    ("pages/tests_and_anomalies.py", "Tests and anomalies"),
-    ("pages/lineage.py", "Lineage"),
+    ("pages/schedules.py", "Schedules & freshness"),
+    ("pages/schema_changes.py", "Schema changes"),
     ("pages/cost.py", "Cost"),
-    ("pages/slas.py", "SLAs"),
-    ("pages/settings.py", "Settings"),
+    ("pages/lineage.py", "Lineage"),
+    ("pages/node.py", "Models & sources"),
+    ("pages/settings.py", "Settings & about"),
 ]
 
 
@@ -46,12 +50,12 @@ def run_app(page: str | None = None, at: AppTest | None = None) -> AppTest:
     return at
 
 
-def test_navigation_lists_the_six_pages(monkeypatch):
+def test_navigation_lists_the_ten_pages(monkeypatch):
     seen = []
     real = st.navigation
 
     def spy(pages, *args, **kwargs):
-        seen.extend(pages)
+        seen.extend(p for group in pages.values() for p in group) if isinstance(pages, dict) else seen.extend(pages)
         return real(pages, *args, **kwargs)
 
     monkeypatch.setattr(st, "navigation", spy)
@@ -105,3 +109,25 @@ def test_environment_uses_the_snowflake_channel_only():
     assert all(isinstance(d, str) for d in deps), "no pip section: SiS installs from the Snowflake channel only"
     assert "streamlit=1.50.0" in deps
     assert "snowflake-snowpark-python" in deps
+
+
+def test_global_node_search_lists_lineage_nodes_and_opens_the_node_page(monkeypatch):
+    from lib import queries
+
+    monkeypatch.setattr(queries, "lineage_latest", lambda **_: [
+        {"parent_unique_id": "source.p.raw.orders", "child_unique_id": "model.p.stg_orders"}])
+    switched = []
+    monkeypatch.setattr(st, "switch_page", switched.append)  # AppTest does not register st.navigation pages for it
+    at = run_app()
+    search = at.sidebar.selectbox(key="icecore_node_search")
+    assert search.options == ["stg_orders  (model.p.stg_orders)", "orders  (source.p.raw.orders)"]
+    search.select("stg_orders  (model.p.stg_orders)")
+    run_app(at=at)
+    assert at.session_state["icecore_console_node"] == "model.p.stg_orders"
+    assert switched == ["pages/node.py"]
+    assert at.query_params["node"] == ["model.p.stg_orders"]
+
+
+def test_global_node_search_hides_itself_when_the_read_fails():
+    at = run_app()
+    assert not at.sidebar.selectbox

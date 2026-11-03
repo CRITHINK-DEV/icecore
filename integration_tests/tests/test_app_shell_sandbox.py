@@ -13,8 +13,9 @@ import pytest
 import yaml
 
 APP_DIR = Path(__file__).resolve().parents[2] / "streamlit"
-PAGES = ["pages/runs.py", "pages/tests_and_anomalies.py", "pages/lineage.py",
-         "pages/cost.py", "pages/slas.py", "pages/settings.py"]
+PAGES = ["pages/overview.py", "pages/incidents.py", "pages/tests_and_anomalies.py", "pages/runs.py",
+         "pages/schedules.py", "pages/schema_changes.py", "pages/cost.py", "pages/lineage.py", "pages/node.py",
+         "pages/settings.py"]
 
 PROC = """
 WITH icecore_apptest AS PROCEDURE()
@@ -37,7 +38,7 @@ def run(session):
     seen = []
     real = st.navigation
     def spy(pages, *a, **k):
-        seen.extend(pages)
+        seen.extend(p for g in pages.values() for p in g) if isinstance(pages, dict) else seen.extend(pages)
         return real(pages, *a, **k)
     st.navigation = spy
     try:
@@ -69,7 +70,7 @@ def test_app_renders_in_snowflake_with_the_channel_packages(sf, run_id, tmp_path
     with zipfile.ZipFile(zip_file, "w") as z:
         for f in APP_DIR.rglob("*"):
             rel = f.relative_to(APP_DIR)
-            if f.is_file() and f.suffix in {".py", ".yml"} and "__pycache__" not in rel.parts and f.name != "snowflake.yml":
+            if f.is_file() and f.suffix in {".py", ".yml", ".toml"} and "__pycache__" not in rel.parts and f.name != "snowflake.yml":
                 z.write(f, rel.as_posix())
 
     prefix = f"@~/icecore_apptest_{run_id}/"
@@ -83,7 +84,9 @@ def test_app_renders_in_snowflake_with_the_channel_packages(sf, run_id, tmp_path
         cur.execute(f"REMOVE {prefix}")
 
     assert out["streamlit"] == "1.50.0"
-    assert out["nav_titles"] == ["Runs", "Tests and anomalies", "Lineage", "Cost", "SLAs", "Settings"]
+    assert out["nav_titles"] == [
+        "Overview", "Incidents", "Tests & anomalies", "Runs", "Schedules & freshness", "Schema changes", "Cost",
+        "Lineage", "Models & sources", "Settings & about"]
     assert out["default_schema"].endswith(".ICECORE_OBS")
     for path in PAGES:
         page = out["pages"][path]

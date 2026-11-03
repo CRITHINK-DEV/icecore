@@ -6,10 +6,13 @@ pasted into a query safely; they are upper-cased like Snowflake does.
 """
 import os
 import re
+from pathlib import Path
 
 import streamlit as st
 
 DEFAULT_SCHEMA_NAME = "ICECORE_OBS"
+APP_CONFIG = Path(__file__).resolve().parents[1] / "icecore_app.toml"   # optional, shipped next to streamlit_app.py
+_CONFIG_LINE = re.compile(r"""^\s*views_schema\s*=\s*["']([^"']*)["']\s*(#.*)?$""")
 STATE_KEY = "icecore_views_schema"
 INPUT_KEY = "icecore_views_schema_input"
 ERROR_KEY = "icecore_views_schema_error"
@@ -28,11 +31,44 @@ def _current_database() -> str | None:
         return None
 
 
+def _configured_in_file(path: Path | None = None) -> str | None:
+    """views_schema = "DB.SCHEMA" from icecore_app.toml, the way to set it in Streamlit in Snowflake (no env vars)."""
+    try:
+        lines = (path or APP_CONFIG).read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        match = _CONFIG_LINE.match(line)
+        if match:
+            return normalize(match.group(1))
+    return None
+
+
+def _current_schema_with_views() -> str | None:
+    """<db>.<schema> of the session when that schema holds the icecore views: an app created in the views schema
+    (CREATE STREAMLIT <db>.<views schema>.ICECORE_APP) needs no setting."""
+    try:
+        from lib import queries
+
+        session = queries.get_session()
+        database = (session.get_current_database() or "").strip('"')
+        schema = (session.get_current_schema() or "").strip('"')
+        if not (re.fullmatch(_IDENT, database) and re.fullmatch(_IDENT, schema)):
+            return None
+        found = session.sql(f"show views like 'INVOCATIONS' in schema {database}.{schema}").collect()
+        return f"{database.upper()}.{schema.upper()}" if found else None
+    except Exception:
+        return None
+
+
 def default_views_schema() -> str:
-    """ICECORE_VIEWS_SCHEMA when set (a local run), else <session database>.ICECORE_OBS, else ICECORE_OBS."""
-    configured = normalize(os.environ.get("ICECORE_VIEWS_SCHEMA", ""))
-    if configured:
-        return configured
+    """Where the views are, first match wins: ICECORE_VIEWS_SCHEMA (a local run); views_schema in icecore_app.toml;
+    the session's own schema when it holds the views (the app created next to them); <session database>.ICECORE_OBS;
+    ICECORE_OBS."""
+    for configured in (normalize(os.environ.get("ICECORE_VIEWS_SCHEMA", "")), _configured_in_file(),
+                       _current_schema_with_views()):
+        if configured:
+            return configured
     database = (_current_database() or "").strip('"')
     if database and re.fullmatch(_IDENT, database):
         return f"{database.upper()}.{DEFAULT_SCHEMA_NAME}"

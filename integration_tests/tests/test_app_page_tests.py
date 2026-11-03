@@ -107,6 +107,15 @@ def test_score_caption():
     assert "not scored" in t.score_caption([_metric(0, 1, None)], "cortex")
 
 
+def test_filter_status_and_unknown_engines():
+    from lib.pages import tests as t
+
+    rows = [{"status": "failed"}, {"status": "warning"}, {"status": "ok"}]
+    assert [r["status"] for r in t.filter_status(rows, ["failed", "warning"])] == ["failed", "warning"]
+    assert t.filter_status(rows, []) == rows
+    assert t.engine_label({"x", "y"}) == "x + y"
+
+
 def test_tests_all_empty():
     from lib.pages import tests as t
 

@@ -44,7 +44,13 @@ else:
 st.subheader("Test results")
 rows = logic.filter_status(logic.results_table(results, metrics), filters.statuses)
 console.table(rows, {
-    "unique_id": None, "executed_at": st.column_config.DatetimeColumn("Executed (UTC)"),
+    "unique_id": None, "test": st.column_config.TextColumn("Test"), "type": st.column_config.TextColumn("Type"),
+    "column": st.column_config.TextColumn("Column"), "engine": st.column_config.TextColumn("Engine"),
+    "failures": st.column_config.NumberColumn("Failing rows"), "executed_at": st.column_config.DatetimeColumn("Executed (UTC)"),
     "score": st.column_config.NumberColumn("Score", format="%.2f"),
     "root_cause": st.column_config.TextColumn("Root cause"),
-}, key="tests_table", limit=queries.MAX_LIMIT)
+}, key="tests_table")
+for raw in (results, metrics):
+    note = console.truncation_note(raw, queries.MAX_LIMIT)
+    if note:
+        st.caption(note)

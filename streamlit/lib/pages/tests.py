@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lib.console import Tile
+from lib.console import Tile, md
 from lib.status import normalise, sort_key
 
 Row = dict[str, Any]
@@ -34,7 +34,7 @@ def engine_label(engines: set[str] | list[str]) -> str:
     if len(found) == 1:
         (only,) = found
         return ENGINE_LABELS.get(only, only)
-    return NO_ENGINE if not found else ENGINE_LABELS["both"]
+    return NO_ENGINE if not found else " + ".join(sorted(found))
 
 
 def _split(row: Row) -> list[Row]:
@@ -158,7 +158,7 @@ def series_list(metrics: list[Row]) -> list[Row]:
 def score_caption(points: list[Row], engine: str) -> str:
     """The score of the latest scored point of one engine's list, and its anomaly count, as text for a caption."""
     scored = [p for p in points if p.get("anomaly_score") is not None]
-    name = ENGINE_LABELS.get(engine, engine)
+    name = md(ENGINE_LABELS.get(engine, engine))
     flagged = sum(1 for p in points if p.get("anomaly_is_anomaly"))
     if not scored:
         return f"{name}: not scored yet ({flagged} anomalies)."

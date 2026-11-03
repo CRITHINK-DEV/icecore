@@ -218,6 +218,24 @@ def test_table_sorts_failures_first_and_notes_truncation():
     assert any("Showing the latest 2 rows." in c.value for c in at.caption)
 
 
+def test_table_keeps_the_given_order_for_a_history():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        from lib.console import table
+
+        rows = [{"unique_id": "a", "status": "success"}, {"unique_id": "b", "status": "error"}]
+        table(rows, {}, "t", failures_first=False)
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    at = _run(app)
+    assert list(at.dataframe[0].value["status"]) == ["🟢 OK", "🔴 Failed"]
+
+
 def test_table_sorts_labelled_statuses():
     def app():
         import os

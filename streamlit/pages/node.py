@@ -111,7 +111,7 @@ if s["history"]:
                     "credits": f"{h['credits']:.3f}" if isinstance(h["credits"], (int, float)) else None}
                    for h in s["history"]], {"invocation_id": "Run", "started_at": "Started (UTC)", "status": "Status",
                                             "execution_time_s": "Seconds", "rows_affected": "Rows", "credits": "Credits",
-                                            "message": "Message"}, key="node_history", node_column=None)
+                                            "message": "Message"}, key="node_history", node_column=None, failures_first=False)
 else:
     st.caption("This node has not run in the window.")
 

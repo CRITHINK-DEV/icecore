@@ -245,9 +245,11 @@ def sync_node_param() -> str | None:
 
 
 def table(rows: list[dict], column_config: dict, key: str, *, limit: int | None = None,
-          node_column: str | None = "unique_id") -> dict | None:
-    """Failures first, a truncation caption, and on a single-row selection open the node. Returns the selected row."""
-    ordered = sorted(rows, key=lambda r: sort_key(r["status"]) if "status" in r else len(STATUSES))
+          node_column: str | None = "unique_id", failures_first: bool = True) -> dict | None:
+    """Failures first (unless `failures_first=False`, for a history read in time order), a truncation caption, and on
+    a single-row selection open the node. Returns the selected row."""
+    ordered = (sorted(rows, key=lambda r: sort_key(r["status"]) if "status" in r else len(STATUSES))
+               if failures_first else list(rows))
     shown = [{**r, "status": label(r["status"])} if "status" in r and not _already_label(r["status"]) else r
              for r in ordered]
     note = truncation_note(rows, limit)

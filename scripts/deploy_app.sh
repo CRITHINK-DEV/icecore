@@ -4,10 +4,7 @@
 #   Pass --dry-run to print the statements only.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-venv="${VENV:-$root/.venv-app}"
-if [ ! -x "$venv/bin/python" ]; then
-  python3 -m venv "$venv"
-  "$venv/bin/pip" install --quiet -r "$root/streamlit/requirements-local.txt"
-fi
-"$venv/bin/pip" install --quiet pyyaml cryptography
+source "$root/scripts/lib/app_venv.sh"
+venv="$(app_venv "$root")"
+"$venv/bin/pip" install --quiet --disable-pip-version-check pyyaml cryptography
 exec "$venv/bin/python" "$root/scripts/deploy_app.py" "$@"

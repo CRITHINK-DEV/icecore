@@ -57,15 +57,40 @@ def files(streamlit_dir: Path = STREAMLIT) -> list[tuple[Path, str]]:
 
 
 def plan(database: str, schema: str, warehouse: str, streamlit_dir: Path = STREAMLIT) -> list[str]:
+    """Stage and upload the app files, then create the app when it does not exist yet and make it live.
+
+    The app is never replaced: CREATE OR REPLACE deletes the object and with it the USAGE grants of its viewers. An
+    app that already exists gets the new files copied into its live version instead (see update()).
+    """
     db, sch, wh = ident("ICECORE_APP_DATABASE", database), ident("ICECORE_APP_SCHEMA", schema), ident("ICECORE_APP_WAREHOUSE", warehouse)
     stage = f"{db}.{sch}.{STAGE}"
     stmts = [f"create or replace stage {stage} directory=(enable=true) encryption=(type='SNOWFLAKE_SSE')"]
     for f, folder in files(streamlit_dir):
         target = f"@{stage}/{folder}" if folder else f"@{stage}"
         stmts.append(f"put 'file://{f}' {target} auto_compress=false overwrite=true")
-    stmts.append(f"create or replace streamlit {db}.{sch}.{APP} from @{stage} main_file='streamlit_app.py' "
+    stmts.append(f"create streamlit if not exists {db}.{sch}.{APP} from @{stage} main_file='streamlit_app.py' "
                  f"query_warehouse={wh} runtime_name='SYSTEM$WAREHOUSE_RUNTIME'")
     return stmts
+
+
+def update(database: str, schema: str, live_uri: str | None) -> list[str]:
+    """For an app that already existed: make it live when it is not (a new app is live only after this, or after its
+    owner opens it), then copy the staged files over its live version. Grants stay."""
+    db, sch = ident("ICECORE_APP_DATABASE", database), ident("ICECORE_APP_SCHEMA", schema)
+    app, stage = f"{db}.{sch}.{APP}", f"{db}.{sch}.{STAGE}"
+    stmts = [] if live_uri else [f"alter streamlit {app} add live version from last"]
+    stmts.append(f"copy files into '{live_uri}' from @{stage}" if live_uri else None)
+    return [s for s in stmts if s]
+
+
+def _live_uri(cur, app: str) -> str | None:
+    cur.execute(f"describe streamlit {app}")
+    cols = [c[0].lower() for c in cur.description]
+    row = cur.fetchone()
+    uri = dict(zip(cols, row)).get("live_version_location_uri") if row else None
+    if uri and not re.fullmatch(r"snow://streamlit/[A-Za-z0-9_$.\"]+/versions/live/?", uri):
+        raise ValueError(f"unexpected live version location: {uri}")
+    return uri
 
 
 def grants(database: str, schema: str) -> str:
@@ -108,6 +133,14 @@ def main(argv: list[str]) -> int:
             cur = conn.cursor()
             for s in stmts:
                 print("deploy_app:", s.split(" file://")[0] if s.startswith("put") else s[:110], flush=True)
+                cur.execute(s)
+            created = "successfully created" in str((cur.fetchone() or [""])[0]).lower()
+            db, sch = ident("ICECORE_APP_DATABASE", env["ICECORE_APP_DATABASE"]), ident("ICECORE_APP_SCHEMA", env.get("ICECORE_APP_SCHEMA", "ICECORE_OBS"))
+            # a new app: copied from the stage at creation, made live here; an existing one: files copied over live
+            follow = ([f"alter streamlit {db}.{sch}.{APP} add live version from last"] if created
+                      else update(db, sch, _live_uri(cur, f"{db}.{sch}.{APP}")))
+            for s in follow:
+                print("deploy_app:", s[:110], flush=True)
                 cur.execute(s)
         finally:
             conn.close()

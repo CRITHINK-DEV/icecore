@@ -120,8 +120,15 @@ These are the statements the script runs (they deployed the app in our sandbox).
 ```sql
 create or replace stage <DB>.<SCHEMA>.ICECORE_APP_STAGE directory=(enable=true) encryption=(type='SNOWFLAKE_SSE');
 put 'file://<path>/streamlit/<relative file>' @<DB>.<SCHEMA>.ICECORE_APP_STAGE/<relative folder> auto_compress=false overwrite=true;   -- once per file
-create or replace streamlit <DB>.<SCHEMA>.ICECORE_APP from @<DB>.<SCHEMA>.ICECORE_APP_STAGE main_file='streamlit_app.py' query_warehouse=<WH> runtime_name='SYSTEM$WAREHOUSE_RUNTIME';
+-- first deploy: create the app, then make it live (until then only its owner's role can open it)
+create streamlit <DB>.<SCHEMA>.ICECORE_APP from @<DB>.<SCHEMA>.ICECORE_APP_STAGE main_file='streamlit_app.py' query_warehouse=<WH> runtime_name='SYSTEM$WAREHOUSE_RUNTIME';
+alter streamlit <DB>.<SCHEMA>.ICECORE_APP add live version from last;
+-- later deploys: stage and put the files again, then copy them over the live version
+-- (the URI is live_version_location_uri in DESCRIBE STREAMLIT)
+copy files into 'snow://streamlit/<DB>.<SCHEMA>.ICECORE_APP/versions/live/' from @<DB>.<SCHEMA>.ICECORE_APP_STAGE;
 ```
+
+Do not use `create or replace streamlit` to update the app: it deletes the app and the `GRANT USAGE` of its viewers with it.
 
 For example `streamlit/lib/queries.py` goes to `@<stage>/lib`, and `streamlit/components/console/build/assets/console.js` to `@<stage>/components/console/build/assets`. `runtime_name='SYSTEM$WAREHOUSE_RUNTIME'` is required: without it the account's default runtime ignores `environment.yml`.
 
@@ -133,6 +140,8 @@ For example `streamlit/lib/queries.py` goes to `@<stage>/lib`, and `streamlit/co
 cd streamlit
 snow streamlit deploy --replace
 ```
+
+`--replace` recreates the app, so the viewers' grants have to be given again afterwards.
 
 It is a sandbox-style definition: its `identifier`, `query_warehouse` and database values are the project's test ones, so change them to yours first. In our sandbox this command failed at the upload step, which is why Options 1 and 2 are the documented paths. Try it if your CLI version works for you.
 

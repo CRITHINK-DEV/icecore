@@ -18,7 +18,7 @@ def test_stage_put_and_create_statements():
     s = stmts()
     assert s[0] == ("create or replace stage MY_DB.ICECORE_OBS.ICECORE_APP_STAGE "
                     "directory=(enable=true) encryption=(type='SNOWFLAKE_SSE')")
-    assert s[-1] == ("create or replace streamlit MY_DB.ICECORE_OBS.ICECORE_APP from @MY_DB.ICECORE_OBS.ICECORE_APP_STAGE "
+    assert s[-1] == ("create streamlit if not exists MY_DB.ICECORE_OBS.ICECORE_APP from @MY_DB.ICECORE_OBS.ICECORE_APP_STAGE "
                      "main_file='streamlit_app.py' query_warehouse=MY_WH runtime_name='SYSTEM$WAREHOUSE_RUNTIME'")
     assert all(x.startswith("put 'file://") and x.endswith("auto_compress=false overwrite=true") for x in s[1:-1])
 
@@ -50,3 +50,15 @@ def test_bad_identifiers_are_refused(db, sch, wh):
 
 def test_grants_are_printed_not_run():
     assert "GRANT USAGE ON STREAMLIT MY_DB.ICECORE_OBS.ICECORE_APP TO ROLE <viewer_role>" in deploy.grants("my_db", "icecore_obs")
+
+
+def test_an_existing_app_is_updated_in_place_so_its_viewers_keep_their_grants():
+    live = "snow://streamlit/MY_DB.ICECORE_OBS.ICECORE_APP/versions/live/"
+    assert deploy.update("my_db", "icecore_obs", live) == [
+        f"copy files into '{live}' from @MY_DB.ICECORE_OBS.ICECORE_APP_STAGE"]
+    assert not any("or replace streamlit" in s for s in deploy.plan("my_db", "icecore_obs", "wh"))
+
+
+def test_an_existing_app_that_is_not_live_yet_is_made_live_first():
+    assert deploy.update("my_db", "icecore_obs", None) == [
+        "alter streamlit MY_DB.ICECORE_OBS.ICECORE_APP add live version from last"]

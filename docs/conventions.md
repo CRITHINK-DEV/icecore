@@ -75,15 +75,17 @@ Each list shows the keys added to the base keys above. `snow.query.id` as a reco
 | --- | --- |
 | `icecore.run_start` (event) | `dbt.version`, `dbt.invocation.started_at`, `icecore.anomaly_engine`, `icecore.shadow_engine`, `icecore.level`, `icecore.message` |
 | `icecore.capabilities` (event) | `icecore.capability.database`, `.edition`, `.edition_source`, `.event_table`, `.event_table_level`, `.log_level`, `.trace_level`, `.cortex`, `.cortex_reason`, `icecore.level`, `icecore.message` |
-| `icecore.metric` (event) | `dbt.metric.name`, `dbt.metric.value` (always a number), `dbt.node.relation`, and when given `dbt.metric.column`, `dbt.metric.dimension`, `dbt.anomaly.engine`, `.expected`, `.lower`, `.upper`, `.score`, `.is_anomaly`, plus `icecore.level` |
+| `icecore.metric` (event) | `dbt.metric.name`, `dbt.metric.value` (always a number), `dbt.node.relation`, and when given `dbt.metric.column`, `dbt.metric.dimension`, `dbt.anomaly.engine`, `.expected`, `.lower`, `.upper`, `.score`, `.is_anomaly`, `icecore.metric.threshold` (seconds, `icecore.freshness` with `max_lag`), plus `icecore.level` |
 | `icecore.invocation` (span) | `dbt.version`, `icecore.anomaly_engine`, `icecore.shadow_engine`, `dbt.invocation.started_at`, `.completed_at`, `.duration_s` |
-| `icecore.node` (span) | `dbt.node.unique_id`, `.type`, `.name`, `.materialization`, `.relation`, `.started_at`, `.completed_at`, `.duration_s`, `dbt.timing.<phase>.started_at` and `.completed_at` (compile, execute), and for tests `dbt.test.name`, `.type`, `.column`, `.severity` |
+| `icecore.node` (span) | `dbt.node.unique_id`, `.type`, `.name`, `.materialization`, `.relation`, `.fqn`, `.layer`, `.started_at`, `.completed_at`, `.duration_s`, `dbt.timing.<phase>.started_at` and `.completed_at` (compile, execute), and for tests `dbt.test.name`, `.type`, `.column`, `.severity` |
 | `icecore.query` (span event) | `snow.query.id`, `dbt.node.unique_id` |
 | `node_result` (log) | The `dbt.node.*` keys above, `dbt.result.status`, `.rows_affected`, `.execution_time_s`, `.message`, `snow.query.id`, and for tests `dbt.test.*` including `dbt.test.failures`. Message: [`result_message`](configuration.md#result_message) |
-| `lineage` (log) | `dbt.lineage.edges` (JSON text of `[parent, child]` pairs), `.edge_count`, `.edges_total`, `.part`, `.parts` |
+| `lineage` (log) | `dbt.lineage.edges` (JSON text of `[parent, child]` pairs), `.edge_count`, `.edges_total`, `.part`, `.parts`, and for the nodes of the record's edges `dbt.lineage.node_fqn` and `dbt.lineage.node_layer` (JSON text of objects `{unique_id: value}`; a node without a layer is left out) |
 | `run_end` (log) | `dbt.invocation.status` (`success`, `warn` or `error`), `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped`, the times of `icecore.invocation`, `dbt.version`, the two engine settings |
 
 Also on records icecore built: `icecore.kind` (logs), `icecore.truncated` and `icecore.truncated_keys` (when a value was cut, see [Payload cap](#payload-cap-and-chunking)). Python adds `code.filepath`, `code.function` and `code.lineno` to logs (S1.md, results table).
+
+Node keys `dbt.node.fqn` and `dbt.node.layer` are on node spans and node results. `dbt.node.fqn` is dbt's fqn as one dotted string (`shop.bronze.stripe.orders`: project, folders, name; the version part dbt adds to a versioned model is dropped). `dbt.node.layer` is the first folder under `models/` for a model (fqn part 1, only when the fqn has more than 2 parts), renamed by the [`layers`](configuration.md#run-telemetry) var, and the resource type for a seed, snapshot or source. Both are left out when they do not apply, and a record written before they existed has neither: the views read null.
 
 The metric names written today are `freshness_lag_seconds` and `row_count`.
 

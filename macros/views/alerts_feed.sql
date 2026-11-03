@@ -5,15 +5,17 @@
       test_failure   failed_tests: test_results rows with status fail, error or warn (macros/views/test_results.sql);
       anomaly        anomalies: metrics rows scored anomalous, anomaly_is_anomaly = true (macros/views/metrics.sql);
       schema_change  schema_changes: one per column change (macros/views/schema_changes.sql);
-      silence        silence_events: EMPTY SLOT, zero rows until story uc6-silence (silence_events view) fills it;
-      cost           cost_regressions: EMPTY SLOT, zero rows until the cost-regression story fills it.
-    A slot already has the signal columns (kind, node_key, severity, title, detected_at, invocation_id), so filling it
-    is replacing its `where false` select.
+      silence        silence_events: one per missed run, the verdicts of the silence task (macros/views/silence_events.sql);
+                     node_key is the node's unique id, so meta.alerts routes it like the node's other signals;
+      cost           cost_regressions: METRICS rows of metric `credits` scored anomalous and above the band. Decision:
+                     credits anomalies are read ONLY here (the generic anomaly signal excludes metric `credits`), so a
+                     regression is one incident of kind `cost`, never two. Credits below the band raise nothing.
+    Every signal CTE has the columns kind, node_key, severity, title, detected_at, invocation_id.
 
     incident_key = md5(node_key | kind | window_start). The window is var icecore.alert_window_hours (default 24, a
     positive number; anything else reads as 24), aligned to the epoch: the same failure on consecutive runs inside one
     window is one incident (occurrences counts the signals), the next window is a new key and alerts again.
-    node_key: test unique id; relation|metric|column|dimension; relation|column; the slots' own.
+    node_key: test unique id; relation|metric|column|dimension; relation|column; node unique id (silence); relation|credits|| (cost).
 
     Acknowledgements are `icecore.ack` span events written by the ICECORE_ACK procedure (icecore.acknowledge calls
     it), attributes icecore.ack.incident_key and icecore.ack.by (the caller's CURRENT_USER, recorded by the procedure).
@@ -38,19 +40,33 @@ anomalies as (
 schema_changes as (
 {{ icecore.schema_changes_view_sql(event_table=event_table, database=database, obs_schema=obs_schema) }}
 ),
--- EMPTY SLOT, filled by story uc6-silence (silence_events view): same columns as signals below.
+-- silence: one row per missed run, from the SILENCE_EVENTS view SQL (the verdicts of the silence task).
 silence_events as (
     select
-        cast(null as varchar) as kind, cast(null as varchar) as node_key, cast(null as varchar) as severity,
-        cast(null as varchar) as title, cast(null as timestamp_ntz) as detected_at, cast(null as varchar) as invocation_id
-    where false
+        'silence' as kind,
+        unique_id as node_key,
+        iff(lower(severity) = 'error', 'error', 'warn') as severity,
+        'node ' || unique_id || ' missed its run, expected at ' || coalesce(to_char(expected_at, 'YYYY-MM-DD HH24:MI:SS'), '?') || ' UTC' as title,
+        detected_at,
+        cast(null as varchar) as invocation_id
+    from (
+{{ icecore.silence_events_view_sql(event_table=event_table, database=database, obs_schema=obs_schema) }}
+    )
+    where unique_id is not null and detected_at is not null
 ),
--- EMPTY SLOT, filled by the cost-regression story: same columns as signals below.
+-- cost: credits anomalies ABOVE the band (a node that got cheaper is no regression). They are not read again by the
+-- generic anomaly signal below, so a regression is one incident.
 cost_regressions as (
     select
-        cast(null as varchar) as kind, cast(null as varchar) as node_key, cast(null as varchar) as severity,
-        cast(null as varchar) as title, cast(null as timestamp_ntz) as detected_at, cast(null as varchar) as invocation_id
-    where false
+        'cost' as kind,
+        relation || '|' || metric || '|' || coalesce("COLUMN", '') || '|' || coalesce(dimension, '') as node_key,
+        'warn' as severity,
+        'cost regression: credits of ' || relation || ' are ' || coalesce(value::string, 'null')
+            || coalesce(' (band up to ' || anomaly_upper::string || ')', '') as title,
+        observed_at as detected_at,
+        invocation_id
+    from anomalies
+    where anomaly_is_anomaly = true and metric = 'credits' and coalesce(value > anomaly_upper, true)
 ),
 acks as (
     select
@@ -77,7 +93,7 @@ signals as (
         'metric ' || metric || ' of ' || relation || ' is anomalous (value ' || coalesce(value::string, 'null') || ')',
         observed_at, invocation_id
     from anomalies
-    where anomaly_is_anomaly = true
+    where anomaly_is_anomaly = true and coalesce(metric, '') <> 'credits'
     union all
     select 'schema_change', relation || '|' || coalesce("COLUMN", ''), 'warn',
         'column ' || coalesce("COLUMN", '?') || ' of ' || relation || ' ' || coalesce(change_kind, 'changed'),

@@ -19,7 +19,12 @@
     {{ return(out) }}
   {%- endif -%}
   {%- set records = icecore._icecore_emit_run_records(items) -%}
-  {%- set procedure = icecore._icecore_procedure('ICECORE_EMIT_RUN') -%}
+  {%- set target_procedure = icecore._icecore_procedure_or_error('ICECORE_EMIT_RUN') -%}
+  {%- if target_procedure['error'] -%}
+    {%- do icecore._icecore_warn_no_procedure(target_procedure['error']) -%}
+    {{ return(out) }}
+  {%- endif -%}
+  {%- set procedure = target_procedure['procedure'] -%}
   {%- for chunk in icecore._icecore_emit_run_chunks(records) -%}
     {%- do out['statuses'].append(icecore._icecore_guarded_status(procedure, chunk)) -%}
   {%- endfor -%}

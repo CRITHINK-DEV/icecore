@@ -35,8 +35,7 @@
 
 
 {#- The task body: a Scripting block that reads the obs schema's METRICS view. It is constant text: the database and the
-    schema are checked against [A-Za-z0-9_] (_icecore_refresh_names, which stops with a compile error otherwise; TODO(#75):
-    use _sql(..., 'ident') once it merges) before they are written, quoted, into it, and there is no `source` argument.
+    schema are checked against [A-Za-z0-9_] (_icecore_refresh_names, which stops with a compile error otherwise; quoted by icecore._sql(..., 'ident')) before they are written, quoted, into it, and there is no `source` argument.
 
     No SQL text is built from a record value. `relation` comes from event records the dbt role can write, so it is only
     ever (1) checked against the strict quoted-identifier shape "DB"."SCHEMA"."NAME" (anything else is skipped and counted),
@@ -58,7 +57,7 @@
   {%- set names = icecore._icecore_refresh_names(schema) -%}
   {%- set source = names['metrics'] -%}
   {%- set emit = names['emit'] -%}
-  {%- set prefix = names['prefix'] -%}
+  {%- set qualified = names['qualified'] -%}
   {%- set version = icecore._icecore_package_version() | string -%}
   {%- if not modules.re.match('^[A-Za-z0-9._+-]+\\Z', version) -%}
     {{ exceptions.raise_compiler_error("icecore: the package version must be letters, digits and . _ + - to be written into the task body, got '" ~ version ~ "'") }}
@@ -97,7 +96,7 @@ BEGIN
                  || 'observed_at as ts, value as y from (select metric, "COLUMN", dimension, observed_at, value, '
                  || 'count(*) over (partition by metric, "COLUMN", dimension) as n from {{ source }} '
                  || 'where md5(relation) = ' || qq || digest || qq || ' and {{ window }}) where n >= {{ min_points }}';
-        EXECUTE IMMEDIATE 'CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION {{ prefix }}' || model_id || '"'
+        EXECUTE IMMEDIATE 'CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION {{ qualified }}.' || CHR(34) || model_id || CHR(34)
           || '(INPUT_DATA => SYSTEM$QUERY_REFERENCE(' || q || train || q || '), SERIES_COLNAME => ' || q || 'SERIES' || q
           || ', TIMESTAMP_COLNAME => ' || q || 'TS' || q || ', TARGET_COLNAME => ' || q || 'Y' || q || ', LABEL_COLNAME => ' || q || q || ')';
         created := ARRAY_APPEND(created, model_id);
@@ -108,7 +107,7 @@ BEGIN
             'dbt.node.relation', r.relation,
             'icecore.cortex.model', model_id,
             'icecore.schema_version', 1,
-            'icecore.version', '{{ version }}',
+            'icecore.version', {{ icecore._sql(version, 'string') }},
             'icecore.level', 'info',
             'icecore.message', 'icecore: Cortex model ' || model_id || ' refreshed')));
       EXCEPTION
@@ -219,15 +218,14 @@ END;
 
 {#- Every name that goes into the task text, validated: the database and the obs schema against [A-Za-z0-9_] (a compile error
     otherwise: no quote, no $, no control character), then quoted. `database` is the target's; the argument exists for tests.
-    TODO(#75): use _sql(..., 'ident') once icecore._sql merges. -#}
+    Quoted by icecore._sql(..., 'ident'). -#}
 {% macro _icecore_refresh_names(schema=none, database=none) %}
   {%- set db = icecore._icecore_score_constant(target.database if database is none else database) -%}
   {%- set sch = icecore._icecore_score_constant(schema or var('icecore', {}).get('obs_schema', 'ICECORE_OBS')) -%}
-  {%- set qualified = '"' ~ db ~ '"."' ~ sch ~ '"' -%}
   {{ return({
-      'qualified': qualified, 'schema_name': sch,
-      'metrics': qualified ~ '."METRICS"', 'emit': qualified ~ '."ICECORE_EMIT"', 'score': qualified ~ '."ICECORE_SCORE"',
-      'task': qualified ~ '."ICECORE_REFRESH_CORTEX"', 'prefix': qualified ~ '."',
+      'qualified': icecore._sql([db, sch], 'ident'), 'schema_name': sch,
+      'metrics': icecore._sql([db, sch, 'METRICS'], 'ident'), 'emit': icecore._sql([db, sch, 'ICECORE_EMIT'], 'ident'),
+      'score': icecore._sql([db, sch, 'ICECORE_SCORE'], 'ident'), 'task': icecore._sql([db, sch, 'ICECORE_REFRESH_CORTEX'], 'ident'),
   }) }}
 {% endmacro %}
 
@@ -245,7 +243,7 @@ exception
   when other then return 'unknown';
 end;
   {%- endset -%}
-  {{ return(run_query('execute immediate ' ~ icecore._icecore_sql_literal(block)).rows[0][0]) }}
+  {{ return(run_query('execute immediate ' ~ icecore._sql(block, 'string')).rows[0][0]) }}
 {% endmacro %}
 
 
@@ -258,7 +256,7 @@ end;
   {%- endif -%}
   {{ return('CREATE OR REPLACE TASK ' ~ task
       ~ ('\n  WAREHOUSE = ' ~ icecore._icecore_identifier(warehouse) if warehouse else '')
-      ~ '\n  SCHEDULE = ' ~ icecore._icecore_sql_literal(schedule_minutes ~ ' MINUTE')
+      ~ '\n  SCHEDULE = ' ~ icecore._sql(schedule_minutes ~ ' MINUTE', 'string')
       ~ "\n  COMMENT = 'icecore: retrains the Cortex anomaly models from the metric history'"
       ~ '\nAS\nEXECUTE IMMEDIATE $$\n' ~ body ~ '\n$$') }}
 {% endmacro %}

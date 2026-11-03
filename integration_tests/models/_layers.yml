@@ -1,0 +1,18 @@
+version: 2
+
+# Fixtures for tests/test_layer_threshold.py: models in the folders models/bronze, gold and brz (the layer comes from the first
+# folder under models/), named with var('run_id') in the target schema and dropped by the test. Tagged icecore_hooks,
+# which the default selector leaves out (selectors.yml). layer_bronze has an icecore.freshness test with max_lag 2h.
+
+models:
+  - name: layer_bronze
+    config: {tags: ["icecore_hooks"]}
+    data_tests:
+      - icecore.freshness:
+          name: it_layer_freshness_2h
+          max_lag: 2h
+          config: {tags: ["icecore_hooks"]}
+  - name: layer_gold
+    config: {tags: ["icecore_hooks"]}
+  - name: layer_brz
+    config: {tags: ["icecore_hooks"]}

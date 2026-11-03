@@ -103,7 +103,7 @@
       names, matched to the excluded names without regard to case; their value becomes '?', the name stays. -#}
   {%- set names = [] -%}
   {%- for name in excluded -%}
-    {%- do names.append(icecore._icecore_sql_literal(name | upper)) -%}
+    {%- do names.append(icecore._sql(name | upper, 'string')) -%}
   {%- endfor -%}
   {%- set sql -%}
 with s as (

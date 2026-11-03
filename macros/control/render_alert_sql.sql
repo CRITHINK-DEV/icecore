@@ -8,7 +8,7 @@
           teams: {type: teams, integration: ICECORE_TEAMS}
     type is email, slack or teams; integration is the name of the notification integration (an admin creates it);
     recipients (email only) are the allowed and default recipients. With two or more channels exactly one is `default: true`. Names, types, integrations and recipients are
-    validated against strict patterns and render only through _icecore_sql_literal / _icecore_identifier.
+    validated against strict patterns and render only through icecore._sql / _icecore_identifier.
     Which incidents a channel gets comes from meta.alerts (collect_sla_config): a node whose meta.alerts.channel is the
     channel's name sends its incidents there (matched on the feed's node_key, the node's unique id) and only its
     meta.alerts.severity or above (error: only error rows); the channel marked `default: true` (or the only channel)
@@ -23,9 +23,15 @@
                   then one CALL of ICECORE_NOTIFIED(incident_key, channel) per incident (never an INSERT, never ICECORE_EMIT, which
                   refuses `icecore.notified`), so the incident is not sent again inside the dedup window. The alerts' owner
                   role needs USAGE on ICECORE_NOTIFIED; the dbt role must not have it. At most 50 incidents per run.
-    Alerts are created SUSPENDED (Snowflake's default) and icecore never resumes one: create_alerts prints the
-    `ALTER ALERT ... RESUME` statements for an admin (nothing sends or costs anything without consent). Re-running
-    setup replaces an alert and so suspends it again.
+    Alerts are created only when var icecore.alerts is true or var icecore.alert_resume is true, and are resumed only
+    with consent: alert_resume (true or false) when set, otherwise alerts (alerts: false is the default). false keeps
+    a created alert suspended. A
+    resumed alert runs on its warehouse every schedule period and costs the owner warehouse time. Resuming needs
+    EXECUTE ALERT on the account: when it fails the grant is printed and the alert stays suspended. CREATE OR REPLACE
+    ALERT suspends an alert and resets its grants (the dedup state is not affected: it lives in the event table), so
+    a re-run of setup resumes it again under the same rule (one alert per channel, never a duplicate: the name is
+    fixed by the channel). An alert of an earlier setup that the vars no longer ask for is never touched: setup
+    prints its state and the SUSPEND and DROP statements (_icecore_warn_unmanaged).
     The alert text is constant: node ids from meta, the channel, the integration and the recipients enter only as one
     PARSE_JSON string literal of a JSON config object (condition and action each have one), read inside the text.
     Notification integrations need an admin: create_alerts prints the CREATE NOTIFICATION INTEGRATION statements and
@@ -36,9 +42,10 @@
 
 {#- Creates every channel's alert in <target db>.<schema>; returns [{channel, alert, status}]. Prints the
     integration statements and grants. With no channel configured it creates nothing and says how to configure. -#}
-{% macro create_alerts(schema=none) %}
+{% macro create_alerts(schema=none, resume=none) %}
   {%- set created = [] -%}
   {%- if execute -%}
+    {%- set want_resume = icecore._icecore_resume_flag('alert_resume') if resume is none else resume -%}
     {%- set channels = icecore.alert_channels() -%}
     {%- if not channels -%}
       {%- do log('icecore: create_alerts: no alert channel configured; set vars: icecore: alert_channels: {<name>: {type: email|slack|teams, integration: <notification integration>}}', info=True) -%}
@@ -49,14 +56,81 @@
       {%- if status != 'ok' -%}
         {%- do log('icecore: warning: alert ' ~ channel['name'] ~ ' not created (' ~ status ~ '); the role needs CREATE ALERT on the schema, USAGE on the warehouse and on the notification integration', info=True) -%}
       {%- endif -%}
-      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status}) -%}
-      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ ', suspended', info=True) -%}
+      {%- set resumed = false -%}
+      {%- if status == 'ok' and want_resume -%}
+        {%- set r = icecore._icecore_guarded_ddl('ALTER ALERT ' ~ icecore.alert_name(channel, schema) ~ ' RESUME') -%}
+        {%- if r == 'ok' -%}
+          {%- set resumed = true -%}
+        {%- else -%}
+          {%- do log('icecore: warning: could not resume alert ' ~ channel['name'] ~ ' (' ~ r ~ '); it stays suspended. An admin must run: GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(target.role), info=True) -%}
+        {%- endif -%}
+      {%- endif -%}
+      {%- do created.append({'channel': channel['name'], 'alert': icecore.alert_name(channel, schema), 'status': status, 'resumed': resumed}) -%}
+      {%- do log('icecore: alert ' ~ icecore.alert_name(channel, schema) ~ ': ' ~ status ~ (', resumed (it uses warehouse time on every schedule period)' if resumed else ', suspended'), info=True) -%}
     {%- endfor -%}
     {%- if channels -%}
       {%- do log('icecore: an admin runs these once (icecore never creates integrations):\n' ~ (icecore.alert_integration_sql(channels, schema) | join('\n')), info=True) -%}
     {%- endif -%}
   {%- endif -%}
   {{ return(created) }}
+{% endmacro %}
+
+
+{#- Whether setup creates an object: var alerts is true, or the object's own resume var (alert_resume,
+    silence_task_resume) is true. The own var overrides alerts in both directions: true creates and resumes even
+    with alerts false; false keeps the object suspended (still created) with alerts true; null follows alerts. -#}
+{% macro _icecore_control_enabled(key) %}
+  {{ return(icecore._icecore_flag('alerts', false) or (icecore._icecore_setting(key, none) is not none and icecore._icecore_flag(key, false))) }}
+{% endmacro %}
+
+
+{#- The existing icecore task or alert objects of the obs schema that setup does not manage under the current vars:
+    [{kind, name, state}]. kind TASK matches ICECORE_SILENCE, kind ALERT matches ICECORE_ALERT_*. Reads only. -#}
+{% macro _icecore_existing_control_objects(schema, kind) %}
+  {%- set found = [] -%}
+  {%- if kind == 'TASK' -%}
+    {%- set rows = run_query('SHOW TASKS LIKE ' ~ icecore._sql('ICECORE_SILENCE', 'string') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- else -%}
+    {%- set rows = run_query('SHOW ALERTS LIKE ' ~ icecore._sql('ICECORE_ALERT_%', 'string') ~ ' IN SCHEMA ' ~ icecore.obs_schema(schema)).rows -%}
+  {%- endif -%}
+  {%- for r in rows -%}
+    {%- if (r['name'] | string).startswith('ICECORE_') -%}
+      {%- do found.append({'kind': kind, 'name': r['name'] | string, 'state': r['state'] | string | lower}) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {{ return(found) }}
+{% endmacro %}
+
+
+{#- The warning lines for objects setup leaves alone (pure; offline tests render it). Statements are printed, never run. -#}
+{% macro _icecore_unmanaged_lines(objects, schema=none) %}
+  {%- set lines = [] -%}
+  {%- for o in objects -%}
+    {%- set q = icecore.obs_schema(schema) ~ '.' ~ icecore._icecore_identifier(o['name']) -%}
+    {%- do lines.append('icecore: warning: ' ~ (o['kind'] | lower) ~ ' ' ~ q ~ ' exists and is ' ~ o['state']
+        ~ ' but var alerts is false: setup does not update, suspend or drop it'
+        ~ (' and it still uses warehouse time on every schedule period' if o['state'] in ['started', 'resumed'] else '')
+        ~ '. To stop it run: ALTER ' ~ o['kind'] ~ ' ' ~ q ~ ' SUSPEND; to remove it run: DROP ' ~ o['kind'] ~ ' IF EXISTS ' ~ q ~ ';') -%}
+  {%- endfor -%}
+  {{ return(lines) }}
+{% endmacro %}
+
+
+{#- Logs one warning per existing object of `kind` that the vars do not ask setup to manage; returns the lines. -#}
+{% macro _icecore_warn_unmanaged(schema, kind) %}
+  {%- set lines = icecore._icecore_unmanaged_lines(icecore._icecore_existing_control_objects(schema, kind), schema) -%}
+  {%- for line in lines -%}{%- do log(line, info=True) -%}{%- endfor -%}
+  {{ return(lines) }}
+{% endmacro %}
+
+
+{#- Whether setup resumes an object it created: its own var (alert_resume, silence_task_resume) when set to true or
+    false, otherwise the var `alerts`. Both default to not resuming. -#}
+{% macro _icecore_resume_flag(key) %}
+  {%- if icecore._icecore_setting(key, none) is none -%}
+    {{ return(icecore._icecore_flag('alerts', false)) }}
+  {%- endif -%}
+  {{ return(icecore._icecore_flag(key, false)) }}
 {% endmacro %}
 
 
@@ -110,7 +184,7 @@
 
 {#- The alert's name, qualified: <obs schema>."ICECORE_ALERT_<NAME>". -#}
 {% macro alert_name(channel, schema=none) %}
-  {{ return(icecore.obs_schema(schema) ~ '."ICECORE_ALERT_' ~ (channel['name'] | upper) ~ '"') }}
+  {{ return(icecore.obs_schema(schema) ~ '.' ~ icecore._sql('ICECORE_ALERT_' ~ (channel['name'] | upper), 'ident')) }}
 {% endmacro %}
 
 
@@ -126,14 +200,14 @@
   {%- endif -%}
   {%- set minutes = schedule_minutes if schedule_minutes is not none else icecore._icecore_alert_schedule_minutes() -%}
   {%- set routing = icecore._icecore_alert_routing_config(channel, entries, all_channels, nodes) -%}
-  {%- set routing_json = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson(routing)) ~ ')' -%}
-  {%- set channel_sql = 'PARSE_JSON(' ~ icecore._icecore_block_literal(tojson({'channel': channel['name']})) ~ '):channel::string' -%}
+  {%- set routing_json = 'PARSE_JSON(' ~ icecore._sql(tojson(routing), 'string') ~ ')' -%}
+  {%- set channel_sql = 'PARSE_JSON(' ~ icecore._sql(tojson({'channel': channel['name']}), 'string') ~ '):channel::string' -%}
   {%- set dedup = icecore.dedup_window_sql(channel['name'], schema, event_table, channel_sql=channel_sql) -%}
   {%- set condition = 'with cfg as (select ' ~ routing_json ~ ' as c)\nselect pending.* from (\n' ~ dedup ~ '\n) as pending cross join cfg\nwhere ' ~ icecore._icecore_alert_routing_sql() -%}
   {%- set sql -%}
 CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   WAREHOUSE = {{ icecore._icecore_identifier(warehouse) }}
-  SCHEDULE = '{{ minutes }} MINUTE'
+  SCHEDULE = {{ icecore._sql(minutes ~ ' MINUTE', 'string') }}
   COMMENT = 'icecore: new unacknowledged incidents of ALERTS_FEED to one channel'
   IF (EXISTS (
 {{ condition }}
@@ -154,18 +228,18 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
     {%- set i = icecore._icecore_identifier(c['integration']) -%}
     {%- if c['type'] == 'email' -%}
       {%- set rec = [] -%}
-      {%- for r in c['recipients'] -%}{%- do rec.append(icecore._icecore_sql_literal(r)) -%}{%- endfor -%}
+      {%- for r in c['recipients'] -%}{%- do rec.append(icecore._sql(r, 'string')) -%}{%- endfor -%}
       {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = EMAIL ENABLED = TRUE ALLOWED_RECIPIENTS = (' ~ (rec | join(', ')) ~ ');') -%}
     {%- elif c['type'] == 'slack' -%}
-      {%- do out.append('CREATE SECRET ' ~ icecore.obs_schema(schema) ~ '."' ~ (c['integration'] | upper) ~ '_SECRET" TYPE = GENERIC_STRING SECRET_STRING = \'<the Slack webhook path T000/B000/XXXX>\';') -%}
-      {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'https://hooks.slack.com/services/SNOWFLAKE_WEBHOOK_SECRET\' WEBHOOK_SECRET = ' ~ icecore.obs_schema(schema) ~ '."' ~ (c['integration'] | upper) ~ '_SECRET" WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
+      {%- do out.append('CREATE SECRET ' ~ icecore.obs_schema(schema) ~ '.' ~ icecore._sql((c['integration'] | upper) ~ '_SECRET', 'ident') ~ ' TYPE = GENERIC_STRING SECRET_STRING = \'<the Slack webhook path T000/B000/XXXX>\';') -%}
+      {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'https://hooks.slack.com/services/SNOWFLAKE_WEBHOOK_SECRET\' WEBHOOK_SECRET = ' ~ icecore.obs_schema(schema) ~ '.' ~ icecore._sql((c['integration'] | upper) ~ '_SECRET', 'ident') ~ ' WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
     {%- else -%}
       {%- do out.append('CREATE NOTIFICATION INTEGRATION ' ~ i ~ ' TYPE = WEBHOOK ENABLED = TRUE WEBHOOK_URL = \'<the Teams workflow webhook URL>\' WEBHOOK_BODY_TEMPLATE = \'{"text": "SNOWFLAKE_WEBHOOK_MESSAGE"}\' WEBHOOK_HEADERS = (\'Content-Type\' = \'application/json\');') -%}
     {%- endif -%}
     {%- do out.append('GRANT USAGE ON INTEGRATION ' ~ i ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- endfor -%}
   {%- for c in channels -%}
-    {%- do out.append('ALTER ALERT ' ~ icecore.alert_name(c, schema) ~ ' RESUME;  -- only once the integration and its grants exist; icecore never resumes an alert') -%}
+    {%- do out.append('ALTER ALERT ' ~ icecore.alert_name(c, schema) ~ ' RESUME;  -- only once the integration and its grants exist; setup resumes alerts itself only when var alerts is true') -%}
   {%- endfor -%}
   {%- do out.append('GRANT EXECUTE ALERT ON ACCOUNT TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
   {%- do out.append('GRANT USAGE ON WAREHOUSE ' ~ icecore._icecore_identifier(wh) ~ ' TO ROLE ' ~ icecore._icecore_identifier(role) ~ ';') -%}
@@ -252,7 +326,7 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
   {%- set config = {'channel': channel['name'], 'integration': channel['integration'], 'recipients': channel['recipients']} -%}
   {%- set sql -%}
   BEGIN
-    LET cfg VARIANT := PARSE_JSON({{ icecore._icecore_block_literal(tojson(config)) }});
+    LET cfg VARIANT := PARSE_JSON({{ icecore._sql(tojson(config), 'string') }});
     LET qid STRING := {{ qid }};
     LET ch STRING := cfg:channel::STRING;
     LET k STRING := '';

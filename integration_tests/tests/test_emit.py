@@ -271,3 +271,25 @@ def test_emit_run_procedure_writes_spans_and_logs_with_scope_icecore(sf, obs, ru
     log = by_type["LOG"]
     assert log["value"] == WEIRD and log["record"]["severity_text"] == "WARN"
     assert log["record_attributes"]["dbt.result.status"] == "warn"
+
+
+@pytest.mark.sandbox
+def test_emit_into_a_schema_whose_name_has_hyphens_and_the_guard_accepts_it(dbt, sf, run_id):
+    # ICECORE_CI cannot create a database, so a hyphen is proved on the schema part of the same quoted procedure name
+    # (a database like MY-DB takes the same path through icecore._sql(..., 'name') and the guard's structural check).
+    schema = f"ICECORE-HY-{run_id}".upper()
+    helper = f"ICECORE_OBS_HY_{run_id}".upper()
+    since = snowflake_since(sf)
+    sf.cursor().execute(f'create schema "{DATABASE}"."{schema}"')
+    try:
+        emit_ddl = run_macro("it_procedure_ddl", {}, with_vars({"obs_schema": helper}))[0].replace(f'"{helper}"', f'"{schema}"')
+        assert f'"{DATABASE}"."{schema}"."ICECORE_EMIT"' in emit_ddl
+        sf.cursor().execute(emit_ddl)
+        procedure = f'"{DATABASE}"."{schema}"."ICECORE_EMIT"'
+        records = [{"name": "icecore.it_hyphen", "attrs": {"it.run_id": run_id}}]
+        status = run_macro("it_guarded_call_named", {"procedure": procedure, "items": records})
+        assert status == "ok 1", status
+        rows = wait_for_events(sf, ours({"schema": schema}), {"db": DATABASE, "schema": schema, "tag": run_id}, since=since)
+        assert len(rows) == 1 and rows[0]["record"]["name"] == "icecore.it_hyphen"
+    finally:
+        sf.cursor().execute(f'drop schema if exists "{DATABASE}"."{schema}"')

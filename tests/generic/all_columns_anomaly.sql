@@ -3,10 +3,12 @@
     The columns come from icecore.get_columns_signature (SHOW COLUMNS) minus `exclude_columns`. One change window is
     opened (icecore.get_change_window) and each column's metrics are computed over it (icecore.compute_column_metrics,
     one query per column, over the changed rows only), emitted with icecore.emit_metric (one per metric, with the
-    column) and compared with the static `bounds`, which apply to every column that has the metric. Metrics that
-    need a numeric column are skipped, with a logged warning, on the others. Until UC3 the bounds are the only verdict.
-    Pass or fail comes only from the bounds: the history read and the emits are guarded. -#}
-{% test all_columns_anomaly(model, exclude_columns=none, metrics=none, bounds=none, since=none, timestamp_column=none, lookback_hours=24) %}
+    column), scored against their own history (icecore.score_monitor_metrics: one query per 25 metrics) and compared with the
+    static `bounds`, which apply to every column that has the metric. Metrics that
+    need a numeric column are skipped, with a logged warning, on the others. Fails on a bound breach OR an anomaly; not enough
+    history: not scored. The history read, the scoring and the emits are guarded. -#}
+{% test all_columns_anomaly(model, exclude_columns=none, metrics=none, bounds=none, since=none, timestamp_column=none, lookback_hours=24, engine=none, sensitivity=none, min_consecutive=none, lookback_days=30, min_points=7, shadow_engine=none) %}
+  {{ config(severity='error', warn_if='>=1', error_if=icecore._icecore_error_if()) }}
   {%- set names = icecore._icecore_column_metric_defaults() if metrics is none else metrics -%}
   {%- do icecore._icecore_validate_bounds(bounds, names, 'icecore.all_columns_anomaly') -%}
   {%- set bounds = bounds or {} -%}
@@ -16,6 +18,7 @@
   {%- endfor -%}
 
   {%- set breaches = [] -%}
+  {%- set anomalies = [] -%}
   {%- if execute -%}
     {%- set name = icecore._icecore_quoted_name(model) -%}
     {%- set signature = icecore.get_columns_signature(model) -%}
@@ -36,15 +39,22 @@
           {%- do log('icecore: warning: all_columns_anomaly of ' ~ c['name'] ~ ' on ' ~ name ~ ' could not be measured (see above)', info=True) -%}
         {%- else -%}
           {%- for metric, value in values.items() -%}
-            {#- UC3 scoring hook: icecore.score(<history of this metric>, value) plugs in here and its result goes
-                to emit_metrics as `anomaly` of the entry. Not called at this stage (engine none). -#}
             {%- do to_emit.append({'metric': metric, 'value': value, 'column': c['name'],
                 'attributes': {'dbt.window.until': until, 'dbt.window.monitor': 'all_columns_anomaly'}}) -%}
             {%- if icecore._icecore_outside(value, bounds.get(metric)) -%}
               {%- set limit = bounds.get(metric) -%}
-              {%- do breaches.append({'column': c['name'], 'metric': metric, 'value': value, 'min': limit.get('min'), 'max': limit.get('max')}) -%}
+              {%- do breaches.append({'column': c['name'], 'metric': metric, 'value': value, 'min': limit.get('min'), 'max': limit.get('max'), 'reason': 'outside bounds'}) -%}
             {%- endif -%}
           {%- endfor -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set scores = icecore.score_monitor_metrics(model, to_emit, engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine) -%}
+      {%- for entry in to_emit -%}
+        {%- set result = scores[loop.index0] -%}
+        {%- if result is not none -%}{%- do entry.update({'anomaly': result}) -%}{%- endif -%}
+        {%- do entry['attributes'].update(icecore._icecore_metric_attrs(result)) -%}
+        {%- if icecore._icecore_anomalous(result) and not (breaches | selectattr('metric', 'equalto', entry['metric']) | selectattr('column', 'equalto', entry['column']) | list) -%}
+          {%- do anomalies.append({'column': entry['column'], 'metric': entry['metric'], 'value': entry['value'], 'min': result.get('lower'), 'max': result.get('upper'), 'reason': icecore._icecore_anomaly_text(result)}) -%}
         {%- endif -%}
       {%- endfor -%}
       {#- one CALL for the whole test (emit_events chunks at 100 events) -#}
@@ -52,13 +62,22 @@
     {%- endif -%}
   {%- endif -%}
 
-  {%- if breaches -%}
-    {%- for b in breaches %}
+  {#- dbt counts rows (see _icecore_error_if): hard breaches one row each, padded to at least 2; the anomalies together one row -#}
+  {%- set failing = [] -%}
+  {%- do failing.extend(breaches) -%}
+  {%- if anomalies -%}
+    {%- do anomalies[0].update({'reason': anomalies[0]['reason'] ~ ((' (and ' ~ (anomalies | length - 1) ~ ' more)') if anomalies | length > 1 else '')}) -%}
+    {%- do failing.append(anomalies[0]) -%}
+  {%- endif -%}
+  {%- if breaches and failing | length < 2 -%}{%- do failing.append(breaches[0]) -%}{%- endif -%}
+  {%- if failing -%}
+    {%- for b in failing %}
   select {{ icecore._icecore_sql_literal(b['column']) }}::varchar as column_name, {{ icecore._icecore_sql_literal(b['metric']) }}::varchar as metric,
-         {{ b['value'] }}::float as value, {{ 'null' if b['min'] is none else b['min'] }}::float as min_value, {{ 'null' if b['max'] is none else b['max'] }}::float as max_value
+         {{ b['value'] }}::float as value, {{ 'null' if b['min'] is none else b['min'] }}::float as min_value, {{ 'null' if b['max'] is none else b['max'] }}::float as max_value,
+         {{ icecore._icecore_sql_literal(b['reason']) }}::varchar as reason
   {{ 'union all' if not loop.last }}
     {%- endfor -%}
   {%- else %}
-  select null::varchar as column_name, null::varchar as metric, null::float as value, null::float as min_value, null::float as max_value where false
+  select null::varchar as column_name, null::varchar as metric, null::float as value, null::float as min_value, null::float as max_value, null::varchar as reason where false
   {%- endif %}
 {% endtest %}

@@ -19,11 +19,25 @@ macros:
       payload cap per row, with GB taken as 10^9 bytes. Until Telemetry Data Ingest replaces Logging on an account,
       Logging is billed instead (1.25 x serverless compute plus 0.28 credits per 1000 file batches), which a row
       count cannot predict; the message says to check `METERING_HISTORY` for the service types
-      `TELEMETRY_DATA_INGEST` and `LOGGING`. Monitor metrics are not included. Without a usable `runs_per_day` it
+      `TELEMETRY_DATA_INGEST` and `LOGGING`. The icecore monitor tests of the graph are counted from their arguments (a `monitors` entry in
+      `records_per_run` and their own line in the message): one `icecore.metric` event per computed metric, `icecore.anomaly` warn events
+      only as `anomalies_per_run`, one `icecore.schema_signature` per `schema_changes` test,
+      and their procedure spans; cost records stay in the `cost` entry and silence verdicts are 0. A dimension test
+      assumes `max_values` plus `other` values, an `all_columns_anomaly` test without declared columns assumes
+      `assumed_columns`. Without a usable `runs_per_day` it
       prints the rows per run, asks for `runs_per_day` and does not fail. Returns `{status, nodes, runs_per_day,
       days, records_per_run, rows_per_run, emit_run_calls, rows_per_month, gb_per_month, credits_per_month,
       credits_per_gb, message}`; status is `ok` or `needs_runs_per_day`.
     arguments:
+      - name: assumed_columns
+        type: integer
+        description: Columns assumed for an `all_columns_anomaly` test whose tested node declares none. Default 10.
+      - name: anomalies_per_run
+        type: integer
+        description: Anomaly warn events expected per run; monitor anomalies are counted only through it. Default 0.
+      - name: monitors
+        type: boolean
+        description: Count the icecore monitor tests of the graph. Default true; false leaves them out.
       - name: runs_per_day
         type: number
         description: dbt runs per day that fire the hooks. Required for the monthly figures; missing, zero or not a number, the estimate asks for it.

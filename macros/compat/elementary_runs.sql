@@ -79,7 +79,7 @@
     {'name': 'created_at', 'type': 'timestamp', 'expr': last},
     {'name': 'command', 'type': 'string', 'expr': 't.command'},
     {'name': 'dbt_version', 'type': 'string', 'expr': 't.dbt_version'},
-    {'name': 'elementary_version', 'type': 'string', 'expr': "'" ~ icecore._icecore_elementary_version() ~ "'"},
+    {'name': 'elementary_version', 'type': 'string', 'expr': icecore._sql(icecore._icecore_elementary_version(), 'string')},
     {'name': 'full_refresh', 'type': 'boolean', 'expr': none},
     {'name': 'invocation_vars', 'type': 'long_string', 'expr': none},
     {'name': 'vars', 'type': 'long_string', 'expr': none},

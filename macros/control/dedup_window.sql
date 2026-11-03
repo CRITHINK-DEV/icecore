@@ -49,7 +49,7 @@ last_notified as (
     from feed
     join notified
         on notified.incident_key = feed.incident_key
-       and notified.channel = {{ channel_sql or icecore._icecore_sql_literal(channel | string) }}
+       and notified.channel = {{ channel_sql or icecore._sql(channel | string, 'string') }}
        and notified.event_at >= feed.first_detected_at
     group by feed.incident_key
 )

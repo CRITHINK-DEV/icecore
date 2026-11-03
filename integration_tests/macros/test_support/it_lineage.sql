@@ -6,9 +6,9 @@
 {% endmacro %}
 
 {#- The LOG items for these edges, as ICECORE_EMIT_RUN receives them (base attributes added, capped), and their sizes. -#}
-{% macro it_lineage_render(edges) %}
+{% macro it_lineage_render(edges, info=none) %}
   {% set batch = {'items': [], 'node_spans': {}} %}
-  {% do icecore._icecore_lineage_append(edges, batch) %}
+  {% do icecore._icecore_lineage_append(edges, batch, info) %}
   {% set records = icecore._icecore_emit_run_records(batch['items']) %}
   {% set sizes = [] %}
   {% for record in records %}

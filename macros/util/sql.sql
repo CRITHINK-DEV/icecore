@@ -4,7 +4,8 @@
 
   _sql(value, 'string')  a single-quoted literal safe everywhere: in a '...' string, in a statement and inside a
                          `$$` body. Backslash and quote are escaped, `$` is written \x24 (so `$$` can never close
-                         a body), CR and LF are escaped (the statement stays on one line).
+                         a body), NUL is written \x00 (a raw NUL cuts a Scripting block short), CR and LF are
+                         escaped (the statement stays on one line).
   _sql(value, 'ident')   a double-quoted identifier, from one part or a list of parts (joined with `.`). Every part
                          must match [A-Za-z0-9_$]+ (anchored with \Z: a trailing newline is not accepted); anything
                          else (a `$$`, a quote, a backslash, a space, a control character, an empty part) raises a
@@ -21,7 +22,7 @@
 
 {% macro _sql(value, context='string') %}
   {%- if context == 'string' -%}
-    {%- set s = (value | string).replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\x24') -%}
+    {%- set s = (value | string).replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\x24').replace('\x00', '\\x00') -%}
     {{ return("'" ~ s.replace('\n', '\\n').replace('\r', '\\r') ~ "'") }}
   {%- elif context == 'ident' or context == 'name' -%}
     {%- set error = icecore._sql_error(value, context) -%}

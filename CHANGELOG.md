@@ -8,6 +8,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 - Streamlit app: the Console (prototype D, one full-page component) replaces the nine Streamlit pages.
 - `scripts/demo/build_rich_demo.sh` (`make rich-demo`): a sandbox-only demo built by 15 real dbt runs of `examples/shop` plus a few models, with scored metrics, row-count anomalies, a freshness breach, schema changes, four declared SLAs (one missed), failed and skipped models, and open, acknowledged and resolved incidents.
 - The console data object (`streamlit/lib/console_data.py`) builds the prototype console's data from the views; the app's ALERTS_FEED read now includes `root_cause_unique_id` and `root_cause_kind`.
+- `TEST_RESULTS.tested_unique_id` (the model or source a test is attached to, from `dbt.test.attached_node`) and `NODE_EXECUTIONS.root_cause_kind`. The Lineage page marks stale sources from the tested node, and the Elementary-compatible `model_unique_id` and `parent_model_unique_id` columns are filled.
 - `icecore.setup` creates the alerts and the silence task when the `alerts` var is true, and resumes them (this uses warehouse time); `alert_resume` and `silence_task_resume` override it per object. With `alerts: false` it creates neither, and reports any existing one without touching it.
 - `icecore.estimate_telemetry_cost` counts the records of the icecore monitor tests (own line), with `anomalies_per_run`, `assumed_columns` and `monitors` arguments.
 - Telemetry written to the Snowflake event table through setup-created procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`), with `icecore.setup` and `icecore.doctor`.
@@ -23,3 +24,6 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 - `layer` on `NODE_EXECUTIONS` and `LINEAGE` / `LINEAGE_LATEST` (`parent_layer`, `child_layer`) from the node's dbt fqn (`dbt.node.fqn`, `dbt.node.layer`), renamable with the `icecore.layers` var, and `threshold` on `METRICS` (the `max_lag` of `icecore.freshness`, in seconds).
 - Streamlit app: Runs, Lineage, Cost and SLAs pages.
 - Documentation: views reference, troubleshooting guide, CONTRIBUTING and roadmap.
+
+### Fixed
+- A warehouse, role or database name with a single `$` (for example `my$wh`) stays unquoted and keeps its case; a NUL in a value is written `\x00` so it cannot cut a Scripting block; root cause on a database name with `$$` warns and skips instead of raising at on-run-end. The SQL safety test now flags every hand-built quote pattern (`%s`, `.format`, `{{ }}` next to a quote, quote lists, aliases of the retired literal helpers).

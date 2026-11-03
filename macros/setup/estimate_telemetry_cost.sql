@@ -112,7 +112,7 @@
       ~ 'from spikes/S1.md ("Python noise"); bytes per row measured on icecore rows in the sandbox (31 Oct 2026); rate from ' ~ rate['source'] ~ '. '
       ~ 'Until Telemetry Data Ingest replaces Logging on your account, Logging is billed instead (1.25 x serverless compute plus 0.28 credits '
       ~ 'per 1000 file batches), which a row count cannot predict: check SNOWFLAKE.ACCOUNT_USAGE.METERING_HISTORY for the service types '
-      ~ 'TELEMETRY_DATA_INGEST and LOGGING. Monitor records are counted from the graph\'s icecore tests and their arguments, with the assumptions named in their line') -%}
+      ~ 'TELEMETRY_DATA_INGEST and LOGGING. Monitor records are counted from the icecore tests of the graph and their arguments, with the assumptions named in their line') -%}
   {%- set text = 'icecore: telemetry cost: ' ~ (lines | join('.\nicecore: telemetry cost: ')) ~ '.' -%}
   {% do log(text, info=True) %}
   {%- do out.update({'message': text}) -%}

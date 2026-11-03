@@ -47,7 +47,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "TEST_RESULTS": ("merged", "macros/views/test_results.sql", (
         "invocation_id", "project", "test_unique_id", "test_name", "test_type", "column", "severity", "status",
         "failures", "message", "execution_time_s", "root_cause_unique_id", "root_cause_kind", "engine", "expected", "lower", "upper", "score", "executed_at",
-        "query_id")),
+        "query_id", "tested_unique_id")),
     "LINEAGE": ("merged", "macros/views/lineage.sql", (
         "invocation_id", "project", "parent_unique_id", "child_unique_id", "recorded_at", "parent_layer", "child_layer")),
     "LINEAGE_LATEST": ("merged", "macros/views/lineage.sql", (
@@ -63,7 +63,7 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "invocation_id", "unique_id", "type", "name", "materialization", "relation", "status", "message", "rows_affected",
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
-        "recorded_at", "layer")),
+        "recorded_at", "layer", "root_cause_kind")),
     "ALERTS_FEED": ("merged", "macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
         "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by",

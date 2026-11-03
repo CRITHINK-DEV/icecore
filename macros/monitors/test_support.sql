@@ -105,7 +105,7 @@ end;
         'dimension': "attributes:\"dbt.window.monitor\"::string = 'dimension_anomaly' and metric_column = " ~ icecore._sql(column_name, 'string'),
         'all_columns': "attributes:\"dbt.window.monitor\"::string = 'all_columns_anomaly'"}[kind] -%}
     {%- set sql -%}
-      select to_varchar(max(coalesce(convert_timezone('UTC', try_to_timestamp_tz(attributes:"dbt.window.until"::string))::timestamp_ntz, event_at)), '{{ iso }}')
+      select to_varchar(max(coalesce(convert_timezone('UTC', try_to_timestamp_tz(attributes:"dbt.window.until"::string))::timestamp_ntz, event_at)), {{ icecore._sql(iso, 'string') }})
       from ({{ icecore.base_events(event_table=event_table) }})
       where {{ icecore._icecore_history_bound(relation) }} and record_name = 'icecore.metric'
         and {{ filters }}{% if window_tag is not none %}
@@ -114,7 +114,7 @@ end;
     {%- set previous = icecore._icecore_safe_scalar(sql, 'previous observation', relation) -%}
   {%- endif -%}
   {%- if previous is not none -%}{{ return(previous) }}{%- endif -%}
-  {{ return(run_query("select to_varchar(dateadd(second, -" ~ ((lookback_hours | float) * 3600) | int ~ ", sysdate()), '" ~ iso ~ "')").rows[0][0]) }}
+  {{ return(run_query("select to_varchar(dateadd(second, -" ~ ((lookback_hours | float) * 3600) | int ~ ", sysdate()), " ~ icecore._sql(iso, 'string') ~ ")").rows[0][0]) }}
 {% endmacro %}
 
 

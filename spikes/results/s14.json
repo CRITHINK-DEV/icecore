@@ -1,0 +1,21 @@
+{
+  "spike": "S14",
+  "question": "Can Streamlit in Snowflake load a custom component bundled as static files and send a click back to Python?",
+  "date": "2026-11-03",
+  "runtime": "warehouse (SYSTEM$WAREHOUSE_RUNTIME)",
+  "streamlit_version": "1.50.0",
+  "python_version": "3.11.18",
+  "renders": true,
+  "click_reaches_python": true,
+  "first_value": {"event": "rendered", "clicks": 0, "errors": []},
+  "value_after_click": {"event": "click", "clicks": 1, "node_id": "n1", "errors": []},
+  "component_origin": "a *.snowflake.app host",
+  "csp_or_console_errors": [],
+  "deploy": {
+    "snow_streamlit_deploy": "failed at file upload: connection host not in the expected format",
+    "worked": "PUT files to a stage, then CREATE STREAMLIT ... FROM @stage"
+  },
+  "viewer_requirement": "opening the app needs USAGE on the STREAMLIT object for the viewer's role",
+  "decision": "React Flow in Snowflake: yes",
+  "fallback_applies": false
+}

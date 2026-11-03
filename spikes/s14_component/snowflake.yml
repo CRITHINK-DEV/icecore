@@ -1,0 +1,17 @@
+definition_version: 2
+entities:
+  s14_probe:
+    type: streamlit
+    identifier:
+      name: ICECORE_S14_01C8372E_PROBE
+      database: ICECORE_SANDBOX
+      schema: SPIKES
+    title: s14 probe
+    query_warehouse: ICECORE_CI_WH
+    runtime_name: SYSTEM$WAREHOUSE_RUNTIME
+    main_file: streamlit_app.py
+    artifacts:
+      - streamlit_app.py
+      - environment.yml
+      - frontend/index.html
+      - frontend/component.js

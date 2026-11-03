@@ -1,0 +1,5 @@
+name: s14
+channels:
+  - snowflake
+dependencies:
+  - streamlit=1.50.0

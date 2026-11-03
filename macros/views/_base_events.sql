@@ -155,9 +155,11 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
 
 
 {#- The one plain-identifier helper of the package (setup, levels and views use it): an identifier for SQL text,
-    a plain identifier (letters, digits, underscore) as it is, anything else double-quoted by icecore._sql(..., 'name'), which refuses a `$` and control characters. Wrapper kept for one release. -#}
+    a plain identifier (letters, digits, underscore, and a single `$` after the first character: my$wh keeps its case) as it
+    is, anything else double-quoted by icecore._sql(..., 'name'), which refuses `$$` and control characters. Wrapper kept
+    for one release. -#}
 {% macro _icecore_identifier(name) %}
   {%- set text = name | string -%}
-  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_]*\\Z', text) -%}{{ return(text) }}{%- endif -%}
+  {%- if modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*\\Z', text) and '$$' not in text -%}{{ return(text) }}{%- endif -%}
   {{ return(icecore._sql(text, 'name')) }}
 {% endmacro %}

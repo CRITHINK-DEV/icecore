@@ -60,7 +60,7 @@
 
 {#- Text of a timestamp in Elementary's format, over the alias t. -#}
 {% macro _icecore_elementary_text(expression, micros=false) %}
-  {{ return("to_varchar(" ~ expression ~ ", '" ~ ('YYYY-MM-DD HH24:MI:SS.FF6' if micros else 'YYYY-MM-DD HH24:MI:SS') ~ "')") }}
+  {{ return("to_varchar(" ~ expression ~ ", " ~ icecore._sql('YYYY-MM-DD HH24:MI:SS.FF6' if micros else 'YYYY-MM-DD HH24:MI:SS', 'string') ~ ")") }}
 {% endmacro %}
 
 

@@ -69,8 +69,8 @@
   {%- set signals = {'schema_diffs': {}, 'freshness_breaches': {}} -%}
   {%- set changes = icecore._root_cause_read_view('SCHEMA_CHANGES',
       "select array_agg(object_construct('relation', relation, 'unique_id', node_unique_id, 'column', \"COLUMN\", "
-      ~ "'change_kind', change_kind, 'from_type', from_type, 'to_type', to_type)) from "
-      ~ icecore._icecore_procedure('SCHEMA_CHANGES') ~ " where detected_at >= dateadd(hour, -" ~ hours ~ ", sysdate())") -%}
+      ~ "'change_kind', change_kind, 'from_type', from_type, 'to_type', to_type)) from ",
+      " where detected_at >= dateadd(hour, -" ~ hours ~ ", sysdate())") -%}
   {%- for row in changes -%}
     {%- set uid = icecore._root_cause_resolve(row.get('unique_id'), row.get('relation')) -%}
     {%- if uid -%}
@@ -86,8 +86,8 @@
   {%- endfor -%}
   {%- set breaches = icecore._root_cause_read_view('METRICS',
       "select array_agg(object_construct('relation', relation, 'unique_id', node_unique_id, 'value', value, "
-      ~ "'observed_at', to_varchar(observed_at))) from (select * from " ~ icecore._icecore_procedure('METRICS')
-      ~ " where metric = 'freshness_lag_seconds' and observed_at >= dateadd(hour, -" ~ hours ~ ", sysdate()) "
+      ~ "'observed_at', to_varchar(observed_at))) from (select * from ",
+      " where metric = 'freshness_lag_seconds' and observed_at >= dateadd(hour, -" ~ hours ~ ", sysdate()) "
       ~ "qualify row_number() over (partition by coalesce(node_unique_id, relation) order by observed_at desc) = 1) "
       ~ "where anomaly_is_anomaly") -%}
   {%- for row in breaches -%}
@@ -121,10 +121,17 @@
 
 
 {#- The rows of one view as a list, or [] with one warning when it cannot be read. -#}
-{% macro _root_cause_read_view(view, sql) %}
-  {%- set out = icecore._icecore_try_scalar(sql) -%}
+{#- `head` and `tail` surround the view's name in the query. A database or schema that icecore._sql refuses (a `$$`, a control
+    character) is a warning and an empty signal, never an exception: this runs at on-run-end. -#}
+{% macro _root_cause_read_view(view, head, tail) %}
+  {%- set target_view = icecore._icecore_procedure_or_error(view) -%}
+  {%- if target_view['error'] -%}
+    {% do log('icecore: warning: root cause could not read ' ~ view ~ ': ' ~ target_view['error'], info=True) %}
+    {{ return([]) }}
+  {%- endif -%}
+  {%- set out = icecore._icecore_try_scalar(head ~ target_view['procedure'] ~ tail) -%}
   {%- if 'error' in out -%}
-    {% do log('icecore: warning: root cause could not read ' ~ icecore._icecore_procedure(view) ~ ': ' ~ out['error'] ~ ' (run icecore.setup so the views exist)', info=True) %}
+    {% do log('icecore: warning: root cause could not read ' ~ target_view['procedure'] ~ ': ' ~ out['error'] ~ ' (run icecore.setup so the views exist)', info=True) %}
     {{ return([]) }}
   {%- endif -%}
   {%- set value = out.get('value') -%}

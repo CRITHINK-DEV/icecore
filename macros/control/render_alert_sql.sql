@@ -386,12 +386,12 @@ CREATE OR REPLACE ALERT {{ icecore.alert_name(channel, schema) }}
 {#- One column as text for the message: coalesced, and for the webhook types cleaned (quotes, backslashes and control
     characters replaced; Slack: & < > escaped, & first). -#}
 {% macro _icecore_alert_field(column, type, default) %}
-  {%- set e = "coalesce(" ~ column ~ ", '" ~ default ~ "')" -%}
+  {%- set e = "coalesce(" ~ column ~ ", " ~ icecore._sql(default, 'string') ~ ")" -%}
   {%- if type == 'email' -%}{{ return(e) }}{%- endif -%}
   {%- if type == 'slack' -%}
     {%- set e = "replace(replace(replace(" ~ e ~ ", '&', '&amp;'), '<', '&lt;'), '>', '&gt;')" -%}
   {%- endif -%}
-  {{ return("regexp_replace(replace(replace(" ~ e ~ ", '\\\\', '/'), '\"', ''''), '[[:cntrl:]]', ' ')") }}
+  {{ return("regexp_replace(replace(replace(" ~ e ~ ", '\\\\', '/'), chr(34), chr(39)), '[[:cntrl:]]', ' ')") }}
 {% endmacro %}
 
 

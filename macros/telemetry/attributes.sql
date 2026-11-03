@@ -83,9 +83,8 @@
 
 
 {% macro _icecore_redact_literals(text) %}
-  {%- set q, dq, bs = "'", '"', '\\\\' -%}
-  {%- set pattern = '(?s)(' ~ q ~ ')(?:[^' ~ q ~ bs ~ ']|' ~ bs ~ '.|' ~ q ~ q ~ ')*(?:' ~ q ~ '|$)'
-      ~ '|(' ~ dq ~ ')(?:[^' ~ dq ~ bs ~ ']|' ~ bs ~ '.|' ~ dq ~ dq ~ ')*(?:' ~ dq ~ '|$)' -%}
+  {#- Regex escapes: \x27 is a single quote and \x22 a double quote (so no quote character is written by hand here). -#}
+  {%- set pattern = '(?s)(\\x27)(?:[^\\x27\\\\]|\\\\.|\\x27\\x27)*(?:\\x27|$)|(\\x22)(?:[^\\x22\\\\]|\\\\.|\\x22\\x22)*(?:\\x22|$)' -%}
   {{ return(modules.re.sub(pattern, '\\1\\2?\\1\\2', text)) }}
 {% endmacro %}
 

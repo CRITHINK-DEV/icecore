@@ -44,16 +44,38 @@ def test_feed_reads_base_events_and_unions_the_three_live_signals():
         assert needle in sql, needle
 
 
-def test_silence_and_cost_slots_are_empty_ctes_with_the_signal_columns():
+def _cte(sql: str, name: str) -> str:
+    return sql.partition(f"\n{name} as (")[2].split("\n),", 1)[0]
+
+
+def test_silence_slot_reads_the_silence_events_view_sql():
     sql = feed_sql()
-    for slot, story in [("silence_events", "uc6-silence"), ("cost_regressions", "cost-regression")]:
-        head, _, rest = sql.partition(f"{slot} as (")
-        body = rest.split("\n),", 1)[0]
-        assert "where false" in body, slot
-        for column in ["as kind", "as node_key", "as severity", "as title", "as detected_at", "as invocation_id"]:
-            assert column in body, (slot, column)
-        assert story in head.split("-- EMPTY SLOT")[-1], slot
-    assert "from silence_events" in sql and "from cost_regressions" in sql
+    body = _cte(sql, "silence_events")
+    assert "record_name = 'icecore.silence'" in body and "'silence' as kind" in body
+    assert "unique_id as node_key" in body and "iff(lower(severity) = 'error', 'error', 'warn') as severity" in body
+    assert "missed its run, expected at" in body
+    assert "expected_at" in body and "detected_at" in body and "cast(null as varchar) as invocation_id" in body
+    assert "where false" not in body
+    assert "from silence_events" in sql
+
+
+def test_cost_slot_reads_credits_anomalies_above_the_band_and_the_generic_anomaly_signal_skips_credits():
+    sql = feed_sql()
+    body = _cte(sql, "cost_regressions")
+    assert "'cost' as kind" in body and "where false" not in body
+    assert "anomaly_is_anomaly = true and metric = 'credits' and coalesce(value > anomaly_upper, true)" in body
+    assert "from anomalies" in body and "from cost_regressions" in sql
+    # each regression once: the generic anomaly signal leaves metric credits to the cost signal
+    assert "where anomaly_is_anomaly = true and coalesce(metric, '') <> 'credits'" in sql
+
+
+def test_slots_keep_the_explicit_final_select_list_and_the_six_signal_columns():
+    sql = feed_sql()
+    for name in ("silence_events", "cost_regressions"):
+        body = _cte(sql, name)
+        for column in ["as kind", "as node_key", "as severity", "as title", "as detected_at", "invocation_id"]:
+            assert column in body, (name, column)
+    assert "    root_causes.root_cause_kind\nfrom incidents" in sql
 
 
 def test_incident_key_hashes_node_kind_and_window():

@@ -147,7 +147,7 @@ flowchart LR
 | **Views** | Views such as `invocations`, `node_executions`, `test_results`, `metrics`, `schema_changes`, `lineage`, `alerts_feed`, created by `icecore.setup`; all exist. | `building` |
 | **Cost per model** | Credits per node from `QUERY_ATTRIBUTION_HISTORY`; cost regressions scored like any metric. | `planned` |
 | **Missed-run detection** | A Snowflake task compares `meta.sla` schedules with the last successful run. | `planned` |
-| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. Missed runs and cost regressions do not raise alerts yet. | `building` |
+| **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `building` |
 | **Cortex engine and shadow scoring** | `SNOWFLAKE.ML.ANOMALY_DETECTION` when the account allows it, compared side by side with the native engine. | `planned` |
 | **Failed-row samples** | A capped sample of failing rows on test failure (payload limits from spike S2). | `planned` |
 | **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. | `planned` |

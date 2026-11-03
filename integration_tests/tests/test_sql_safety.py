@@ -295,10 +295,12 @@ HAND_QUOTING = [
     re.compile(r"""replace\(\s*["]'["]"""),
     # a {{ }} next to a quote ('{{ x }}', "{{ x }}"): the value is quoted by hand
     re.compile(r"""['"][.]?\s*\{\{|\}\}\s*['"]|\}\}\.'"""),
-    # '%s' % x, "'%s'" % x
-    re.compile(r"""\\?['"]%s(?!\w)|(?<![\w%])%s\\?['"]"""),
+    # '%s' % x, "'%s'" % x ('%s%' is a LIKE pattern: a % format would fail on it)
+    re.compile(r"""\\?['"]%s(?!\w|%['"])|(?<![\w%])%s\\?['"]"""),
+    # '%(v)s' % {...}
+    re.compile(r"%\(\w+\)s"),
     # str.format
-    re.compile(r"(?<!\}')\.format\("),  # '{:,}'.format(n) formats a number for a person
+    re.compile(r"\.format\("),  # only the exact literal '{:,}'.format(n), a number for a person, is exempt (NUMBER_FORMAT)
     # a body or its delimiter built with an operator: "$$ " ~ x, x ~ " $$"
     re.compile(r"""\$\$[^'"]*['"]\s*[~+]|[~+]\s*['"][^'"]*\$\$"""),
     # the retired helper names are wrappers: no caller uses them for a literal
@@ -313,6 +315,7 @@ CALL_OF_SQL = re.compile(r"\{\{-?\s*icecore\._sql\([^{}]*\)\s*-?\}\}")
 SQL_CALL = "{{SQL}}"  # what a call of icecore._sql leaves behind: still a {{ }}, so a quote around it is seen
 # dropping quotes to compare two names builds no SQL: replace(x, '"', '')
 DROP_QUOTES = re.compile(rf"replace\([^()]*?,\s*{QUOTE}\s*,\s*(?:''|\"\")\s*\)")
+NUMBER_FORMAT = re.compile(r"""(['"])\{:,\}\1\.format\(""")
 STRING = re.compile(r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*\"""")
 SEGMENT = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.S)
 
@@ -331,7 +334,8 @@ def strip_messages(text: str) -> str:
     """The argument of log(...), raise_compiler_error(...) and _sla_fail(...) (which raises) goes: a message quoting a value for a person builds no
     SQL. The rest of the line stays checked."""
     out, i = [], 0
-    for m in re.finditer(r"\b(?:log|raise_compiler_error|_sla_fail)\(", text):
+    # `log(` counts only as the Jinja call ({% do log( , {{ log( ): the SQL function LOG(10, '{{ v }}') is SQL
+    for m in re.finditer(r"(?:\{%-?\s*do\s+|\{\{-?\s*)log\(|\b(?:raise_compiler_error|_sla_fail)\(", text):
         if m.start() < i:
             continue
         depth, j, quote = 1, m.end(), None
@@ -359,24 +363,51 @@ def _line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
 
-def quoted_expressions(code: str) -> set[int]:
-    """Lines where, in raw SQL, a `{{ }}` opens inside a single-quoted string ('ICE_{{ x }}', like '%{{ x }}%'): a value
-    pasted into a literal by hand. `icecore._sql(...)` calls are `{{SQL}}` here, so a quote around one is caught too."""
-    lines, in_quote, pos = set(), False, 0
+# Inside a `$$` body only text that cannot end it may be pasted in: what icecore._sql builds (the string context leaves no `$`,
+# the ident and name contexts refuse `$$`), or a helper that returns an icecore._sql identifier.
+BODY_SAFE = re.compile(r"\{\{SQL\}\}|\{\{-?\s*icecore\.(?:_icecore_procedure|_icecore_silence_name|obs_schema)\(")
+# (file, expression) of a `{{ }}` in a `$$` body that is provably safe but not built by icecore._sql in the same expression.
+BODY_ALLOWED = {
+    # macros/telemetry/emit.sql, _icecore_guarded_call_sql: refused above the body unless _icecore_procedure_problem finds
+    # a chain of quoted names (no `$$`, no newline, no stray quote)
+    ("telemetry/emit.sql", "procedure"),
+    # macros/control/render_silence_task_sql.sql: `now` and `iso` are constant strings set at the top of the macro
+    ("control/render_silence_task_sql.sql", "now"),
+    ("control/render_silence_task_sql.sql", "iso"),
+    # macros/control/refresh_cortex_models.sql, _icecore_refresh_task_ddl: the macro raises when the body holds `$$`, and
+    # the body is constant text (validated names and integers)
+    ("control/refresh_cortex_models.sql", "body"),
+}
+
+
+def quoted_expressions(code: str, path: str = "") -> set[int]:
+    """Lines where, in raw SQL, a `{{ }}` opens inside a single-quoted string ('ICE_{{ x }}', like '%{{ x }}%') or inside a
+    `$$` body ($${{ x }}$$): a value pasted into a literal by hand. `icecore._sql(...)` calls are `{{SQL}}` here, so a
+    quote around one is caught too. `--` and `/* */` comments hide their apostrophes."""
+    lines, in_quote, in_dollar, in_block, pos = set(), False, False, False, 0
     for m in SEGMENT.finditer(code):
         raw = code[pos:m.start()]
         i = 0
         while i < len(raw):
             c = raw[i]
-            if in_quote and c == "\\":
+            if in_block:
+                if raw.startswith("*/", i):
+                    in_block, i = False, i + 1
+            elif in_quote and c == "\\":
                 i += 1
             elif c == "'":
                 in_quote = not in_quote
+            elif not in_quote and raw.startswith("$$", i):
+                in_dollar, i = not in_dollar, i + 1
+            elif not in_quote and raw.startswith("/*", i):
+                in_block, i = True, i + 1
             elif not in_quote and raw.startswith("--", i):
                 i = raw.find("\n", i) if "\n" in raw[i:] else len(raw)
                 continue
             i += 1
-        if in_quote and m.group(0).startswith("{{"):
+        expression = m.group(0).strip("{}-").strip()
+        trusted = not in_quote and in_dollar and (BODY_SAFE.match(m.group(0)) or (path, expression) in BODY_ALLOWED)
+        if (in_quote or in_dollar) and m.group(0).startswith("{{") and not trusted:
             lines.add(_line_of(code, m.start()))
         pos = m.end()
     return lines
@@ -390,6 +421,7 @@ def odd_quote_literals(code: str) -> set[int]:
         seg = m.group(0)
         for lit in STRING.finditer(seg):
             body = lit.group(0)[1:-1].replace("\\'", "'").replace('\\"', '"')
+            body = re.sub(r"(?<=\w)'(?=\w)", "", body)  # it's, can't: an apostrophe inside a word is prose, not a quote
             if (body.count("'") + body.count('"')) % 2 == 0:
                 continue
             before, after = seg[:lit.start()].rstrip(), seg[lit.end():].lstrip()
@@ -398,17 +430,17 @@ def odd_quote_literals(code: str) -> set[int]:
     return lines
 
 
-def scan_text(text: str) -> list[tuple[int, str]]:
+def scan_text(text: str, path: str = "") -> list[tuple[int, str]]:
     """(line number, line) of every hand-built quote, quoted `{{ }}`, retired wrapper or alias call in a macro file."""
     code = CALL_OF_SQL.sub(lambda m: SQL_CALL + "\n" * m.group(0).count("\n"), strip_messages(strip_comments(text)))
     lines = code.splitlines()
     aliases = {m.group(1) for m in map(ALIAS.search, lines) if m}
     call_of_alias = re.compile(r"(?<![\w.])(?:%s)\s*\(" % "|".join(map(re.escape, aliases))) if aliases else None
-    flagged = quoted_expressions(code) | odd_quote_literals(code)
+    flagged = quoted_expressions(code, path) | odd_quote_literals(code)
     original = text.splitlines()
     hits = []
     for n, line in enumerate(lines, 1):
-        checked = DROP_QUOTES.sub("", line.replace("""replace('"', '')""", ""))
+        checked = NUMBER_FORMAT.sub("(", DROP_QUOTES.sub("", line.replace("""replace('"', '')""", "")))
         if (n in flagged or any(rx.search(checked) for rx in HAND_QUOTING) or ALIAS.search(checked)
                 or (call_of_alias and call_of_alias.search(checked))):
             hits.append((n, original[n - 1].strip()))
@@ -422,7 +454,7 @@ def test_only_icecore_sql_builds_literals_and_identifiers():
     for path in (REPO / "macros").rglob("*.sql"):
         if path.name == "sql.sql":
             continue
-        offenders += [f"{path.relative_to(REPO)}:{n}: {line}" for n, line in scan_text(path.read_text())]
+        offenders += [f"{path.relative_to(REPO)}:{n}: {line}" for n, line in scan_text(path.read_text(), path.relative_to(REPO / 'macros').as_posix())]
     assert not offenders, offenders
 
 
@@ -467,6 +499,16 @@ def test_only_icecore_sql_builds_literals_and_identifiers():
     # the log argument is exempt, the rest of the line is not
     """{% do log('quoting ' ~ x) %}{{ '"' ~ x ~ '"' }}""",
     """{{ exceptions.raise_compiler_error('bad') }}{{ "'" ~ x ~ "'" }}""",
+    # review of #124, forms the scan did not flag: a dollar-quoted literal, a named % format, SQL log(), a format of a literal
+    """select $${{ v }}$$""",
+    """execute immediate $$ select '1'; {{ v }} $$""",
+    """{%- set q = "'%(v)s'" % {'v': x} -%}""",
+    """{%- set q = "a = %(v)s" % {'v': x} -%}""",
+    """select log(10, '{{ v }}')""",
+    """{{ run_query("select log(10, '" ~ v ~ "')") }}""",
+    """{%- set q = 'a = {}'.format(v) -%}""",
+    """{%- set q = "a = {}".format(v) -%}""",
+    """{%- set q = 'a = {:,}'.format(v) -%}""",
 ])
 def test_the_scan_catches_every_hand_quoting_pattern(line):
     # an open comment hides nothing: the scan of a one-line text is the scan of the file
@@ -499,9 +541,25 @@ def test_the_scan_catches_a_call_of_a_local_alias_of_a_quoting_helper(helper):
     """{%- set error = icecore._sql_error(value, context) -%}""",
     """from {{ obs }}."NODE_EXECUTIONS" as n""",
     """{{ return('{:,}'.format(rows) ~ ' rows') }}""",
+    # false positives: an apostrophe in prose, an apostrophe in a SQL block comment, a LIKE pattern
+    """{{ return("it's not " ~ name) }}""",
+    """{%- do messages.append("can't read " ~ name ~ " yet") -%}""",
+    """select 1 /* it's a comment */ from t where a = {{ icecore._sql(v, 'string') }}""",
+    """/* it's a
+   multi-line comment */
+select {{ icecore._sql(v, 'string') }}""",
+    """where name ilike '%s%'""",
+    # a `$$` body takes only what icecore._sql builds, or a helper that returns an icecore._sql identifier
+    """execute immediate $$ select {{ icecore._sql(v, 'string') }} from {{ icecore._icecore_procedure('P', schema) }} $$""",
+    """{{ log("it's " ~ x) }}""",
 ])
 def test_the_scan_leaves_legitimate_lines_alone(line):
     assert not scan_text(line), line
+
+
+def test_the_scan_of_a_comment_before_a_quoted_expression_still_flags_it():
+    # a block comment closes: the quote after it is real
+    assert scan_text("/* it's */ select 'a{{ x }}'")
 
 
 def test_the_scan_of_a_multi_line_comment_and_log_call_checks_only_what_is_code():

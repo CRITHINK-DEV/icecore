@@ -5,6 +5,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 ## [Unreleased]
 
 ### Added
+- The console data object (`streamlit/lib/console_data.py`) builds the prototype console's data from the views; the app's ALERTS_FEED read now includes `root_cause_unique_id` and `root_cause_kind`.
 - `icecore.setup` creates the alerts and the silence task when the `alerts` var is true, and resumes them (this uses warehouse time); `alert_resume` and `silence_task_resume` override it per object. With `alerts: false` it creates neither, and reports any existing one without touching it.
 - `icecore.estimate_telemetry_cost` counts the records of the icecore monitor tests (own line), with `anomalies_per_run`, `assumed_columns` and `monitors` arguments.
 - Telemetry written to the Snowflake event table through setup-created procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`), with `icecore.setup` and `icecore.doctor`.

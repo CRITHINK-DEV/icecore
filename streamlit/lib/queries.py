@@ -66,7 +66,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "recorded_at", "layer")),
     "ALERTS_FEED": ("merged", "macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
-        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),
+        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by",
+        "root_cause_unique_id", "root_cause_kind")),
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),
@@ -501,3 +502,14 @@ def schema_columns(relation: str | None = None, limit: int = DEFAULT_LIMIT, sinc
                    layer: QueryLayer | None = None) -> list[Row]:
     """SCHEMA_COLUMNS: the column state of a relation per schema_changes run, newest snapshot first."""
     return _read(build_schema_columns, layer, relation, since, limit, view="SCHEMA_COLUMNS")
+
+
+def build_node_executions_newest(views_schema, since=None, limit=DEFAULT_LIMIT):
+    w = _Where()
+    w.at_least("started_at", since)
+    return _build(views_schema, "NODE_EXECUTIONS", w, "started_at desc nulls last, unique_id", limit)
+
+
+def node_executions_newest(since=None, limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
+    """NODE_EXECUTIONS, newest first, so that a limit drops the oldest rows (node_executions reads oldest first)."""
+    return _read(build_node_executions_newest, layer, since, limit, view="NODE_EXECUTIONS")

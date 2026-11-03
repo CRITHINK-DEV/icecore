@@ -1,0 +1,21 @@
+export const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* ---------------- time + format helpers ---------------- */
+export const MS = { s: 1e3, m: 60e3, h: 3600e3, d: 86400e3 };
+export const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+export const pad = n => String(n).padStart(2, '0');
+export const parseT = s => (s ? new Date(String(s).slice(0, 23)).getTime() : null);
+export const fmtDay = t => { const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()}`; };
+export const fmtTs = t => { if (t == null) return '—'; const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+export const fmtRun = t => { const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+export const fmtSec = s => (s == null ? '—' : s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
+export const fmtSpan = ms => { const a = Math.abs(ms); return a < MS.h ? `${Math.round(a / MS.m)} min` : a < 2 * MS.d ? `${(a / MS.h).toFixed(1)} h` : `${(a / MS.d).toFixed(1)} days`; };
+export const fmtCr = c => (c == null ? '—' : c < 0.1 ? c.toFixed(4) : c.toFixed(3));
+export const fmtNum = v => { if (v == null) return '—'; const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : a >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : v.toLocaleString('en-US'); };
+export const pct = v => (v == null ? 'n/a' : `${v.toFixed(v >= 99.95 || v === 0 ? 0 : 1)}%`);
+export const durStr = s => { const m = /^(\d+(?:\.\d+)?)([smhd])$/.exec(s || ''); return m ? +m[1] * MS[m[2]] : 0; };
+export const sum = a => a.reduce((x, y) => x + (y || 0), 0);
+export const median = a => { const b = a.filter(v => v != null).sort((x, y) => x - y); if (!b.length) return null; const m = Math.floor(b.length / 2); return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+export const humanMetric = m => ({ row_count: 'Row count', freshness_lag_minutes: 'Freshness lag' }[m] || m.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()));
+export const metricUnit = m => (/minutes$/.test(m) ? 'minutes' : m === 'row_count' ? 'rows' : 'value');
+export const RC_KIND = { stale_source: 'Stale source' };
+export const rcKind = k => (k ? RC_KIND[k] || k.replace(/_/g, ' ') : '');

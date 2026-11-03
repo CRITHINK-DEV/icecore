@@ -168,14 +168,8 @@ def neighbourhood_dot(summary: dict) -> str:
 
 
 def read_schema_columns(relation: str, layer=None, limit: int | None = None) -> list[dict]:
-    """A small guarded read of SCHEMA_COLUMNS for one relation (bound parameters). Kept local until `queries.schema_columns`
-    (Task 9) is on the base; the caller wraps it in `console.guarded`."""
+    """SCHEMA_COLUMNS for one relation, newest snapshot first, through the shared query layer (bound parameters,
+    tolerant of an older view). The caller wraps it in `console.guarded`."""
     from lib import queries
 
-    layer = layer or queries.default_layer()
-    schema = (layer.views_schema or "").strip()
-    if not queries._SCHEMA_RE.match(schema):
-        raise ValueError(f"not a schema name: {layer.views_schema!r}")
-    sql = ('select relation, "COLUMN" as "column", data_type, snapshot_at, is_new, invocation_id '
-           f"from {schema.upper()}.SCHEMA_COLUMNS where relation = ? order by snapshot_at desc limit ?")
-    return layer.run((sql, [relation, limit or 2000]))
+    return queries.schema_columns(relation=relation, limit=limit or 2000, layer=layer)

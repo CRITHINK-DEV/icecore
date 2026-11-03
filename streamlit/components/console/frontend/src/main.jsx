@@ -1,6 +1,7 @@
-/* Entry point. In Streamlit the data comes from the component args (args.data, the ICECORE_DATA contract); opened on its
-   own (dev mode: `npm run dev`, or the build served next to a data file) it loads window.ICECORE_DATA from a script,
-   by default icecore-mock-data.js next to the page, or the file named by ?mock=<url>. */
+/* Entry point. In Streamlit the data comes from the component args (args.data, the ICECORE_DATA contract). Opened on its
+   own, outside any frame (dev mode: `npm run dev`; or the build served next to a data file to compare screenshots), it
+   loads window.ICECORE_DATA from the fixed relative file icecore-mock-data.js. Nothing is taken from the URL: a script
+   source from the query string would run on the Streamlit app's (authenticated) origin. */
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import 'reactflow/dist/style.css';
@@ -17,10 +18,10 @@ const mount = props => { root = root || createRoot(document.getElementById('root
 let stored = null;
 try { const t = localStorage.getItem('icecore-theme'); if (t === 'dark' || t === 'light') { document.documentElement.dataset.theme = t; stored = t; } } catch (e) { }
 
-const standalone = window.parent === window || new URLSearchParams(location.search).has('mock');
-if (standalone) {
+const MOCK_FILE = 'icecore-mock-data.js'; // fixed: never read from the URL
+if (window.parent === window) {
   const s = document.createElement('script');
-  s.src = new URLSearchParams(location.search).get('mock') || 'icecore-mock-data.js';
+  s.src = MOCK_FILE;
   s.onload = () => { loadData(window.ICECORE_DATA); mount({ dv: 1 }); };
   s.onerror = () => { document.getElementById('root').innerHTML = '<p style="padding:24px">Dev mode: the mock data file did not load (' + s.src + ').</p>'; };
   document.head.appendChild(s);

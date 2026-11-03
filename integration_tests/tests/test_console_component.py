@@ -34,8 +34,15 @@ def test_build_loads_nothing_from_the_network():
     assert not re.search(r"@import", css)
     js = (BUILD / "assets" / "console.js").read_text()
     assert "fonts.googleapis.com" not in js + css and "unpkg.com" not in js and "cdnjs" not in js
-    assert "icecore-mock-data" in js  # dev mode names the file; the build does not contain it
-    assert not (BUILD / "icecore-mock-data.js").exists()
+    assert not (BUILD / "icecore-mock-data.js").exists()  # the standalone page names it; the build does not ship it
+
+
+def test_build_takes_no_script_source_from_the_url():
+    # A ?mock=<url> loader would run any script on the Streamlit app's authenticated origin.
+    js = (BUILD / "assets" / "console.js").read_text()
+    assert not re.search(r"""(get|has)\(\s*["']mock["']""", js)
+    assert "location.search" not in js
+    assert re.search(r"""\.src\s*=\s*["']icecore-mock-data\.js["']|=\s*["']icecore-mock-data\.js["']""", js)
 
 
 def test_render_declares_from_the_build_path(monkeypatch):

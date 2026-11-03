@@ -104,6 +104,7 @@ These keys are in the package's `dbt_project.yml`, but no merged macro reads the
 
 | Var | Default | Status |
 | --- | --- | --- |
+| `anomalies_per_run` | `0` | integer | Anomaly warn events you expect per run. Monitor anomalies are counted only through it. |
 | `monitors` | `true` | **coming** |
 | `cost` | `false` | **coming** |
 
@@ -206,6 +207,20 @@ dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24, nod
 
 It reads the dbt graph and runs no query. It estimates rows per run, rows per month and ingestion credits at Snowflake's published Telemetry Data Ingest rate (0.0212 credits per GB). It follows the `node_results`, `query_events`, `lineage` and `payload_cap_kb` settings: with `node_results` and `query_events` off, the same 3-node project goes from 18 rows to 12 rows per run. Lineage records are counted only when `lineage` is on; there is no argument for them.
 
+The icecore monitor tests of the graph get their own line, `of the rows per run, N are icecore monitor records ...`, and their own entry `monitors` in `records_per_run`. A project without icecore tests has no such line and the same numbers as before. The count comes from each test's arguments, with no query, per run:
+
+| Record | Count | Note |
+| --- | --- | --- |
+| `icecore.metric` span events | `freshness` and `volume`: 1 each. `column_anomaly`: one per requested metric (default `window_rows`, `null_rate`). `all_columns_anomaly`: one per metric per column, minus `exclude_columns`. `dimension_anomaly`: one `window_rows` per value. | `all_columns_anomaly` uses the columns declared in the project's yml, or `assumed_columns` (default 10) when none are. `dimension_anomaly` cannot know its values at compile time: it assumes the most frequent `max_values` (the test's argument, else the `dimension_max_values` var, 20) plus the `other` group. |
+| `icecore.anomaly` warn events | Only `anomalies_per_run` (default 0). | No test emits them on its own today; give the number you expect per run. |
+| `icecore.schema_change` warn events | 0. | One per column change a `schema_changes` test finds, 0 on a stable table; not estimated. |
+| `icecore.schema_signature` | One per `schema_changes` test per run. | A signature of a wide table is split when its columns pass `payload_cap_kb`; the estimate counts about 100 bytes per declared column for that. |
+| Cost records | Counted in the `cost` entry, when the `cost` var is on. | Not repeated in the monitor line. |
+| Silence verdicts | 0. | The silence task writes them when a run is missing, not a run; 0 in a healthy project. |
+| Procedure spans | One per `ICECORE_EMIT` CALL: one CALL per test, one more for each 100 events. | Added to `call_overhead`. |
+
+These records go through `ICECORE_EMIT` while the tests run, not through `end_run`, so they do not change `emit_run_calls`.
+
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
 | `runs_per_day` | none | number | dbt runs per day that fire the hooks. Needed for the monthly figures. |
@@ -214,6 +229,9 @@ It reads the dbt graph and runs no query. It estimates rows per run, rows per mo
 | `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are **coming**. |
 | `days` | `30` | integer | Days per month. |
 | `bytes_per_record` | `1500` | integer | Bytes per row at the low end of the range. The high end is the payload cap. |
+| `assumed_columns` | `10` | integer | Columns assumed for an `all_columns_anomaly` test whose tested node declares none. |
+| `anomalies_per_run` | `0` | integer | Anomaly warn events you expect per run. Monitor anomalies are counted only through it. |
+| `monitors` | `true` | boolean | `false` leaves the icecore monitor tests out of the count. |
 
 Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Logging instead, which a row count cannot predict. The command says so and names the `METERING_HISTORY` service types to check.
 

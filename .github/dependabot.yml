@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # The dbt version pins in integration_tests/requirements-*.txt are deliberate (floor and latest); only actions are updated.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

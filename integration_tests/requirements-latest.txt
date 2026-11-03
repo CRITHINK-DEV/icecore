@@ -1,0 +1,5 @@
+dbt-core
+dbt-snowflake
+snowflake-connector-python
+pytest
+pyyaml

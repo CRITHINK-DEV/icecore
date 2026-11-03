@@ -1,0 +1,96 @@
+version: 2
+
+macros:
+  - name: create_alerts
+    description: >
+      Create one Snowflake ALERT per channel of var `icecore.alert_channels` in the obs schema (the step `create_alerts`
+      of `setup`), each `CREATE OR REPLACE ALERT`, created suspended and resumed only
+      with consent: the var `alert_resume` when set, otherwise the var `alerts` (a resumed alert uses warehouse time on
+      every schedule period). Prints the CREATE NOTIFICATION INTEGRATION statements, the
+      grants and the `ALTER ALERT ... RESUME` statements an admin must run, and never creates an integration. With no channel configured it creates nothing and prints how to configure one.
+      Returns a list of channel, alert, status and resumed. The role needs CREATE ALERT on the schema and USAGE on the
+      warehouse (var `icecore.alert_warehouse`, default the target warehouse).
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema to create them in, also the schema the feed and the base filter read. Default the `obs_schema` var.
+
+  - name: alert_channels
+    description: >
+      The validated channels of var `icecore.alert_channels`, a mapping of name to type (email, slack or teams),
+      integration (the notification integration name) and, for email, recipients; `default` marks the channel that also gets
+      incidents no node claims. Names, integrations and recipients are checked against strict patterns; a bad entry is a
+      compile error naming it. Returns a list sorted by name.
+
+  - name: alert_name
+    description: >
+      The qualified name of a channel's alert, the obs schema then `ICECORE_ALERT_` and the upper-cased channel name.
+    arguments:
+      - name: channel
+        type: mapping
+        description: An entry of `alert_channels`. Required.
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+
+  - name: render_alert_sql
+    description: >
+      The CREATE OR REPLACE ALERT statement of one channel. Condition is EXISTS over `dedup_window_sql` (new,
+      unacknowledged, not-yet-notified incidents of ALERTS_FEED) filtered to the incidents the channel owns through
+      meta.alerts. The action builds the message in SQL from the condition's result columns (RESULT_SCAN), so a node name or
+      message holding quotes, dollar signs, semicolons or newlines is only data; sends it with
+      SYSTEM$SEND_SNOWFLAKE_NOTIFICATION, naming the model, the kind and the root cause when present; then records each
+      notified incident by calling `ICECORE_NOTIFIED`. At most 50 incidents per run.
+    arguments:
+      - name: channel
+        type: mapping
+        description: An entry of `alert_channels`. Required.
+      - name: entries
+        type: list
+        description: The `collect_sla_config` result used for routing. Default read from the graph.
+      - name: schema
+        type: string
+        description: The obs schema. Default the `obs_schema` var.
+      - name: event_table
+        type: string
+        description: The relation to read. Default resolved when the macro executes.
+      - name: warehouse
+        type: string
+        description: The alert's warehouse. Default var `icecore.alert_warehouse`, else the target warehouse.
+      - name: schedule_minutes
+        type: integer
+        description: The alert's schedule in minutes. Default var `icecore.alert_schedule_minutes`, else 5.
+      - name: all_channels
+        type: list
+        description: Every configured channel, for the routing. Default `alert_channels()`.
+      - name: nodes
+        type: mapping
+        description: The nodes (unique_id to node) used to map a model's relation and tests to it for the routing. Default `graph.nodes`.
+
+  - name: alert_integration_sql
+    description: >
+      The CREATE NOTIFICATION INTEGRATION statements (email, Slack and Teams webhooks, with placeholders for secrets) and
+      the grants (USAGE on the integration, EXECUTE ALERT on the account, USAGE on the warehouse) an admin runs. A list of
+      SQL texts; icecore only prints them.
+    arguments:
+      - name: channels
+        type: list
+        description: The `alert_channels` entries. Required.
+      - name: schema
+        type: string
+        description: The obs schema holding the webhook secrets. Default the `obs_schema` var.
+
+  - name: alert_message_sql
+    description: >
+      The SELECT of the notification text for a channel type (email, slack or teams) over a FROM item with the feed's
+      columns. Constant SQL: record values are only ever read as columns. At most 50 incidents, oldest first, cut at 3000
+      characters. Each line names the kind, the title, the node and, when present, the root cause. For Slack and Teams every
+      field is cleaned of quotes, backslashes and control characters, and Slack's `&`, `<` and `>` are escaped; the lines are
+      joined with ` | `.
+    arguments:
+      - name: type
+        type: string
+        description: email, slack or teams. Required.
+      - name: source
+        type: string
+        description: The FROM item to read. Required.

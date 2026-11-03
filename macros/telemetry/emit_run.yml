@@ -1,0 +1,19 @@
+version: 2
+
+macros:
+  - name: emit_run
+    description: >
+      Write a run's spans and LOG records with `CALL`s of `<target db>.<obs schema>.ICECORE_EMIT_RUN`
+      (spikes/GATE1.md, option B; SCOPE `icecore`). Items use the procedure's shapes: a span is `{name,
+      start_ns, end_ns, attrs, events}`, each event `{name, ts_ns, attrs}`, written with these explicit times
+      (nanoseconds since the epoch); a log is `{type: log, level, message, attrs}`. Every record and every span
+      event gets `base_attributes()` (so `dbt.invocation_id` is on each), then its own attributes, capped at
+      `payload_cap_kb` as `emit` caps them; a log message counts towards its record's cap and, when cut, is
+      flagged as `icecore.message` in `icecore.truncated_keys`. Records go in as many CALLs of at most 512 KB
+      of JSON as needed, with no count limit (S2), each inside the guard block, so a missing procedure or grant
+      only logs a warning, one per call to `emit_run` (with the number of failing CALLs). Mapping and list attribute values are kept native on LOG records but written as JSON text on spans and span events, which Snowflake drops them from silently otherwise. Items that are not a mapping, and spans without a numeric `start_ns`, are skipped instead of failing the whole CALL. Each CALL is its own trace. A no-op at parse time. Returns `{records, calls,
+      statuses}` (one status per CALL, `ok spans=<n> logs=<n>` or `icecore-error ...`).
+    arguments:
+      - name: items
+        type: list of dict
+        description: Spans and logs in the shapes above.

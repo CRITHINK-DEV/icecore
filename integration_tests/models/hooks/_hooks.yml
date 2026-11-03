@@ -1,0 +1,65 @@
+version: 2
+
+# UC1 hook fixtures. Every relation is a view (hooks_msg is a table) named with var('run_id') in the target schema and dropped by the
+# test. Tagged icecore_hooks, which the default selector leaves out (selectors.yml), so a plain dbt build in
+# another suite never touches them. hooks_c has 4 rows and accepts only id 1: its test warns with 3 failures.
+
+models:
+  - name: hooks_a
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_b
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_c
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      - name: id
+        data_tests:
+          - accepted_values:
+              values: [1]
+              quote: false
+              config: {severity: warn, tags: ["icecore_hooks"]}
+  - name: hooks_msg
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_fail
+    config: {tags: ["icecore_hooks"]}
+  - name: hooks_dup
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      # The tests keep their failures in <schema>_dbt_test__audit under an alias with the run_id (the test
+      # drops them). unique_id: error severity, 10 failed rows. unique_code: warn severity. unique_big: wide rows.
+      - name: id
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_id
+              config: {store_failures: true, alias: "hooks_dup_unique_id_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: code
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_code
+              config: {store_failures: true, severity: warn, alias: "hooks_dup_unique_code_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+          - not_null:
+              name: hooks_dup_code_not_null
+              config: {store_failures: true, alias: "hooks_dup_code_not_null_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: big
+        data_tests:
+          - unique:
+              name: hooks_dup_unique_big
+              config: {store_failures: true, alias: "hooks_dup_unique_big_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+  - name: hooks_weird
+    config: {tags: ["icecore_hooks"]}
+    columns:
+      - name: k
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_k
+              config: {store_failures: true, alias: "hooks_weird_unique_k_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: d
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_d
+              config: {store_failures: true, alias: "hooks_weird_unique_d_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}
+      - name: v
+        data_tests:
+          - unique:
+              name: hooks_weird_unique_v
+              config: {store_failures: true, alias: "hooks_weird_unique_v_{{ var('run_id', 'none') }}", tags: ["icecore_hooks"]}

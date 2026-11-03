@@ -1,0 +1,53 @@
+version: 2
+
+macros:
+  - name: create_emit_procedures
+    description: >
+      Create (CREATE OR REPLACE ... COPY GRANTS, EXECUTE AS OWNER) the persisted procedures icecore writes
+      through (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`, `ICECORE_ACK`, `ICECORE_NOTIFIED`) and `ICECORE_SCORE`, in `<target.database>.<obs schema>` (spikes/GATE1.md, option B). COPY GRANTS keeps the grants
+      made on them when setup runs again. Called by `setup`; the schema must exist,
+      and the role needs CREATE PROCEDURE on it. The procedures write with the owner's rights; the role that runs
+      dbt needs USAGE on the database, the schema and the procedures it calls (`ICECORE_SCORE` is the only access it needs to Cortex: no grant on a model); USAGE on `ICECORE_ACK` and `ICECORE_NOTIFIED` is granted separately (the latter only to the role that owns the alerts).
+      `ICECORE_EMIT(events ARRAY)`: LANGUAGE SQL. One SPAN_EVENT per element `{name, attrs}` through
+      `SYSTEM$ADD_EVENT`; a name without the `icecore.` prefix gets it. Refuses a CALL of more than 100 events
+      (returns `icecore-error too_many_events: ...` and writes nothing). Returns `ok <n>`. `SCOPE` is `global`.
+      `ICECORE_EMIT_RUN(spans ARRAY)`: LANGUAGE PYTHON 3.11, `PACKAGES = ('snowflake-snowpark-python',
+      'opentelemetry-api==1.38.0')` (pinned: unpinned, opentelemetry-api resolved to 1.45.1 and failed to import;
+      `snowflake-telemetry-python` must not be added, S1.md). Each element is a span `{name, start_ns, end_ns,
+      attrs, events: [{name, ts_ns, attrs}]}`, written with its explicit times, or a log `{type: 'log', level,
+      message, attrs}` (levels `debug`, `info`, `warn`, `error`), written as a LOG record with attributes.
+      `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
+      `ICECORE_ACK(incident_key STRING)`: LANGUAGE SQL, the only writer of `icecore.ack`. Refuses a key that is not a
+      current unacknowledged incident of the `ALERTS_FEED` view (returns `icecore-error not_an_open_incident: ...`),
+      else writes one span event `icecore.ack` with `icecore.ack.incident_key` and `icecore.ack.by`, the caller's
+      `CURRENT_USER()`. Returns `ok 1`. `ICECORE_EMIT` refuses any event named `icecore.ack`
+      (`icecore-error forbidden_event: ...`, nothing written).
+      `ICECORE_NOTIFIED(incident_key STRING, channel STRING)`: LANGUAGE SQL, the only writer of `icecore.notified`, the record
+      that an alert notified an incident on a channel. Refuses a key that is not 32 hex characters
+      (`icecore-error invalid_incident_key`) and a channel that is not a plain name (`icecore-error invalid_channel`), names
+      no object and takes none, records the caller as `icecore.notified.by`. Returns `ok 1`. `ICECORE_EMIT` and
+      `ICECORE_EMIT_RUN` refuse any event named `icecore.notified` (`icecore-error forbidden_event`, nothing written).
+      `ICECORE_SCORE(model, series, points ARRAY, prediction_interval FLOAT, refresh_days FLOAT)`: LANGUAGE SQL, RETURNS VARIANT. Scores `points` (`{ts, y}`, ts null is now in UTC) of one series with a Cortex anomaly model in the owner's role, the one that trained it (Snowflake documents that models cannot be shared across roles). Returns `{state: missing}`, `{state: stale, age_days}`, `{state: ok, age_days, rows}` (DETECT_ANOMALIES rows, latest first) or `{error}`. Takes no database or schema argument: its own database and obs schema are constants fixed in the body when setup creates it (checked against [A-Za-z0-9_]), so the owner's rights reach only the models of its own schema. Binds its arguments: `model` must match `ICECORE_M_` and 16 upper-case hex digits (checked before any use), the series key is hashed with MD5 (models are trained on that hash), and each point is typed (a timestamp and a finite number) before it is written into the detection input.
+      Records land in the event table of the procedures' database, at that database's levels. Returns the five
+      qualified procedure names (empty at parse time).
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema to create them in. Default the `obs_schema` var (see `obs_schema_name`).
+
+  - name: obs_schema_name
+    description: >
+      The name of icecore's schema in the target database, upper-cased as Snowflake resolves an unquoted
+      identifier: the `schema` argument when given (setup's and doctor's), else `var('icecore').obs_schema`, default
+      `ICECORE_OBS`. The procedures and views live there, and the views filter `snow.schema.name` on it.
+    arguments:
+      - name: schema
+        type: string
+        description: Overrides the var. Default none.
+
+  - name: obs_schema
+    description: The obs schema fully qualified and quoted, `"<TARGET_DATABASE>"."<OBS_SCHEMA>"` (both parts upper-cased).
+    arguments:
+      - name: schema
+        type: string
+        description: Overrides the `obs_schema` var, as in `obs_schema_name`. Default none.

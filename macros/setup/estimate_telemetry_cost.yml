@@ -1,0 +1,60 @@
+version: 2
+
+macros:
+  - name: estimate_telemetry_cost
+    description: >
+      Estimates the rows icecore writes to the event table and the ingestion credits, before telemetry is turned on.
+      `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`; `setup` runs it too. Reads
+      only the dbt graph and runs no query. Rows per run follow the write-path design (spec section 4;
+      spikes/GATE1.md, "Consequences for the build"): one start record, the invocation span, one end LOG, one span per node (models,
+      seeds, snapshots and tests), one node-result LOG per node (only when the `node_results` var is on),
+      `query_events_per_node` query events per node (only when the `query_events` var is on; both counts come from the
+      macro next to end_run's emitter list, so a new emitter cannot be left out unnoticed), the lineage records (only when
+      the `lineage` var is on: the graph's edges split under the payload cap, as `emit_lineage` splits them), one sample per
+      failing test with `store_failures` (only when the `samples` var is on, which is not the default), plus the rows the procedures write themselves:
+      one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL
+      (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag,
+      not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5:
+      Telemetry Data Ingest, 0.0212 Platform Credits per GB. The range runs from `bytes_per_record` per row to the
+      payload cap per row, with GB taken as 10^9 bytes. Until Telemetry Data Ingest replaces Logging on an account,
+      Logging is billed instead (1.25 x serverless compute plus 0.28 credits per 1000 file batches), which a row
+      count cannot predict; the message says to check `METERING_HISTORY` for the service types
+      `TELEMETRY_DATA_INGEST` and `LOGGING`. The icecore monitor tests of the graph are counted from their arguments (a `monitors` entry in
+      `records_per_run` and their own line in the message): one `icecore.metric` event per computed metric, `icecore.anomaly` warn events
+      only as `anomalies_per_run`, one `icecore.schema_signature` per `schema_changes` test,
+      and their procedure spans; cost records stay in the `cost` entry and silence verdicts are 0. A dimension test
+      assumes `max_values` plus `other` values, an `all_columns_anomaly` test without declared columns assumes
+      `assumed_columns`. Without a usable `runs_per_day` it
+      prints the rows per run, asks for `runs_per_day` and does not fail. Returns `{status, nodes, runs_per_day,
+      days, records_per_run, rows_per_run, emit_run_calls, rows_per_month, gb_per_month, credits_per_month,
+      credits_per_gb, message}`; status is `ok` or `needs_runs_per_day`.
+    arguments:
+      - name: assumed_columns
+        type: integer
+        description: Columns assumed for an `all_columns_anomaly` test whose tested node declares none. Default 10.
+      - name: anomalies_per_run
+        type: integer
+        description: Anomaly warn events expected per run; monitor anomalies are counted only through it. Default 0.
+      - name: monitors
+        type: boolean
+        description: Count the icecore monitor tests of the graph. Default true; false leaves them out.
+      - name: runs_per_day
+        type: number
+        description: dbt runs per day that fire the hooks. Required for the monthly figures; missing, zero or not a number, the estimate asks for it.
+      - name: nodes
+        type: integer
+        description: Nodes per run. Default the models, seeds, snapshots and tests of the graph.
+      - name: query_events_per_node
+        type: integer
+        description: Queries per node, one query event each. Default 1.
+      - name: failing_tests_per_run
+        type: integer
+        description: Failing tests per run with `store_failures` that send a sample; counted only when the `samples` var is on. Default 0 (warn-severity tests send none unless `samples_on_warn` is on).
+      - name: days
+        type: integer
+        description: Days per month. Default 30.
+      - name: bytes_per_record
+        type: integer
+        description: >
+          Bytes per row for the low end of the range. Default 1500: icecore rows measured in the sandbox on 31 Oct
+          2026 had a median of 1.1 to 1.5 KB serialized.

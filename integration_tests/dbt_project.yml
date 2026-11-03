@@ -1,0 +1,28 @@
+name: icecore_integration_tests
+version: "0.0.1"
+config-version: 2
+profile: icecore_sandbox
+
+macro-paths: ["macros"]
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests_dbt"]
+
+# Spike S3 (hook coverage): inert unless a run passes --vars '{s3_probe: true, run_id: ...}'.
+# UC1 run telemetry: the two lines a user adds (README, "Try it in 60 seconds"); off with
+# --vars '{icecore: {telemetry: false}}'. They write to <target db>.<obs schema> (var icecore.obs_schema,
+# default ICECORE_OBS); where the procedures are missing, each CALL only logs an icecore warning.
+on-run-start:
+  - "{{ s3_hook_probe('start') if var('s3_probe', false) else '' }}"
+  - "{{ icecore.start_run() }}"
+on-run-end:
+  - "{{ s3_hook_probe('end') if var('s3_probe', false) else '' }}"
+  - "{{ icecore.end_run(results) }}"
+
+# The UC2 monitor fixtures (models/monitors) test placeholder tables that only a sandbox test fills in: tag their
+# tests so the default selector (selectors.yml) leaves them out.
+data_tests:
+  icecore_integration_tests:
+    monitors:
+      +tags: ["icecore_fixture"]

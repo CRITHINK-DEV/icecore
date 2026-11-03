@@ -1,0 +1,467 @@
+"""UC6 silence detection: icecore.render_silence_task_sql and icecore.create_silence_task (macros/control/), and the
+`silence_events` view (macros/views/silence_events.sql).
+
+Offline tests render the SQL. The sandbox test creates the emitter procedures and the views in ICECORE_OBS_<run_id>
+(the obs_schema var), stands in for node_executions with a view of two nodes, one whose last success was 90 minutes
+ago (expected every 1h, grace 1 minute) and one that succeeded 10 minutes ago, creates the task (suspended), runs it
+once with EXECUTE TASK, reads the verdict back from silence_events, runs it again to see no duplicate, and drops the
+task and the schema. The 90 minutes cannot be written through the emitter (events are stamped now), hence the
+stand-in view. Never leaves a task running: it is created suspended and dropped.
+"""
+import json
+import os
+import time
+import uuid
+
+import pytest
+from snowflake.connector import DictCursor
+from snowflake.connector.errors import ProgrammingError
+
+from helpers.events import wait_for_events
+from helpers.macros import MacroFailed, run_macro
+
+DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
+NOW = "convert_timezone('UTC', current_timestamp())::timestamp_ntz"
+
+
+def entry(unique_id="model.p.a", every=60, grace=1, channel=None, severity="warn") -> dict:
+    return {"unique_id": unique_id, "name": unique_id.split(".")[-1], "resource_type": "model",
+            "expected_every_minutes": every, "grace_minutes": grace, "grace_defaulted": False,
+            "channel": channel, "severity": severity}
+
+
+def task_sql(entries, **kwargs) -> str:
+    return run_macro("it_silence_task_sql", {"entries": entries, **kwargs})
+
+
+# --- offline: rendering only, no connection ------------------------------------------------------
+
+EVIL = "x$$; GRANT ROLE ACCOUNTADMIN TO ROLE PUBLIC; SELECT $$ 'q' \\ \"d\" \n line2 ;--"
+
+
+def literals(sql: str):
+    """Split Snowflake SQL into (text outside single-quoted literals, [decoded literals]); backslash and doubled
+    quote are escapes inside a literal, as Snowflake reads them."""
+    outside, found, i = [], [], 0
+    while i < len(sql):
+        if sql[i] != "'":
+            outside.append(sql[i])
+            i += 1
+            continue
+        i += 1
+        value = []
+        while True:
+            assert i < len(sql), "unterminated literal"
+            c = sql[i]
+            if c == "\\":
+                if sql[i + 1:i + 4] == "x24":  # icecore writes `$` as \x24
+                    value.append("$")
+                    i += 4
+                else:
+                    value.append({"n": "\n", "r": "\r"}.get(sql[i + 1], sql[i + 1]))
+                    i += 2
+            elif c == "'" and sql[i + 1:i + 2] == "'":
+                value.append("'")
+                i += 2
+            elif c == "'":
+                i += 1
+                break
+            else:
+                value.append(c)
+                i += 1
+        found.append("".join(value))
+        outside.append("<lit>")
+    return "".join(outside), found
+
+
+def test_sla_entries_travel_as_one_json_literal_that_round_trips_unchanged():
+    entries = [entry(EVIL, 60, 15, channel=EVIL, severity="error"), entry("model.p.b", 1440, 1)]
+    body = task_sql(entries)
+    outside, found = literals(body)
+    assert outside.startswith("CALL ") and outside.endswith(")")
+    sla = json.loads(found[0])
+    assert sla == [{"unique_id": EVIL, "every_min": 60, "grace_min": 15, "channel": EVIL, "severity": "error"},
+                   {"unique_id": "model.p.b", "every_min": 1440, "grace_min": 1, "channel": None, "severity": "warn"}]
+
+
+@pytest.mark.parametrize("value", ["a$$b", "a'b", "a\\b", "a;b", "a\nb", "$$; DROP TABLE x; $$", "'; select 1; --", "\\'"])
+def test_hostile_text_stays_data_and_adds_no_statement(value):
+    body = task_sql([entry(value, channel=value)])
+    ddl = run_macro("it_silence_task_ddl", {"body": body})
+    for text in (body, ddl):
+        outside, found = literals(text)
+        assert ";" not in outside and "$$" not in outside, outside
+        assert "<lit>" in outside
+    assert json.loads(literals(body)[1][0])[0]["unique_id"] == value
+    assert json.loads(literals(body)[1][0])[0]["channel"] == value
+
+
+def test_the_rendered_create_task_is_one_statement_whose_text_does_not_depend_on_the_sla():
+    plain = run_macro("it_silence_task_ddl", {"body": task_sql([entry("model.p.a")])})
+    hostile = run_macro("it_silence_task_ddl", {"body": task_sql([entry(EVIL, channel=EVIL)])})
+    assert literals(plain)[0] == literals(hostile)[0]
+    assert plain.startswith("CREATE OR REPLACE TASK ") and plain.count("CREATE ") == 1
+
+
+def test_the_procedure_takes_only_the_sla_json_and_has_its_names_fixed_in_its_ddl():
+    """Confused deputy: an owner's-rights procedure must not take a relation or emitter name from its caller."""
+    ddl = run_macro("it_silence_procedure_ddl", {"schema": "my_obs"})
+    assert "(sla VARIANT)\nCOPY GRANTS" in ddl and "IDENTIFIER" not in ddl
+    assert ddl == run_macro("it_silence_procedure_ddl", {"schema": "my_obs"})  # nothing of the project in it
+    db = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
+    assert f'FROM "{db}"."MY_OBS"."NODE_EXECUTIONS"' in ddl and f'FROM "{db}"."MY_OBS"."SILENCE_EVENTS" v' in ddl
+    assert f'CALL "{db}"."MY_OBS"."ICECORE_EMIT"(:events)' in ddl
+    assert "FLATTEN(INPUT => :sla)" in ddl
+    assert "model." not in ddl and "meta" not in ddl.lower().replace("comment", "")
+
+
+@pytest.mark.parametrize("schema", ['x"; drop schema y; --', "a b", "a.b", "a$$b", "a-b", "a\nb"])
+def test_a_schema_or_view_name_that_is_not_a_plain_identifier_is_refused(schema):
+    with pytest.raises(MacroFailed):
+        run_macro("it_silence_procedure_ddl", {"schema": schema})
+    with pytest.raises(MacroFailed):
+        run_macro("it_silence_procedure_ddl", {"source": schema})
+
+
+def test_the_rule_compares_snowflakes_clock_with_the_last_success_plus_period_plus_grace():
+    ddl = run_macro("it_silence_procedure_ddl", {})
+    assert "status IN ('success', 'pass')" in ddl and "MAX(recorded_at)" in ddl
+    assert ("convert_timezone('UTC', current_timestamp())::timestamp_ntz > "
+            "DATEADD(minute, s.every_min + s.grace_min, l.last_success_at)") in ddl
+
+
+def test_the_verdict_is_a_span_event_written_by_a_call_of_icecore_emit_never_an_insert():
+    ddl = run_macro("it_silence_procedure_ddl", {})
+    assert "'icecore.silence'" in ddl
+    for word in ("INSERT", "MERGE", "CREATE TABLE"):
+        assert word not in ddl.upper().split("AS $$")[1], word
+    for key in ["icecore.silence.expected_at", "icecore.silence.last_success_at", "icecore.silence.grace_minutes",
+                "icecore.silence.expected_every_minutes", "dbt.node.unique_id"]:
+        assert f"'{key}'" in ddl, key
+
+
+def test_one_verdict_per_missed_run_and_at_most_100_per_call():
+    ddl = run_macro("it_silence_procedure_ddl", {})
+    assert "v.unique_id = due.unique_id AND v.expected_at = due.expected_at" in ddl and "LIMIT 100" in ddl
+
+
+def test_a_failure_raises_so_the_task_history_shows_it():
+    ddl = run_macro("it_silence_procedure_ddl", {})
+    assert "RAISE emit_failed" in ddl and "STARTSWITH(res, 'icecore-error')" in ddl
+    assert "EXCEPTION\n  WHEN OTHER" not in ddl and "RETURN 'icecore-error" not in ddl
+
+
+def test_the_task_body_has_one_literal_only_the_sla_and_names_the_procedure_of_the_schema():
+    outside, found = literals(task_sql([entry()], schema="my_obs"))
+    assert len(found) == 1 and outside.startswith('CALL "') and '."MY_OBS"."ICECORE_SILENCE_CHECK"(PARSE_JSON(<lit>))' in outside
+
+
+def test_a_node_without_meta_sla_is_not_a_schedule():
+    sql = task_sql([entry("model.p.a"), {**entry("model.p.alerts_only"), "expected_every_minutes": None,
+                                         "grace_minutes": None}])
+    ids = [e["unique_id"] for e in json.loads(literals(sql)[1][0])]
+    assert ids == ["model.p.a"]
+
+
+def test_no_schedule_at_all_is_refused():
+    with pytest.raises(MacroFailed):
+        task_sql([])
+
+
+def test_the_task_is_created_in_the_obs_schema_with_a_schedule_and_a_warehouse():
+    ddl = run_macro("it_silence_task_ddl", {"body": "CALL x()", "schema": "my_obs", "warehouse": "my wh", "schedule": "10 MINUTE"})
+    assert ddl.startswith('CREATE OR REPLACE TASK "') and '"MY_OBS"."ICECORE_SILENCE"' in ddl
+    assert 'WAREHOUSE = "my wh"' in ddl and "SCHEDULE = '10 MINUTE'" in ddl
+    assert ddl.endswith("AS\nCALL x()") and "RESUME" not in ddl  # created suspended: resuming is a separate step
+
+
+def test_without_meta_sla_no_task_is_created():
+    out = run_macro("it_create_silence_task", {"entries": [{**entry(), "expected_every_minutes": None}]})
+    assert out["status"] == "skipped" and out["task"] is None and out["printed"] == []
+
+
+def test_setup_marks_create_tasks_ready_and_suspended_by_default():
+    from helpers.macros import call_macro
+    steps = {s["name"]: s for s in call_macro("_icecore_setup_steps")}
+    assert steps["create_tasks"]["ready"] is True
+    assert "silence_task_resume: null" in open(
+        os.path.join(os.path.dirname(__file__), "..", "..", "dbt_project.yml")).read()
+
+
+def test_silence_events_view_is_in_the_create_views_list_and_reads_the_verdict_keys():
+    views = {v["name"]: v["sql"] for v in run_macro("it_views_render", {})}
+    sql = views["SILENCE_EVENTS"]
+    assert "record_name = 'icecore.silence'" in sql and "event_at as detected_at" in sql
+    for key in ["expected_at", "last_success_at", "grace_minutes", "expected_every_minutes"]:
+        assert f'"icecore.silence.{key}"' in sql, key
+
+
+# --- sandbox --------------------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def silence(dbt, sf):
+    run_id = uuid.uuid4().hex
+    schema = f"ICECORE_OBS_{run_id}".upper()
+    obs_vars = ["--vars", json.dumps({"icecore": {"obs_schema": schema}})]
+    qs = f'"{DATABASE}"."{schema}"'
+    ids = {"late": f"model.it.late_{run_id}", "viatask": f"model.it.viatask_{run_id}", "ok": f"model.it.ok_{run_id}", "failed": f"model.it.failed_{run_id}",
+           "evil": f"m$$';\\\nx;{run_id}"}
+    cur = sf.cursor()
+    cur.execute(f"create schema {qs}")
+    try:
+        run_macro("it_create_emit_procedures", {}, obs_vars)
+        run_macro("it_create_views", {"schema": schema}, obs_vars)
+        # fixed instants, taken once on Snowflake's clock: a view over "now - 90 minutes" would move with every query
+        t = {m: cur.execute(f"select dateadd(minute, -{m}, {NOW})::string").fetchone()[0] for m in (5, 10, 90, 200)}
+        lit = lambda v: "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"  # noqa: E731
+        cur.execute(f'create table {qs}."STANDIN_NODES" (unique_id varchar, status varchar, recorded_at timestamp_ntz)')
+        cur.execute(f"""insert into {qs}."STANDIN_NODES" values
+              ({lit(ids["evil"])}, 'success', '{t[90]}'),
+              ('{ids["late"]}', 'success', '{t[90]}'),
+              ('{ids["late"]}', 'error', '{t[5]}'),
+              ('{ids["ok"]}', 'success', '{t[10]}'),
+              ('{ids["failed"]}', 'error', '{t[200]}')""")
+        entries = [entry(ids["late"], 60, 1, channel="data-platform", severity="error"), entry(ids["ok"], 60, 1),
+                   entry(ids["failed"], 60, 1), entry(ids["viatask"], 60, 1), entry(ids["evil"], 60, 1, channel=EVIL, severity="warn")]
+        since = cur.execute(f"select dateadd(minute, -2, {NOW})").fetchone()[0]
+        # an overload left by the first version of this procedure, which took relation names from its caller
+        cur.execute(f"""create procedure {qs}."ICECORE_SILENCE_CHECK"(sla variant, source varchar, silence varchar, emit varchar)
+            returns varchar language sql as $$ begin return 'old'; end; $$""")
+        created = run_macro("it_create_silence_task",
+                            {"schema": schema, "entries": entries, "source": "STANDIN_NODES"}, obs_vars)
+        yield {"schema": schema, "qs": qs, "ids": ids, "created": created, "since": since, "cur": cur, "sf": sf,
+               "entries": entries, "obs_vars": obs_vars, "t90": t[90]}
+    finally:
+        try:
+            cur.execute(f'alter task if exists {qs}."ICECORE_SILENCE" suspend')
+            cur.execute(f'drop task if exists {qs}."ICECORE_SILENCE"')
+        finally:
+            cur.execute(f"drop schema if exists {qs} cascade")
+
+
+def run_task_once(env) -> str:
+    """Runs the task's own body, one CALL of ICECORE_SILENCE_CHECK, with EXECUTE IMMEDIATE semantics: synchronous.
+    The scheduler path, EXECUTE TASK, is test_execute_task_runs_the_created_task."""
+    body = run_macro("it_silence_task_sql", {"entries": env["entries"], "schema": env["schema"]}, env["obs_vars"])
+    env["cur"].execute(body)
+    return "body"
+
+
+def _records(env, unique_id: str, min_rows: int = 1, settle_s: float = 0) -> list:
+    return wait_for_events(
+        env["sf"], "record:name::string = 'icecore.silence' and record_attributes:\"dbt.node.unique_id\"::string = %(u)s"
+                   " and resource_attributes:\"snow.schema.name\"::string = %(s)s",
+        {"u": unique_id, "s": env["schema"]}, min_rows=min_rows, since=env["since"], settle_s=settle_s, timeout_s=240)
+
+
+@pytest.mark.sandbox
+def test_the_task_is_created_suspended(silence):
+    assert silence["created"]["status"] == "ok" and silence["created"]["resumed"] is False
+    (task,) = silence["sf"].cursor(DictCursor).execute(
+        f'show tasks like \'ICECORE_SILENCE\' in schema {silence["qs"]}').fetchall()
+    assert task["state"] == "suspended" and task["schedule"] == "5 MINUTE"
+
+
+@pytest.mark.sandbox
+def test_no_run_for_90_minutes_lands_one_silence_record_and_a_run_within_the_sla_lands_none(silence):
+    run_task_once(silence)
+    (record,) = _records(silence, silence["ids"]["late"], settle_s=15)
+    a = record["record_attributes"]
+    assert a["icecore.silence.grace_minutes"] == 1 and a["icecore.silence.expected_every_minutes"] == 60
+    assert a["icecore.silence.channel"] == "data-platform" and a["icecore.silence.severity"] == "error"
+    assert a["icecore.level"] == "warn"
+    # the other two nodes: nothing landed in the same window (the first CALL's records have settled)
+    for key in ("ok", "failed"):
+        rows = silence["sf"].cursor().execute(
+            "select count(*) from " + os.environ.get("ICECORE_EVENT_TABLE", "ICECORE_SANDBOX.TELEMETRY.EVENTS")
+            + " where record:name::string = 'icecore.silence' and record_attributes:\"dbt.node.unique_id\"::string = %(u)s"
+            " and timestamp >= %(since)s", {"u": silence["ids"][key], "since": silence["since"]}).fetchone()[0]
+        assert rows == 0, key
+
+
+@pytest.mark.sandbox
+def test_silence_events_has_expected_at_and_last_success_at_filled(silence):
+    _records(silence, silence["ids"]["late"])
+    deadline = time.monotonic() + 120
+    while True:
+        rows = silence["sf"].cursor(DictCursor).execute(
+            f'select * from {silence["qs"]}."SILENCE_EVENTS" where unique_id = %(u)s',
+            {"u": silence["ids"]["late"]}).fetchall()
+        if rows or time.monotonic() > deadline:
+            break
+        time.sleep(5)
+    (row,) = [{k.lower(): v for k, v in r.items()} for r in rows]
+    assert row["expected_at"] and row["last_success_at"] and row["detected_at"]
+    assert (row["grace"], row["expected_every_minutes"]) == (1, 60)
+    # expected_at is last success + one period, both on Snowflake's clock
+    assert (row["expected_at"] - row["last_success_at"]).total_seconds() == 3600
+
+
+@pytest.mark.sandbox
+def test_a_second_run_does_not_repeat_the_verdict_once_it_is_readable(silence):
+    _records(silence, silence["ids"]["late"])
+    deadline = time.monotonic() + 120
+    while not silence["cur"].execute(
+            f'select count(*) from {silence["qs"]}."SILENCE_EVENTS" where unique_id = %(u)s',
+            {"u": silence["ids"]["late"]}).fetchone()[0] and time.monotonic() < deadline:
+        time.sleep(5)
+    run_task_once(silence)
+    time.sleep(45)
+    assert len(_records(silence, silence["ids"]["late"], settle_s=10)) == 1
+
+
+@pytest.mark.sandbox
+def test_execute_task_runs_the_created_task(silence):
+    """The scheduler path: EXECUTE TASK on the suspended task (never resumed), wait for TASK_HISTORY to say SUCCEEDED, and the
+    verdict of a node that only this run could see landed. Needs EXECUTE TASK on the account for the role."""
+    cur, sf = silence["cur"], silence["sf"]
+    viatask = silence["ids"]["viatask"]
+    cur.execute(f"""insert into {silence["qs"]}."STANDIN_NODES" values ('{viatask}', 'success', '{silence["t90"]}')""")
+    assert _count(silence, viatask) == 0  # no verdict yet: the earlier body runs did not know this node
+    cur.execute(f'execute task {silence["qs"]}."ICECORE_SILENCE"')
+    state = error = None
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        rows = sf.cursor(DictCursor).execute(
+            f"select state, error_message from table({DATABASE}.information_schema.task_history("
+            f"task_name => 'ICECORE_SILENCE', scheduled_time_range_start => dateadd(minute, -15, current_timestamp()), "
+            f"result_limit => 20)) where schema_name = %s order by scheduled_time desc", (silence["schema"],)).fetchall()
+        if rows and rows[0]["STATE"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            state, error = rows[0]["STATE"], rows[0]["ERROR_MESSAGE"]
+            break
+        time.sleep(5)
+    assert state == "SUCCEEDED", (state, error)
+    (record,) = _records(silence, viatask, settle_s=10)
+    assert record["record_attributes"]["icecore.silence.severity"] == "warn"
+    (task,) = sf.cursor(DictCursor).execute(
+        f'show tasks like \'ICECORE_SILENCE\' in schema {silence["qs"]}').fetchall()
+    assert task["state"] == "suspended"  # EXECUTE TASK runs it once; it was never resumed
+
+
+def _count(env, unique_id: str) -> int:
+    return env["sf"].cursor().execute(
+        "select count(*) from " + os.environ.get("ICECORE_EVENT_TABLE", "ICECORE_SANDBOX.TELEMETRY.EVENTS")
+        + " where record:name::string = 'icecore.silence' and record_attributes:\"dbt.node.unique_id\"::string = %(u)s"
+        " and timestamp >= %(since)s", {"u": unique_id, "since": env["since"]}).fetchone()[0]
+
+
+@pytest.mark.sandbox
+def test_hostile_sla_text_is_data_end_to_end(silence):
+    """A unique_id and a channel with $$, quotes, a backslash, ; and newlines: the CREATE TASK succeeded as one statement
+    (the fixture created it), the task keeps the text in its definition, and the verdict carries it back unchanged."""
+    assert silence["created"]["status"] == "ok"
+    run_task_once(silence)
+    (record,) = _records(silence, silence["ids"]["evil"], settle_s=10)
+    assert record["record_attributes"]["icecore.silence.channel"] == EVIL
+    (task,) = silence["sf"].cursor(DictCursor).execute(
+        f'show tasks like \'ICECORE_SILENCE\' in schema {silence["qs"]}').fetchall()
+    assert task["definition"].startswith("CALL ") and "GRANT ROLE ACCOUNTADMIN" in task["definition"]  # inside the literal
+    assert task["state"] == "suspended"
+    # nothing but the one task and its procedure was created in the schema
+    objects = silence["sf"].cursor().execute(f"show objects in schema {silence['qs']}").fetchall()
+    assert not [o for o in objects if o[1] not in ("ICECORE_SILENCE", "STANDIN_NODES")
+                and o[1] not in {"METRICS", "SCHEMA_CHANGES", "INVOCATIONS", "NODE_EXECUTIONS", "SILENCE_EVENTS", "TEST_RESULTS",
+                                 "LINEAGE", "LINEAGE_LATEST", "CAPABILITIES", "ALERTS_FEED", "SLA_DECLARED", "SCHEMA_COLUMNS"}]
+
+
+@pytest.mark.sandbox
+def test_creating_the_task_drops_the_old_four_argument_overload(silence):
+    rows = silence["sf"].cursor(DictCursor).execute(
+        f'show procedures like \'ICECORE_SILENCE_CHECK\' in schema {silence["qs"]}').fetchall()
+    assert len(rows) == 1, [r["arguments"] for r in rows]  # exactly one overload: the (VARIANT) one
+
+
+@pytest.mark.sandbox
+def test_the_procedure_takes_only_the_sla_json(silence):
+    (proc,) = silence["sf"].cursor(DictCursor).execute(
+        f'show procedures like \'ICECORE_SILENCE_CHECK\' in schema {silence["qs"]}').fetchall()
+    assert proc["arguments"].startswith("ICECORE_SILENCE_CHECK(VARIANT)"), proc["arguments"]
+    # nobody but the owner has USAGE on it: setup grants nothing
+    grants = silence["sf"].cursor(DictCursor).execute(
+        f'show grants on procedure {silence["qs"]}."ICECORE_SILENCE_CHECK"(VARIANT)').fetchall()
+    assert {g["grantee_name"] for g in grants if g["privilege"] == "USAGE"} <= {os.environ.get("SNOWFLAKE_ROLE", "ICECORE_CI")}, grants
+
+
+@pytest.mark.sandbox
+def test_a_failing_check_raises_so_the_task_history_shows_it(silence):
+    """A procedure whose view does not exist, in a schema of its own: the CALL fails instead of returning a message."""
+    cur, db = silence["cur"], DATABASE
+    scratch = f'"{db}"."{silence["schema"]}_FAIL"'
+    cur.execute(f"create schema {scratch}")
+    try:
+        ddl = run_macro("it_silence_procedure_ddl", {"schema": silence["schema"] + "_FAIL", "source": "NO_SUCH_VIEW"})
+        cur.execute(ddl)
+        with pytest.raises(ProgrammingError):
+            cur.execute(f"call {scratch}.\"ICECORE_SILENCE_CHECK\"(parse_json('[{{\"unique_id\": \"x\", \"every_min\": 1, \"grace_min\": 1}}]'))")
+    finally:
+        cur.execute(f"drop schema if exists {scratch} cascade")
+
+
+@pytest.mark.sandbox
+def test_recorded_at_of_a_real_build_is_within_seconds_of_snowflakes_clock(sf, run_id):
+    from helpers.run_hooks import drop_fixture_views, invocation_records, node_results, obs_schema, run_with_hooks, snowflake_since
+    try:
+        with obs_schema(sf) as obs:
+            obs_vars = ["--vars", json.dumps({"icecore": {"obs_schema": obs}})]
+            since = snowflake_since(sf)
+            res, results = run_with_hooks(["build", "--select", "hooks_a"], run_id, obs)
+            assert res.success, res.exception
+            inv = results["metadata"]["invocation_id"]
+            invocation_records(sf, obs, inv, min_rows=3 + 2 * len(node_results(results)), since=since)
+            run_macro("it_create_views", {"schema": obs}, obs_vars)
+            lag = sf.cursor().execute(
+                f'select max(datediff(second, recorded_at, {NOW})), min(datediff(second, recorded_at, {NOW})) '
+                f'from "{DATABASE}"."{obs}"."NODE_EXECUTIONS" where invocation_id = %s and recorded_at is not null', (inv,)).fetchone()
+            assert lag[1] >= 0 and lag[0] < 300, lag  # the record landed seconds ago on Snowflake's clock, not dbt's
+    finally:
+        drop_fixture_views(sf, run_id)
+
+
+# --- UC7 SLA_DECLARED (macros/control/create_sla_declared_view.sql) ---------------------------------
+
+def declared_ddl(entries, **kwargs) -> str:
+    return run_macro("it_sla_declared_ddl", {"entries": entries, **kwargs})
+
+
+@pytest.mark.parametrize("value", ["a$$b", "a'b", "a\\b", "a;b", "a\nb", EVIL])
+def test_sla_declared_hostile_text_stays_data(value):
+    ddl = declared_ddl([entry(value, channel=value)])
+    outside, found = literals(ddl)
+    assert ";" not in outside and "$$" not in outside and len(found) == 1, outside
+    row = json.loads(found[0])[0]
+    assert row["unique_id"] == value and row["channel"] == value
+
+
+def test_sla_declared_text_does_not_depend_on_the_sla_and_lists_only_meta_sla_entries():
+    plain = declared_ddl([entry("model.p.a")], schema="my_obs")
+    hostile = declared_ddl([entry(EVIL, channel=EVIL), {**entry("model.p.alerts"), "expected_every_minutes": None}],
+                           schema="my_obs")
+    assert literals(plain)[0] == literals(hostile)[0]
+    assert plain.startswith('CREATE OR REPLACE VIEW "') and '."MY_OBS"."SLA_DECLARED" COPY GRANTS AS' in plain
+    assert [e["unique_id"] for e in json.loads(literals(hostile)[1][0])] == [EVIL]
+    assert "flatten(input => parse_json(<lit>))" in literals(plain)[0]
+
+
+def test_sla_declared_with_no_sla_is_an_empty_typed_array():
+    ddl = declared_ddl([])
+    assert json.loads(literals(ddl)[1][0]) == [] and "f.value:expected_every_minutes::number" in ddl
+
+
+@pytest.mark.sandbox
+def test_setup_creates_sla_declared_with_the_declared_rows_and_zero_rows_when_none(sf):
+    schema = f"ICECORE_OBS_{uuid.uuid4().hex}".upper()
+    qs = f'"{DATABASE}"."{schema}"'
+    cur = sf.cursor(DictCursor)
+    cur.execute(f"create schema {qs}")
+    try:
+        entries = [entry(EVIL, 60, 5, channel=EVIL, severity="error"), entry("model.it.b", 1440, 1),
+                   {**entry("model.it.alerts_only"), "expected_every_minutes": None}]
+        obs = ["--vars", json.dumps({"icecore": {"obs_schema": schema}})]
+        assert run_macro("it_create_sla_declared_view", {"schema": schema, "entries": entries}, obs) == "ok"
+        rows = cur.execute(f"select * from {qs}.SLA_DECLARED order by expected_every_minutes").fetchall()
+        assert [(r["UNIQUE_ID"], r["EXPECTED_EVERY_MINUTES"], r["GRACE_MINUTES"], r["CHANNEL"], r["SEVERITY"])
+                for r in rows] == [(EVIL, 60, 5, EVIL, "error"), ("model.it.b", 1440, 1, None, "warn")]
+        assert run_macro("it_create_sla_declared_view", {"schema": schema, "entries": []}, obs) == "ok"
+        assert cur.execute(f"select count(*) c from {qs}.SLA_DECLARED").fetchone()["C"] == 0
+    finally:
+        cur.execute(f"drop schema if exists {qs} cascade")

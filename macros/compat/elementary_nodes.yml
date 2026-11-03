@@ -1,0 +1,23 @@
+version: 2
+
+macros:
+  - name: dbt_models_view_sql
+    description: "The SELECT of the compat view dbt_models: Elementary's 23 Snowflake columns, in its order and types (Elementary dbt package pinned in macros/compat/ELEMENTARY_VERSION), over the core views NODE_EXECUTIONS and LINEAGE_LATEST only. One row per model that ran, from its latest execution. Filled: unique_id, name, materialization, alias, database_name and schema_name (read from the node's relation), package_name (from the unique_id), generated_at and depends_on_nodes (a JSON list of the node's parents in the latest lineage). Every other column is a typed NULL, because icecore holds no manifest metadata: description, tags, meta, owner, paths, checksum, metadata_hash, unique_key, incremental_strategy, group_name, access, depends_on_macros. A model that has never run is absent."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema holding the core views. Default the current one."
+
+  - name: dbt_tests_view_sql
+    description: "The SELECT of the compat view dbt_tests: Elementary's 29 columns, in its order and types, over the core views NODE_EXECUTIONS and TEST_RESULTS only. One row per test that ran, from its latest execution. Filled: unique_id, name, short_name (the test's name), test_column_name, severity, type (generic or singular), package_name and generated_at. parent_model_unique_id is the tested node (TEST_RESULTS.tested_unique_id, NULL when ambiguous). Tests are not lineage edges, so depends_on_nodes is NULL, like every other column icecore has no source for (description, tags, meta, test_params, paths, database_name, schema_name and the rest)."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema holding the core views. Default the current one."
+
+  - name: dbt_sources_view_sql
+    description: "The SELECT of the compat view dbt_sources: Elementary's 22 columns, in its order and types, over the core view LINEAGE_LATEST only. One row per source that is a parent of some node in the latest lineage. Filled: unique_id, source_name, name and package_name (all read from the unique_id source.package.source.table) and generated_at (the latest lineage record). Every other column is a typed NULL: database_name, schema_name, identifier, loaded_at_field, the freshness settings, relation_name, tags, meta, owner, paths, descriptions and metadata_hash."
+    arguments:
+      - name: obs
+        type: string
+        description: "The quoted obs schema holding the core views. Default the current one."

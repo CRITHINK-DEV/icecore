@@ -1,0 +1,82 @@
+version: 2
+
+# Fixtures for icecore.schema_changes and icecore.column_anomaly (tests/test_schema_column_tests.py). The tables are
+# created by the sandbox test under names that carry its run_id and passed as vars; the defaults only let the project
+# parse. Sources only, nothing is built.
+sources:
+  - name: it_uc2_schema
+    schema: spikes
+    tables:
+      - name: drift_fail
+        identifier: "{{ var('it_uc2_drift_fail_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_schema_changes_fail
+      - name: drift_warn
+        identifier: "{{ var('it_uc2_drift_warn_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_schema_changes_warn
+              config:
+                severity: warn
+      - name: drift_stale
+        identifier: "{{ var('it_uc2_drift_stale_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_schema_changes_stale
+  - name: it_uc2_columns
+    schema: spikes
+    tables:
+      - name: measured
+        identifier: "{{ var('it_uc2_column_table', 'it_uc2_unset') }}"
+        columns:
+          - name: amount
+            data_tests:
+              - icecore.column_anomaly:
+                  name: it_column_three_metrics
+                  metrics: [null_rate, avg, max]
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_bounds_ok
+                  metrics: [null_rate, max]
+                  bounds: {null_rate: {max: 0.5}, max: {min: 0, max: 100}}
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_bounds_breached
+                  metrics: [avg]
+                  bounds: {avg: {max: 10}}
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_from_history
+                  metrics: [window_rows]
+              - icecore.column_anomaly:
+                  name: it_column_tag_a
+                  metrics: [window_rows]
+                  window_tag: tag_a
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_tag_b
+                  metrics: [window_rows]
+                  window_tag: tag_b
+                  since: "{{ var('it_since', '') }}"
+              - icecore.column_anomaly:
+                  name: it_column_bad_bounds
+                  metrics: "{{ var('it_bad_metrics', ['avg']) }}"
+                  bounds: "{{ var('it_bad_bounds', {'avg': {'max': 1}}) }}"
+  - name: it_uc8_snapshot
+    schema: spikes
+    tables:
+      - name: snap
+        identifier: "{{ var('it_uc8_snap_table', 'it_uc8_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_snapshot_snap
+              config:
+                severity: warn
+      - name: wide
+        identifier: "{{ var('it_uc8_wide_table', 'it_uc8_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_snapshot_wide
+              config:
+                severity: warn

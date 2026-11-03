@@ -1,0 +1,7 @@
+/* The prototype's Google Fonts (Public Sans 400-700, JetBrains Mono 400-500), latin subset, bundled: no runtime network. */
+@font-face{font-family:'Public Sans';font-style:normal;font-display:swap;font-weight:400;src:url(../node_modules/@fontsource/public-sans/files/public-sans-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Public Sans';font-style:normal;font-display:swap;font-weight:500;src:url(../node_modules/@fontsource/public-sans/files/public-sans-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:'Public Sans';font-style:normal;font-display:swap;font-weight:600;src:url(../node_modules/@fontsource/public-sans/files/public-sans-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Public Sans';font-style:normal;font-display:swap;font-weight:700;src:url(../node_modules/@fontsource/public-sans/files/public-sans-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-display:swap;font-weight:400;src:url(../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-display:swap;font-weight:500;src:url(../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2) format('woff2')}

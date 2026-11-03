@@ -1,0 +1,51 @@
+version: 2
+
+macros:
+  - name: emit
+    description: >
+      Write one icecore record to the event table, safely. The record is a SPAN_EVENT named `icecore.<kind>`
+      written by `CALL`ing `<target db>.<obs schema>.ICECORE_EMIT` (spikes/GATE1.md, option B). SQL cannot set
+      `SCOPE` (it is `global`), so the `icecore.` name prefix is the package identity. Attributes:
+      `base_attributes()` (including `dbt.invocation_id`), then the caller's `attributes`, then `icecore.level`
+      and `icecore.message`. A record larger than `payload_cap_kb` (default 64, clamped to 1..256, measured on
+      the JSON sent) has its longest string values cut and carries `icecore.truncated = true` and
+      `icecore.truncated_keys` (comma-separated). The CALL runs inside the guard block measured in S1: a missing
+      procedure, schema or grant returns `icecore-error <code>: <message>`, which is logged as
+      `icecore: warning: telemetry not written (...)`, and the run continues. Many failing CALLs of one call to `emit_events`
+      log one warning, with the count. Inputs are validated: an event that is not a mapping is skipped, attributes
+      that are not a mapping are ignored, and every value is cleaned, nested ones too: a number from `run_query`
+      (a Decimal) is written as an int or a float, a date or datetime as ISO text, and anything else as text, so none
+      raises. `SYSTEM$ADD_EVENT` itself silently drops
+      mapping and list attribute values (measured 1 Nov 2026), so `emit` writes a mapping or list value as a JSON
+      string (the attribute lands as JSON text). `emit_run` writes them as JSON text on spans and span events too, and keeps native nesting only on LOG records. Chunks are measured on the escaped literal that is sent. What is left: the
+      `run_query` of the guard block itself can still raise (no warehouse, a closed connection), and dbt's Jinja
+      cannot catch it. Never INSERTs, never emits from an
+      anonymous block, never changes session levels; the database's LOG_LEVEL and TRACE_LEVEL apply. A no-op at
+      parse time. Returns `{events, calls, statuses}` (one status per CALL: `ok <n>` or `icecore-error ...`).
+      Event-table timestamps are the CALL's, so dbt timings belong in attributes.
+    arguments:
+      - name: kind
+        type: string
+        description: Record kind; the record name is `icecore.<kind>` (a kind already starting with `icecore.` is kept as is).
+      - name: message
+        type: string
+        description: Optional human-readable text, stored as the `icecore.message` attribute (span events have no VALUE). Default none.
+      - name: attributes
+        type: dict
+        description: >
+          Optional attributes, keyed in the spec section 4 namespace (`dbt.*`, `icecore.*`). Values should be
+          strings, numbers or booleans; types are kept. Default none.
+      - name: level
+        type: string
+        description: "`info`, `warn` or `error`, stored as `icecore.level`. Default `info`."
+
+  - name: emit_events
+    description: >
+      Write many records as `emit` does, in as few CALLs as possible: chunks of at most 100 events and 512 KB of
+      JSON per CALL of ICECORE_EMIT (S2: a CALL keeps only its last 128 events, and lands none at about 1 MB;
+      one CALL per event costs about 100 times the server time, S1). Each CALL is guarded. Returns
+      `{events, calls, statuses}`.
+    arguments:
+      - name: events
+        type: list of dict
+        description: Each `{kind, message, attributes, level}`, with the meanings and defaults of `emit`.

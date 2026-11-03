@@ -1,0 +1,5 @@
+dbt-core~=1.8.0
+dbt-snowflake~=1.8.0
+snowflake-connector-python
+pytest
+pyyaml

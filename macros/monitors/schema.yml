@@ -1,0 +1,47 @@
+version: 2
+
+macros:
+  - name: get_columns_signature
+    description: >
+      Zero-scan schema reader. Returns the relation's columns from SHOW COLUMNS as a list of
+      `{name, data_type}`, where `name` is the column name as Snowflake stores it (case preserved) and
+      `data_type` is a normalised type string such as `NUMBER(38,0)`, `VARCHAR(16777216)`, `TIMESTAMP_NTZ(9)`,
+      `FLOAT`, `BOOLEAN`, `VARIANT`. Works on tables and views. Returns none with a logged warning when the
+      relation is missing or not readable; it never fails the run. Column order is not significant:
+      `diff_schema` matches columns by name.
+    arguments:
+      - name: relation
+        type: Relation
+        description: >
+          The relation to read (`ref()`, `source()`, `adapter.get_relation()` or `api.Relation.create()`).
+          Its quote policy is honoured: quoted parts keep their case, unquoted parts resolve to upper case.
+
+  - name: diff_schema
+    description: >
+      Compares two signatures from `get_columns_signature` and returns
+      `{added: [{name, data_type}], removed: [{name, data_type}], type_changed: [{name, from_type, to_type}]}`.
+      Columns are matched by exact (case-sensitive) name, so a rename shows as one removed and one added
+      column. When either signature is none (first observation, or an unreadable relation) all lists are
+      empty: the current signature becomes the baseline. Pure Jinja, no query.
+    arguments:
+      - name: previous
+        type: list
+        description: The earlier signature, or none.
+      - name: current
+        type: list
+        description: The current signature, or none.
+
+  - name: _icecore_signature_chunks
+    description: >
+      Splits a column list into chunks whose JSON, as an attribute string, stays within the payload cap minus `overhead`, so
+      schema_changes writes one `schema_signature` record per chunk and no column is cut. One chunk for a table that fits.
+    arguments:
+      - name: columns
+        type: list
+        description: The `{name, data_type}` list from get_columns_signature.
+      - name: cap_bytes
+        type: integer
+        description: The payload cap in bytes. Default the `payload_cap_kb` var.
+      - name: overhead
+        type: integer
+        description: Bytes the record's other attributes take (base attributes, relation, chunk keys). Default 0.

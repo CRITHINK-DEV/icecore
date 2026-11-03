@@ -1,0 +1,33 @@
+name: shop
+version: "1.0.0"
+config-version: 2
+profile: shop
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+
+# The two icecore hooks: this is all it takes to turn run telemetry on.
+on-run-start:
+  - "{{ icecore.start_run() }}"
+on-run-end:
+  - "{{ icecore.end_run(results) }}"
+
+vars:
+  # Toggle the failing test: dbt build --vars '{shop_fail: true}' makes fct_orders lose a customer_id.
+  shop_fail: false
+  icecore:
+    obs_schema: ICECORE_OBS    # where `dbt run-operation icecore.setup` created the procedures and views
+    # Shown with their defaults: the features below are merged. Everything else icecore lists
+    # (samples, cost, alerts, anomaly engines) is coming and not used here.
+    telemetry: true
+    node_results: true
+    query_events: true
+    lineage: true
+
+models:
+  shop:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

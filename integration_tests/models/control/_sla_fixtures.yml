@@ -1,0 +1,19 @@
+version: 2
+
+# Parse-only fixtures for collect_sla_config (UC6). Ephemeral, so even a build creates nothing.
+# Meta goes under config: (top-level meta: raises PropertyMovedToConfigDeprecation on dbt 1.12).
+models:
+  - name: sla_hourly
+    config:
+      meta:
+        sla: {expected_every: 1h, grace: 15m}
+        alerts: {channel: email, severity: warn}
+  - name: sla_daily_default_grace
+    config:
+      meta:
+        sla: {expected_every: 1d}
+  - name: sla_alerts_only
+    config:
+      meta:
+        alerts: {channel: chat, severity: error}
+  - name: sla_none

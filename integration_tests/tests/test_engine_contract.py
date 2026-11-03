@@ -1,0 +1,280 @@
+"""UC3 engine contract: icecore.score returns the same fields whatever engine scores (spec section 6).
+
+Cortex scoring is tested in test_cortex_engine.py: no test here may reach SNOWFLAKE.ML. Selection rules are checked offline
+through icecore._select_engine; score itself runs in the sandbox on fixed VALUES series.
+"""
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+import os
+import re
+
+import yaml
+
+from helpers.env import PLACEHOLDER_ENV, placeholder_env
+from helpers.macros import MacroFailed, call_macro, invoke
+
+REPO = Path(__file__).resolve().parents[2]
+CONTRACT_FIELDS = {"engine", "expected", "lower", "upper", "score", "is_anomaly", "fallback_reason"}
+
+
+def daily_series_sql(values: list[float], end: datetime = datetime(2026, 10, 29, 6, 0)) -> str:
+    """A fixed (observed_at, value) series, one point per day, ending at `end`."""
+    start = end - timedelta(days=len(values) - 1)
+    rows = ", ".join(
+        f"('{(start + timedelta(days=i)).isoformat(sep=' ')}', {v})" for i, v in enumerate(values)
+    )
+    return f"select column1::timestamp_ntz as observed_at, column2::float as value from values {rows}"
+
+
+# --- the macro bridge (offline) ---------------------------------------------------------------
+
+
+def test_macro_bridge_leaves_no_placeholder_behind():
+    call_macro("_select_engine", engine="native", cortex_unavailable_reason=None, history_days=None)
+    assert all(os.environ.get(key) != value for key, value in PLACEHOLDER_ENV.items() if value != "/dev/null")
+
+
+def test_placeholder_env_fills_only_missing_values_and_restores(monkeypatch):
+    monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
+    monkeypatch.setenv("SNOWFLAKE_ROLE", "REAL_ROLE")
+    with placeholder_env():
+        assert os.environ["SNOWFLAKE_ACCOUNT"] == "placeholder"
+        assert os.environ["SNOWFLAKE_ROLE"] == "REAL_ROLE"
+    assert "SNOWFLAKE_ACCOUNT" not in os.environ
+    assert os.environ["SNOWFLAKE_ROLE"] == "REAL_ROLE"
+
+
+# --- selection rules (offline) ---------------------------------------------------------------
+
+
+def test_native_never_considers_cortex():
+    assert call_macro("_select_engine", engine="native", cortex_unavailable_reason=None, history_days=None) == {
+        "engine": "native",
+        "fallback_reason": None,
+    }
+
+
+def test_auto_without_cortex_falls_back_to_native():
+    choice = call_macro("_select_engine", engine="auto", cortex_unavailable_reason="cortex_unavailable", history_days=30)
+    assert choice == {"engine": "native", "fallback_reason": "cortex_unavailable"}
+
+
+def test_auto_with_cortex_and_10_days_uses_native():
+    choice = call_macro("_select_engine", engine="auto", cortex_unavailable_reason=None, history_days=10)
+    assert choice == {"engine": "native", "fallback_reason": "history_too_short"}
+
+
+def test_auto_with_cortex_and_14_days_selects_cortex():
+    choice = call_macro("_select_engine", engine="auto", cortex_unavailable_reason=None, history_days=14)
+    assert choice == {"engine": "cortex", "fallback_reason": None}
+
+
+def test_cortex_requested_but_unavailable_falls_back():
+    choice = call_macro("_select_engine", engine="cortex", cortex_unavailable_reason="cortex_unavailable", history_days=60)
+    assert choice == {"engine": "native", "fallback_reason": "cortex_unavailable"}
+
+
+def test_cortex_requested_with_short_history_falls_back():
+    choice = call_macro("_select_engine", engine="cortex", cortex_unavailable_reason=None, history_days=5)
+    assert choice == {"engine": "native", "fallback_reason": "history_too_short"}
+
+
+def test_cortex_availability_comes_from_detect_capabilities():
+    assert call_macro("_cortex_unavailable_reason", capabilities={"cortex": True, "cortex_reason": None}) is None
+    assert call_macro("_cortex_unavailable_reason", capabilities={"cortex": False, "cortex_reason": "no class"}) == "cortex_unavailable"
+
+
+def test_unknown_engine_is_rejected():
+    with pytest.raises(MacroFailed, match="anomaly engine"):
+        call_macro("_anomaly_settings", engine="prophet", sensitivity=None, min_consecutive=None)
+
+
+def test_unknown_sensitivity_is_rejected():
+    with pytest.raises(MacroFailed, match="sensitivity"):
+        call_macro("_anomaly_settings", engine="native", sensitivity="extreme", min_consecutive=None)
+
+
+def test_settings_default_to_project_var():
+    assert call_macro("_anomaly_settings", engine=None, sensitivity=None, min_consecutive=None) == {
+        "engine": "auto",
+        "sensitivity": "medium",
+        "min_consecutive": 1,
+    }
+
+
+@pytest.mark.parametrize("value", [1.5, True, "2", 0])
+def test_min_consecutive_must_be_a_positive_integer(value):
+    with pytest.raises(MacroFailed, match="min_consecutive"):
+        call_macro("_anomaly_settings", engine="native", sensitivity=None, min_consecutive=value)
+
+
+def test_package_declares_the_anomaly_var_defaults():
+    cfg = yaml.safe_load(open(REPO / "dbt_project.yml"))["vars"]["icecore"]
+    assert cfg["anomaly_engine"] == "auto"
+    assert cfg["anomaly_sensitivity"] == "medium"
+    assert cfg["anomaly_min_consecutive"] == 1
+
+
+def test_a_model_calling_score_parses():
+    """models/engines/probe_engine_score.sql calls icecore.score; parse renders it with execute false."""
+    assert invoke(["parse", "--no-partial-parse"]).success
+
+
+# Any create (table of any kind, stage, dynamic table, snowflake.ml object...), any insert (into, overwrite, all), truncate,
+# alter, copy into, merge into, drop, delete, update. A word after a dot is a Jinja or Python method (`result.update(...)`).
+WRITE_STATEMENTS = [
+    r"(?<!\.)\bcreate\b", r"\binsert\b", r"\btruncate\b", r"\balter\b", r"copy\s+into", r"merge\s+into",
+    r"(?<!\.)\bdrop\b", r"(?<!\.)\bdelete\b", r"(?<!\.)\bupdate\b",
+]
+
+
+def strip_sql_comments_and_strings(sql: str) -> str:
+    """One left-to-right pass over string literals, line comments and block comments, whichever starts first: comments
+    become a space, string literals are kept as they are. Two passes let `-- see /* x` hide real SQL (the block comment
+    never closes on that line) and `'--'` or `'/*'` inside a string do the same; keeping strings means SQL run from a
+    string (`run_query('create table ...')`, `execute immediate 'insert ...'`) is still seen (review of #39, round 3)."""
+    return re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/",
+                  lambda m: m.group(0) if m.group(0).startswith("'") else " ", sql, flags=re.S)
+
+
+def writes_in(sql: str) -> list[str]:
+    """The write statements found in macro text, ignoring Jinja comments, SQL comments, case and whitespace."""
+    sql = re.sub(r"\{#.*?#\}", " ", sql, flags=re.S)          # Jinja comments
+    sql = strip_sql_comments_and_strings(sql).lower()
+    return [pattern for pattern in WRITE_STATEMENTS if re.search(pattern, sql)]
+
+
+@pytest.mark.parametrize("sql", [
+    "create or replace snowflake.ml.anomaly_detection m(...)", "create  or  replace table t as select 1", "CREATE STAGE s",
+    "create transient table t (a int)", "create temp table t as select 1", "create temporary table t (a int)",
+    "create dynamic table t target_lag = '1 minute' as select 1", "create/**/table t (a int)", "create /* x */ or replace table t (a int)",
+    "insert  into t values (1)", "insert overwrite into t select 1", "insert all into t select 1", "truncate table t",
+    "copy into t from @s", "alter table t add column c int", "merge into t using s", "drop table t", "delete from t",
+    "update t set a = 1",
+])
+def test_the_no_write_check_catches_what_a_substring_match_missed(sql):
+    assert writes_in(sql), sql
+
+
+def test_a_comment_or_string_cannot_hide_real_sql():
+    hidden = "select 1 -- see /* x\ncreate table t(a int);\n-- */"
+    assert writes_in(hidden) == [r"(?<!\.)\bcreate\b"]
+    assert writes_in("select '/*' as a; drop table t; select '*/'") == [r"(?<!\.)\bdrop\b"]
+    assert writes_in("select '--' as a;\ndelete from t") == [r"(?<!\.)\bdelete\b"]
+    assert writes_in("select 'it''s' as a, '\\'' as b; truncate table t") == [r"\btruncate\b"]
+
+
+def test_the_no_write_check_ignores_reads_and_comments():
+    assert writes_in("select updated_at from t") == []
+    assert writes_in("{% do result.update({1: 2}) %}") == []  # a Jinja dict method, not SQL
+    assert writes_in("{#- never trained here: no create table, no drop -#} select 1") == []
+    assert writes_in("select 1 -- no create table here\n/* nor alter or truncate */") == []
+
+
+ML_CREATORS = {"refresh_cortex_models.sql"}  # training is the only place icecore creates SNOWFLAKE.ML objects
+CREATE_ML = r"create\s+(or\s+replace\s+)?snowflake\s*\.\s*ml"
+
+
+def ml_creator_text(text: str) -> str:
+    """Macro text as the ML-creator check reads it: Jinja comments and SQL comments (one left-to-right pass, string literals
+    kept: the training DDL lives in one) become a space, double quotes are dropped (`"SNOWFLAKE".ML` is SNOWFLAKE.ML), lower case."""
+    text = re.sub(r"\{#.*?#\}", " ", text, flags=re.S)
+    text = re.sub(r"'(?:''|\\.|[^'\\])*'|--[^\n]*|/\*.*?\*/", lambda m: m.group(0) if m.group(0)[0] == "'" else " ", text, flags=re.S)
+    return text.replace('"', "").lower()
+
+
+@pytest.mark.parametrize("sql", [
+    "create or replace snowflake.ml.anomaly_detection m(x)", "create /**/ snowflake.ml.anomaly_detection m(x)",
+    'create or replace "SNOWFLAKE".ML.ANOMALY_DETECTION m(x)', 'CREATE OR REPLACE "SNOWFLAKE"."ML"."ANOMALY_DETECTION" m(x)',
+    "create\n-- c\nsnowflake.ml.anomaly_detection m(x)", "create /* a */ or /* b */ replace snowflake . ml.anomaly_detection m(x)",
+    "execute immediate 'create or replace snowflake.ml.anomaly_detection m(x)'",
+])
+def test_the_ml_creator_check_sees_through_comments_and_quotes(sql):
+    assert re.search(CREATE_ML, ml_creator_text(sql)), sql
+
+
+@pytest.mark.parametrize("sql", ["-- create snowflake.ml here", "/* create or replace snowflake.ml */ select 1", "select 'a--b' as x /* create snowflake.ml */",
+                                 "{# create snowflake.ml #} select 1", "select snowflake.ml.anomaly_detection_x"])
+def test_the_ml_creator_check_ignores_comments_and_reads(sql):
+    assert not re.search(CREATE_ML, ml_creator_text(sql)), sql
+
+
+def test_only_the_named_training_file_creates_snowflake_ml_objects():
+    found = {p.name for p in (REPO / "macros").rglob("*.sql") if re.search(CREATE_ML, ml_creator_text(p.read_text()))}
+    assert found == ML_CREATORS
+
+
+ML_ALLOWED = r"(create\s+(or\s+replace\s+)?(snowflake\.ml\.anomaly_detection|task)|alter\s+task)\b"  # the models, the task that trains them, and resuming it
+
+
+def test_the_training_file_writes_nothing_else():
+    for name in ML_CREATORS:
+        (path,) = (REPO / "macros").rglob(name)
+        assert writes_in(re.sub(ML_ALLOWED, " ", path.read_text(), flags=re.I)) == [], name
+
+
+def test_the_allowance_is_by_name_only():
+    text = "create or replace snowflake.ml.anomaly_detection m(input_data => x)"
+    assert writes_in(text), "a file that is not on the list gets no allowance"
+    assert writes_in(re.sub(ML_ALLOWED, " ", text, flags=re.I)) == []  # only the training file's text is passed through the allowance
+
+
+def test_engine_macros_never_write_and_only_cortex_sql_calls_cortex():
+    engines = REPO / "macros" / "engines"
+    for path in engines.glob("*.sql"):
+        assert writes_in(path.read_text()) == [], path.name
+    others = "\n".join(p.read_text() for p in engines.glob("*.sql") if p.name != "cortex.sql").lower()
+    for forbidden in ("snowflake.ml", "anomaly_detection", "detect_anomalies"):
+        assert forbidden not in others, forbidden
+
+
+# --- score in the sandbox ------------------------------------------------------------------------
+
+
+@pytest.mark.sandbox
+def test_native_returns_the_contract_fields():
+    result = call_macro(
+        "score", series_sql=daily_series_sql([100, 102, 98, 101, 99, 100, 103, 97, 100, 101]),
+        current_value=100, engine="native", sensitivity="medium", min_consecutive=1,
+    )
+    assert CONTRACT_FIELDS <= set(result)
+    assert result["engine"] == "native"
+    assert result["fallback_reason"] is None
+    for key in ("expected", "lower", "upper", "score"):
+        assert isinstance(result[key], (int, float)), key
+    assert result["lower"] <= result["expected"] <= result["upper"]
+    assert result["score"] == 0 and result["is_anomaly"] is False
+
+
+@pytest.mark.sandbox
+def test_auto_without_a_model_scores_native_and_records_fallback():
+    # Cortex is available in the sandbox (detect_capabilities), but no model is given for the series.
+    result = call_macro(
+        "score", series_sql=daily_series_sql([100] * 20 + [101, 99]),
+        current_value=500, engine="auto", sensitivity="medium", min_consecutive=1,
+    )
+    assert CONTRACT_FIELDS <= set(result)
+    assert result["engine"] == "native"
+    assert result["fallback_reason"] == "model_missing"
+    assert result["is_anomaly"] is True and result["score"] > 0
+
+
+@pytest.mark.sandbox
+def test_auto_with_10_days_of_history_scores_native():
+    result = call_macro(
+        "score", series_sql=daily_series_sql([10, 11, 9, 10, 12, 10, 9, 11, 10, 10]),
+        current_value=10, engine="auto", sensitivity=None, min_consecutive=None,
+    )
+    assert result["engine"] == "native"
+    assert result["fallback_reason"] is not None
+
+
+@pytest.mark.parametrize("sql", [
+    "{% do run_query('create table t (a int)') %}",
+    "execute immediate 'insert into t values (1)'",
+])
+def test_sql_run_from_a_string_is_still_a_write(sql):
+    assert writes_in(sql)

@@ -1,0 +1,6 @@
+version: 2
+
+# Parse-only fixture for the walk_upstream tests; excluded from default selection.
+seeds:
+  - name: rc_seed
+    config: {tags: ["root_cause_fixture"]}

@@ -1,0 +1,5 @@
+# Elementary CLI for spike S4 and the Elementary-compatibility checks only (not in the floor/latest
+# requirements). Pinned to macros/compat/ELEMENTARY_VERSION; any CI job that installs elementary-data uses this file.
+# The constraints pin dbt, sqlglot and pytest to what S4 ran with.
+-c constraints-elementary.txt
+elementary-data[snowflake]==0.26.1

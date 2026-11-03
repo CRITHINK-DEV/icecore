@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: "One row per order."
+    config:
+      meta:
+        sla: {expected_every: 30m, grace: 5m}
+    data_tests:
+      - icecore.volume:
+          min_rows: 1
+      - icecore.freshness:
+          max_lag: 1d
+          min_points: 1000    # a table rebuilt every run has a lag of seconds: scoring it would only flag noise
+      - icecore.schema_changes:
+          config: {severity: warn}
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests: [not_null]
+  - name: dim_customers
+    description: "One row per customer, with order count and lifetime amount."
+    config:
+      meta:
+        sla: {expected_every: 1d, grace: 1h}
+    data_tests:
+      - icecore.volume:
+          min_rows: 1
+      - icecore.freshness:
+          max_lag: 1d
+          min_points: 1000    # a table rebuilt every run has a lag of seconds: scoring it would only flag noise
+      - icecore.schema_changes:
+          config: {severity: warn}
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+  - name: revenue_by_day
+    description: "Orders and revenue per day."
+    config:
+      meta:
+        sla: {expected_every: 1d, grace: 1h}
+    data_tests:
+      - icecore.volume:
+          min_rows: 1
+  - name: daily_revenue
+    description: "Revenue per day, built early in the demo and then left to go stale."
+    config:
+      meta:
+        sla: {expected_every: 10m, grace: 1m}
+    data_tests:
+      - icecore.volume:
+          min_rows: 1
+      - icecore.freshness:
+          max_lag: 10m
+  - name: fct_payments
+    description: "One row per payment. Fails in two runs of the demo."
+  - name: payments_summary
+    description: "Totals of fct_payments. Skipped when fct_payments fails."

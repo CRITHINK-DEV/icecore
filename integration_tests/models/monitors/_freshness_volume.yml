@@ -1,0 +1,76 @@
+version: 2
+
+# Fixtures for icecore.freshness and icecore.volume (tests/test_freshness_volume.py). The tables are created by the
+# sandbox test under names that carry its run_id and passed as vars; the defaults only let the project parse.
+# Nothing is built from here: sources only. Tagged icecore_fixture by dbt_project.yml (data_tests: monitors) and left
+# out of the default selector (selectors.yml): their tests error by design on the placeholder table until a sandbox
+# test passes real names.
+sources:
+  - name: it_uc2_monitors
+    schema: spikes
+    tables:
+      - name: fresh
+        identifier: "{{ var('it_uc2_fresh_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.freshness:
+              name: it_freshness_bare
+          - icecore.freshness:
+              name: it_freshness_pass
+              max_lag: 2h
+          - icecore.freshness:
+              name: it_freshness_fail
+              max_lag: 0.001h
+          - icecore.freshness:
+              name: it_freshness_warn
+              max_lag: 0.001h
+              config:
+                severity: warn
+          - icecore.freshness:
+              name: it_freshness_var
+              max_lag: "{{ var('it_max_lag', '1h') }}"
+      - name: vol
+        identifier: "{{ var('it_uc2_vol_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_volume_bare
+          - icecore.volume:
+              name: it_volume_in_range
+              min_rows: 50
+              max_rows: 150
+          - icecore.volume:
+              name: it_volume_too_few
+              min_rows: 500
+          - icecore.volume:
+              name: it_volume_too_many
+              max_rows: 10
+          - icecore.volume:
+              name: it_volume_var
+              min_rows: "{{ var('it_min_rows', 1) }}"
+              max_rows: "{{ var('it_max_rows', 1000) }}"
+      - name: never_written
+        identifier: "{{ var('it_uc2_empty_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.freshness:
+              name: it_freshness_unmeasured_bare
+          - icecore.freshness:
+              name: it_freshness_unmeasured_max_lag
+              max_lag: 1h
+      - name: a_view
+        identifier: "{{ var('it_uc2_view', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_volume_unmeasured_bare
+          - icecore.volume:
+              name: it_volume_unmeasured_min_rows
+              min_rows: 1
+          - icecore.volume:
+              name: it_volume_unmeasured_warn
+              max_rows: 10
+              config:
+                severity: warn
+      - name: no_telemetry
+        identifier: "{{ var('it_uc2_vol_table', 'it_uc2_unset') }}"
+        data_tests:
+          - icecore.volume:
+              name: it_volume_no_procedures
+              min_rows: 1

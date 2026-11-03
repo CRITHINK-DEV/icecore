@@ -1,0 +1,22 @@
+version: 2
+
+macros:
+  - name: test_results_view_sql
+    description: >
+      The SELECT of the `test_results` view, one row per test per invocation. It reads `icecore.base_events()` and
+      keeps the node-result LOGs (`icecore.kind = node_result`) of test nodes (unique id starting `test.`); a
+      duplicated record collapses to the latest. Columns: `invocation_id`, `project`, `test_unique_id`,
+      `test_name`, `test_type` (generic or singular), `"COLUMN"` (quote it), `severity`, `status`, `failures`,
+      `message` (redacted by default), `execution_time_s`, `root_cause_unique_id` and `root_cause_kind` (null unless root-cause attribution wrote them), the scored-test fields `engine`, `expected`, `lower`,
+      `upper`, `score` (null unless the test wrote dbt.anomaly.* keys), `executed_at` (the event TIMESTAMP) and
+      `query_id` and `tested_unique_id` (last column; the model or source the test is attached to, from `dbt.test.attached_node`: the spec's `model_unique_id`, widened to sources; null for a singular test over several nodes).
+    arguments:
+      - name: event_table
+        type: string
+        description: The relation to read. Default none, resolved with `resolve_event_table` when the macro executes.
+      - name: database
+        type: string
+        description: The database whose procedures wrote the records. Default `target.database`.
+      - name: obs_schema
+        type: string
+        description: The schema holding the emitter procedures. Default the `obs_schema` var.

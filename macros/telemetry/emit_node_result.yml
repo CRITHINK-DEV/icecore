@@ -1,0 +1,19 @@
+version: 2
+
+macros:
+  - name: emit_node_results
+    description: >
+      End-of-run emitter `node_results` of `end_run`, on when `var('icecore').node_results` is true (the
+      default). Adds one LOG record per node to the run's batch, written through ICECORE_EMIT_RUN: `icecore.kind
+      = node_result`, `node_attributes(node, result)` (`dbt.node.*`, `dbt.result.status`, `rows_affected`,
+      `execution_time_s`, `message`, `dbt.test.*` with `dbt.test.failures` for tests, and `snow.query.id`), and,
+      when the node has a span, `dbt.node.started_at`, `completed_at` and `duration_s`. The level is error for
+      error, fail and runtime error, warn for warn and partial success, info otherwise; the message is
+      `<unique_id> <status>: <dbt message>`. Returns nothing.
+    arguments:
+      - name: results
+        type: list
+        description: dbt's on-run-end `results`, hook operations already left out by `end_run`.
+      - name: batch
+        type: dict
+        description: "`end_run`'s batch: `items` (appended to) and `node_spans` (read for the timings)."

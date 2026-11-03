@@ -1,0 +1,48 @@
+version: 2
+
+macros:
+  - name: get_last_change_time
+    description: >
+      Zero-scan freshness reader. Returns the time of the last committed change to the relation, read from
+      SYSTEM$LAST_CHANGE_COMMIT_TIME, as an ISO 8601 UTC string (`YYYY-MM-DDTHH:MI:SS.ffffffZ`, millisecond
+      precision; the token's last digits are not significant). Returns none when the table was never written
+      (token 0), and none with a logged warning when the relation is missing or not readable; it never fails
+      the run. For a dynamic table this is the time of its last refresh, not of its sources (spike S5).
+    arguments:
+      - name: relation
+        type: Relation
+        description: >
+          The relation to read (`ref()`, `source()`, `adapter.get_relation()` or `api.Relation.create()`).
+          Its quote policy is honoured: quoted parts keep their case, unquoted parts resolve to upper case.
+
+  - name: get_row_count_metadata
+    description: >
+      Zero-scan volume reader: the relation's total row count from INFORMATION_SCHEMA.TABLES.ROW_COUNT, as an
+      integer, with no data scan. Always a total, never a delta. Returns none, with one log line saying why,
+      when: the relation is missing or not readable; it is a view or an external table (no ROW_COUNT in
+      metadata, so zero-scan volume is not supported); or its kind is in
+      `vars: icecore: metadata_fallback_kinds` (default `[iceberg, materialized_view]`: Iceberg from spike S5; a materialized view's metadata total was still the old one 60 s after an insert in the table-kinds tests), in which case use
+      `get_row_count_changes`. It never fails the run. The volume test emits this value as the metric
+      `row_count`, distinct from `rows_added`.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_last_change_time`.
+
+  - name: get_row_count_changes
+    description: >
+      Net number of rows added since `since` (inserts minus deletes), counted over CHANGES. This is not a
+      zero-scan read, and its cost depends on what happened in the window (spike S5). When the window holds only
+      inserts, it reads just the new micro-partitions (1 partition and 4 KB against 11 partitions and 35 MB for a
+      full scan). After a DELETE, UPDATE or MERGE (dbt's default incremental strategy) that rewrites existing
+      micro-partitions, it reads their old and new versions and can cost more than a full scan (about 1.9 times in
+      S5). Needs change tracking on the table, or on the view and its base tables; without it, or for a
+      `since` outside the tracked window, it returns none and logs Snowflake's error. It never fails the run.
+      The volume test emits this value as the metric `rows_added`, never mixed with `row_count`.
+    arguments:
+      - name: relation
+        type: Relation
+        description: The relation to read, as for `get_last_change_time`.
+      - name: since
+        type: string
+        description: ISO 8601 timestamp of the previous observation, for example `2026-10-31T08:00:00.000000Z`. Required.

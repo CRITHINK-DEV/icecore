@@ -1,0 +1,6 @@
+# Exact versions spike S4 ran with (spikes/results/s4.json versions). Applied through requirements-elementary.txt,
+# so the S4 analyzer (sqlglot), its parse_fallbacks == 0 assertion and the drift check stay stable.
+dbt-core==1.12.6
+dbt-snowflake==1.12.4
+sqlglot==30.27.0
+pytest==9.2.0

@@ -296,7 +296,7 @@ def test_the_query_layer_never_names_the_event_table():
 
 def test_pages_and_the_other_libs_hold_no_sql_and_no_session():
     files = [*sorted((APP_DIR / "pages").glob("*.py")), APP_DIR / "streamlit_app.py",
-             *[p for p in sorted((APP_DIR / "lib").glob("*.py")) if p.name not in ("queries.py", "settings.py")]]
+             *[p for p in sorted((APP_DIR / "lib").glob("*.py")) if p.name not in ("queries.py", "settings.py", "ack.py")]]  # ack.py: the only write
     for path in files:
         source = path.read_text()
         for forbidden in ("get_active_session", "session.sql", "snowflake.snowpark", "snowflake.connector",

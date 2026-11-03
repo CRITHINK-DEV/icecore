@@ -170,6 +170,31 @@ def _layer_map(node_executions: list[dict], lineage: list[dict]) -> dict[str, st
     return m
 
 
+def _resolver(lmap: dict[str, str], lineage: list[dict], test_results: list[dict]):
+    """uid -> layer. A test or a metric written by a test has no layer of its own: it takes the layer of the node it
+    tests (TEST_RESULTS.tested_unique_id when present, else the layer of its non-test parent in LINEAGE)."""
+    tested = {t["test_unique_id"]: t["tested_unique_id"] for t in test_results
+              if t.get("test_unique_id") and t.get("tested_unique_id")}
+    parents: dict[str, list[str]] = {}
+    for e in lineage:
+        if e.get("child_unique_id") and e.get("parent_unique_id"):
+            parents.setdefault(e["child_unique_id"], []).append(e["parent_unique_id"])
+
+    def layer_of(uid: str | None) -> str | None:
+        if not uid:
+            return None
+        if lmap.get(uid):
+            return lmap[uid]
+        if lmap.get(tested.get(uid)):
+            return lmap[tested[uid]]
+        for p in parents.get(uid, []):
+            if not p.startswith("test.") and lmap.get(p):
+                return lmap[p]
+        return None
+
+    return layer_of
+
+
 def _ordered(layers: set[str]) -> list[str]:
     return [l for l in LAYER_ORDER if l in layers] + sorted(layers - set(LAYER_ORDER))
 
@@ -183,6 +208,7 @@ def layer_health(node_executions: list[dict], lineage: list[dict], test_results:
                  slas: list[dict], silences: list[dict]) -> list[dict] | None:
     """[{layer, score, components}] per layer, or None when no row has a layer (the strip is then hidden)."""
     lmap = _layer_map(node_executions, lineage)
+    layer_of = _resolver(lmap, lineage, test_results)
     layers = _ordered(set(lmap.values()))
     if not layers:
         return None
@@ -191,17 +217,17 @@ def layer_health(node_executions: list[dict], lineage: list[dict], test_results:
     for t in _latest_tests(test_results):
         uid = t.get("test_unique_id")
         seen.add(uid)
-        if lmap.get(uid):
-            tests[lmap[uid]].append(t.get("status"))
+        if layer_of(uid):
+            tests[layer_of(uid)].append(t.get("status"))
     for n in _latest_nodes(node_executions):
-        if n.get("type") == "test" and n["unique_id"] not in seen and lmap.get(n["unique_id"]):
-            tests[lmap[n["unique_id"]]].append(n.get("status"))
+        if n.get("type") == "test" and n["unique_id"] not in seen and layer_of(n["unique_id"]):
+            tests[layer_of(n["unique_id"])].append(n.get("status"))
     fresh: dict[str, list[bool]] = {l: [] for l in layers}
     for m in _latest([m for m in metrics if m.get("metric") == FRESHNESS_METRIC and m.get("threshold") is not None
                       and _num(m.get("value")) is not None],
                      lambda m: m.get("relation"), "observed_at"):
-        if lmap.get(m.get("node_unique_id")):
-            fresh[lmap[m["node_unique_id"]]].append(_num(m["value"]) <= _num(m["threshold"]))
+        if layer_of(m.get("node_unique_id")):
+            fresh[layer_of(m["node_unique_id"])].append(_num(m["value"]) <= _num(m["threshold"]))
     silent = {s.get("unique_id") for s in silences}
     sched: dict[str, list[bool]] = {l: [] for l in layers}
     for s in slas:
@@ -211,8 +237,8 @@ def layer_health(node_executions: list[dict], lineage: list[dict], test_results:
     scored = [m for m in metrics if m.get("anomaly_engine") and m.get("metric") != FRESHNESS_METRIC]
     for m in _latest(scored, lambda m: (m.get("relation"), m.get("metric"), m.get("column"), m.get("dimension")),
                      "observed_at"):
-        if lmap.get(m.get("node_unique_id")):
-            anom[lmap[m["node_unique_id"]]].append(bool(m.get("anomaly_is_anomaly")))
+        if layer_of(m.get("node_unique_id")):
+            anom[layer_of(m["node_unique_id"])].append(bool(m.get("anomaly_is_anomaly")))
     out = []
     for l in layers:
         comps = health.components(tests[l], fresh[l], sched[l], anom[l])

@@ -110,38 +110,40 @@ def test_nodes_not_ok_latest_per_node_not_ok_only():
 
 
 def layer_inputs():
+    """As the views write them: models carry a layer, tests do not; a test's layer comes from the node it tests."""
     nodes = [
-        {"unique_id": "m1", "layer": "bronze", "status": "success", "started_at": NOW, "type": "model"},
-        {"unique_id": "m2", "layer": "silver", "status": "success", "started_at": NOW, "type": "model"},
-        {"unique_id": "t1", "layer": "silver", "status": "fail", "started_at": NOW, "type": "test"},
+        {"unique_id": "model.p.m1", "layer": "bronze", "status": "success", "started_at": NOW, "type": "model"},
+        {"unique_id": "model.p.m2", "layer": "silver", "status": "success", "started_at": NOW, "type": "model"},
+        {"unique_id": "test.p.t1", "layer": None, "status": "fail", "started_at": NOW, "type": "test"},
     ]
-    tests = [{"test_unique_id": "t1", "status": "fail", "executed_at": NOW},
-             {"test_unique_id": "t2", "status": "pass", "executed_at": NOW}]
-    lineage = [{"parent_unique_id": "m1", "child_unique_id": "t2", "parent_layer": "bronze", "child_layer": "bronze"}]
+    tests = [{"test_unique_id": "test.p.t1", "tested_unique_id": "model.p.m2", "status": "fail", "executed_at": NOW},
+             {"test_unique_id": "test.p.t2", "status": "pass", "executed_at": NOW}]
+    lineage = [{"parent_unique_id": "model.p.m1", "child_unique_id": "test.p.t2", "parent_layer": "bronze",
+                "child_layer": None}]
     return nodes, lineage, tests
 
 
 def test_layer_health_scores_per_layer():
     nodes, lineage, tests = layer_inputs()
-    out = ov().layer_health(nodes, lineage, tests, [], [{"unique_id": "m2"}], [{"unique_id": "m2"}])
+    out = ov().layer_health(nodes, lineage, tests, [], [{"unique_id": "model.p.m2"}], [{"unique_id": "model.p.m2"}])
     by = {r["layer"]: r for r in out}
     assert [r["layer"] for r in out] == ["bronze", "silver"]
-    assert by["bronze"]["score"] == 100.0
+    assert by["bronze"]["components"]["tests"] == 100.0  # t2 has no tested id: its LINEAGE parent m1 is bronze
     assert by["silver"]["components"]["tests"] == 0.0 and by["silver"]["components"]["schedules"] == 0.0
     assert by["silver"]["score"] == 0.0
 
 
-def test_layer_health_freshness_and_anomalies_from_metrics():
+def test_layer_health_freshness_and_anomalies_from_test_metrics():
     nodes, lineage, tests = layer_inputs()
-    metrics = [
-        {"relation": "R", "metric": "freshness_lag_seconds", "node_unique_id": "m1", "value": 50, "threshold": 100,
-         "observed_at": NOW, "anomaly_engine": None},
-        {"relation": "R2", "metric": "row_count", "node_unique_id": "m1", "value": 5, "anomaly_engine": "native",
-         "anomaly_is_anomaly": True, "observed_at": NOW},
+    metrics = [  # written by tests: node_unique_id is the TEST's id
+        {"relation": "R", "metric": "freshness_lag_seconds", "node_unique_id": "test.p.t2", "value": 50,
+         "threshold": 100, "observed_at": NOW, "anomaly_engine": None},
+        {"relation": "R2", "metric": "row_count", "node_unique_id": "test.p.t1", "value": 5,
+         "anomaly_engine": "native", "anomaly_is_anomaly": True, "observed_at": NOW},
     ]
-    out = ov().layer_health(nodes, lineage, tests, metrics, [], [])
-    c = out[0]["components"]
-    assert c["freshness"] == 100.0 and c["anomalies"] == 0.0
+    by = {r["layer"]: r for r in ov().layer_health(nodes, lineage, tests, metrics, [], [])}
+    assert by["bronze"]["components"]["freshness"] == 100.0
+    assert by["silver"]["components"]["anomalies"] == 0.0
 
 
 def test_overview_without_new_columns():

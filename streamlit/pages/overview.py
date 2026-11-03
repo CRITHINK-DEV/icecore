@@ -7,7 +7,8 @@ from lib import charts, console, health, incidents, queries
 from lib.pages import overview as logic
 
 console.page("Overview", "Is the platform healthy right now.",
-             ["invocations", "test_results", "alerts_feed", "node_executions"])
+             ["invocations", "alerts_feed", "test_results", "node_executions", "metrics", "lineage_latest",
+              "sla_declared", "silence_events"])
 
 MAX_DAYS = max(console.WINDOWS)
 LIMIT = queries.MAX_LIMIT
@@ -56,7 +57,7 @@ if strip:
     for col, item in zip(st.columns(len(strip)), strip):
         score = item["score"]
         with col:
-            st.metric(f"{item['layer']} health", "n/a" if score is None else f"{score:.0f} / 100",
+            st.metric(f"{console.md(item['layer'])} health", "n/a" if score is None else f"{score:.0f} / 100",
                       help=health.formula_help(), border=True)
 
 if runs:
@@ -74,13 +75,14 @@ console.table(attention, {
     "age": st.column_config.TextColumn("Open for"),
     "occurrences": st.column_config.NumberColumn("Times"),
     "incident_key": None,
-    "incident_key": None,
     "unique_id": None,
 }, key="overview_attention", limit=500)
 if not attention:
     st.caption("No open incidents.")
 
 st.subheader("Nodes that are not OK")
+if filters.layer:
+    st.caption("The layer filter applies to this table only: incidents and tiles are not recorded per layer.")
 bad = logic.nodes_not_ok(nodes, tests)
 if filters.layer:
     bad = [r for r in bad if r.get("layer") == filters.layer]

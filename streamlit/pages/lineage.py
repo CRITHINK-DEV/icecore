@@ -35,7 +35,8 @@ elif choice:
 data = lc.payload(edges, nodes, tests, highlight=choice, root_cause=root)
 clicked = st.session_state.get(CANVAS_KEY)  # the id from the previous click (the component's value)
 summary = logic.pane_summary(clicked, data) if clicked else None
-canvas, pane = st.columns([3, 1]) if summary else (st.container(), None)
+data["selected"] = clicked if summary else None
+canvas, pane = st.columns([3, 1] if summary else [1000, 1])  # same tree both ways: the iframe keeps its zoom and state
 with canvas:
     lc.lineage(data, height=640, key=CANVAS_KEY)
 if summary and pane is not None:

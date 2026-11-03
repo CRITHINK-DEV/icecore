@@ -65,14 +65,28 @@ st.subheader(console.md(s["name"]))
 st.caption(f"{console.md(s['unique_id'])} · {console.md(s['type'])}"
            + (f" · {console.md(s['materialization'])}" if s["materialization"] else "")
            + (f" · layer {console.md(s['layer'])}" if s["layer"] else "")
-           + (f" · {console.md(relation)}" if relation else ""))
+           + (f" · {console.md(console.short_name(relation))}" if relation else ""),
+           help=f"Relation: {relation}" if relation else None)
+
+def _ago(ts):
+    """'12 min ago' for a UTC timestamp string; a dash when unknown."""
+    try:
+        t = datetime.fromisoformat(str(ts)[:19])
+    except ValueError:
+        return "—"
+    secs = max(0, int((datetime.now(timezone.utc).replace(tzinfo=None) - t).total_seconds()))
+    for size, unit in ((86400, "d"), (3600, "h"), (60, "min")):
+        if secs >= size:
+            return f"{secs // size} {unit} ago"
+    return "just now"
+
 
 lag = s["freshness_lag_s"]
 console.kpi_row([
     console.Tile("Status", label(s["status"]), help="The status of the latest run of this node."),
     console.Tile("Tests passing", f"{s['tests_passing']}/{s['tests_total']}" if s["tests_total"] else "—",
                  help="Latest result of each test on this node."),
-    console.Tile("Last run", (s["last_run"] or "—")[:16], help="Start of the latest run in the window."),
+    console.Tile("Last run", _ago(s["last_run"]), help=f"Start of the latest run: {(s['last_run'] or '—')[:19]} UTC."),
     console.Tile("Credits", f"{s['credits_total']:.3f}" if s["credits_total"] is not None else "—",
                  help="Credits attributed to this node in the window; not recorded yet when empty."),
     console.Tile("Freshness lag", f"{lag / 60:.0f} min" if lag is not None else "—",
@@ -93,10 +107,11 @@ else:
 
 st.subheader("Status history")
 if s["history"]:
-    st.dataframe([{**h, "status": label(h["status"])} for h in s["history"]], hide_index=True, width="stretch",
-                 column_config={"invocation_id": "Run", "started_at": "Started (UTC)", "status": "Status",
-                                "execution_time_s": "Seconds", "rows_affected": "Rows", "credits": "Credits",
-                                "message": "Message"})
+    console.table([{**h, "started_at": (h["started_at"] or "")[:19] or None,
+                    "credits": f"{h['credits']:.3f}" if isinstance(h["credits"], (int, float)) else None}
+                   for h in s["history"]], {"invocation_id": "Run", "started_at": "Started (UTC)", "status": "Status",
+                                            "execution_time_s": "Seconds", "rows_affected": "Rows", "credits": "Credits",
+                                            "message": "Message"}, key="node_history", node_column=None)
 else:
     st.caption("This node has not run in the window.")
 

@@ -37,9 +37,9 @@ function Canvas({ args, theme }) {
   const layers = useMemo(() => [...new Set(allNodes.map((n) => n.layer).filter(Boolean))].sort(), [allNodes]);
   const [hidden, setHidden] = useState([]);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(args.focus || null);
+  const [selected, setSelected] = useState(args.selected || args.focus || null);
 
-  useEffect(() => { setSelected(args.focus || null); }, [args.focus]);
+  useEffect(() => { setSelected(args.selected || args.focus || null); }, [args.focus, args.selected]);
 
   const visible = useMemo(() => allNodes.filter((n) => !n.layer || !hidden.includes(n.layer)), [allNodes, hidden]);
   const ids = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
@@ -153,7 +153,10 @@ function App() {
     r.setProperty("--ink", t.textColor || (dark ? "#fafafa" : "#31333f"));
     r.setProperty("--accent", t.primaryColor || "#3b5bdb");
     r.setProperty("--line", dark ? "rgba(250,250,250,.18)" : "rgba(49,51,63,.18)");
-    r.setProperty("--font", t.font ? `"${t.font}", sans-serif` : "'Source Sans', sans-serif");
+    const SANS = '-apple-system, "Source Sans Pro", "Source Sans 3", "Segoe UI", sans-serif';
+    const f = (t.font || "").toLowerCase();
+    r.setProperty("--font", f === "monospace" ? 'ui-monospace, "Source Code Pro", monospace' : f === "serif" ? 'Georgia, "Source Serif Pro", serif'
+      : t.font && !/sans/.test(f) ? `"${t.font}", ${SANS}` : SANS);
     document.documentElement.dataset.theme = dark ? "dark" : "light";
   }, [state]);
   if (!state) return null;

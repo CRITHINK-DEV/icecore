@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
-from lib import charts, console, queries
+from lib import charts, console, lineage_component as lc, queries
 from lib.pages import node as logic
 from lib.status import label
 
@@ -128,7 +128,11 @@ else:
 
 st.subheader("Neighbourhood")
 if s["parents"] or s["children"]:
-    st.graphviz_chart(logic.neighbourhood_dot(s))
+    st.caption("Two steps up and down from this node. Click a node to open it.")
+    hood = lc.payload(lineage_rows, nodes, tests, highlight=None, root_cause=None, focus=node, hops=2)
+    clicked = lc.lineage(hood, height=380, key=f"node_hood_{node}")
+    if clicked and clicked != node:
+        console.open_node(clicked)
     console.table([{**n, "direction": d} for d, group in (("upstream", s["parents"]), ("downstream", s["children"]))
                    for n in group], {"direction": "Direction", "unique_id": "Node", "name": None, "type": "Type"},
                   key="node_neighbours")

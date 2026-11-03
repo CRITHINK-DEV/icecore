@@ -24,6 +24,7 @@ entities:
       - lib/console.py
       - lib/cost.py
       - lib/dag.py
+      - lib/lineage_component.py
       - lib/navigation.py
       - lib/queries.py
       - lib/runs_logic.py
@@ -32,6 +33,9 @@ entities:
       - lib/status.py
       - lib/ui.py
       - lib/pages/__init__.py
+      - lib/pages/lineage.py
+      - src: components/lineage/build/**
+        dest: components/lineage/build
       - pages/cost.py
       - pages/incidents.py
       - pages/lineage.py

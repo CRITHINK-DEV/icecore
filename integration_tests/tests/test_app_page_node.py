@@ -148,16 +148,6 @@ def test_node_only_in_lineage_is_found():
     assert s["found"] and s["status"] == "not_run" and s["relation"] is None
 
 
-def test_neighbourhood_dot_escapes_and_marks_the_node():
-    dot = summary(node_rows=NODES)
-    from lib.pages import node
-
-    text = node.neighbourhood_dot(dot)
-    assert text.startswith("digraph") and "orders" in text and "model.shop.customers" in text
-    bad = node.neighbourhood_dot({**dot, "name": '<script>"x"'})
-    assert "<script>" not in bad and '\\"x\\"' in bad
-
-
 # --- the page --------------------------------------------------------------------------------------------------
 
 def _patch(monkeypatch, **reads):
@@ -261,3 +251,18 @@ def test_node_shows_errors_of_the_secondary_reads(monkeypatch):
     _patch(monkeypatch, lineage_latest=EDGES, node_executions=NODES, metrics=RuntimeError("metrics down"))
     at = _run(UID)
     assert any("metrics down" in c.value for c in at.caption)
+
+
+def test_node_neighbourhood_uses_the_lineage_component_focused_on_the_node(monkeypatch):
+    from lib import lineage_component as lc
+
+    seen = {}
+
+    def fake(p, *, height, key):
+        seen.update(focus=p["focus"], ids={n["id"] for n in p["nodes"]}, key=key)
+        return None
+
+    _patch(monkeypatch, lineage_latest=EDGES, node_executions=NODES, test_results=TESTS)
+    monkeypatch.setattr(lc, "lineage", fake)
+    _run(UID)
+    assert seen["focus"] == UID and {"model.shop.customers", "model.shop.report"} <= seen["ids"]

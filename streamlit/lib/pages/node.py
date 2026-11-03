@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lib.status import COLOURS, normalise
+from lib.status import normalise
 
 FRESHNESS_METRIC = "freshness_lag_seconds"
 METRIC_UNITS = {"row_count": "rows", FRESHNESS_METRIC: "seconds", "credits": "credits"}
@@ -145,26 +145,6 @@ def node_summary(unique_id: str, node_rows: list[dict], test_results: list[dict]
         "parents": _neighbours(parents, latest),
         "children": _neighbours(children, latest),
     }
-
-
-def neighbourhood_dot(summary: dict) -> str:
-    """Graphviz DOT of the node and one hop up and down, left to right, fills from the status colours. The node is bold."""
-    def esc(s: Any) -> str:
-        return str(s).replace("\\", "\\\\").replace('"', '\\"').replace("<", "&lt;").replace(">", "&gt;")
-
-    def decl(uid: str, name: str, status: str, bold: bool = False) -> str:
-        extra = ', penwidth=4, color="#000000"' if bold else ""
-        return f'"{esc(uid)}" [label="{esc(name)}", fillcolor="{COLOURS[status]}"{extra}];'
-
-    out = ["digraph neighbourhood {", "rankdir=LR;",
-           'node [shape=box, style="rounded,filled", fontcolor="white", fontsize=11];',
-           decl(summary["unique_id"], summary["name"], summary["status"], bold=True)]
-    for n in summary["parents"]:
-        out += [decl(n["unique_id"], n["name"], n["status"]), f'"{esc(n["unique_id"])}" -> "{esc(summary["unique_id"])}";']
-    for n in summary["children"]:
-        out += [decl(n["unique_id"], n["name"], n["status"]), f'"{esc(summary["unique_id"])}" -> "{esc(n["unique_id"])}";']
-    out.append("}")
-    return "\n".join(out)
 
 
 def read_schema_columns(relation: str, layer=None, limit: int | None = None) -> list[dict]:

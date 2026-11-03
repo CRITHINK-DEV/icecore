@@ -1,0 +1,28 @@
+:root { --bg:#fff; --panel:#f0f2f6; --ink:#31333f; --accent:#3b5bdb; --line:rgba(49,51,63,.18); --font:'Source Sans',sans-serif; }
+html, body, #root { margin:0; height:100%; background:transparent; color:var(--ink); font-family:var(--font); font-size:13px; }
+.shell { display:flex; flex-direction:column; height:100%; }
+.bar-tools { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:0 0 8px; }
+.search { width:210px; padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; }
+.chips { display:flex; gap:4px; }
+.chip { padding:4px 10px; border:1px solid var(--line); border-radius:14px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+.chip.off { background:var(--bg); color:var(--ink); opacity:.6; }
+.legend { display:flex; gap:10px; margin-left:auto; color:var(--ink); opacity:.8; font-size:12px; }
+.legend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; }
+.canvas { flex:1; min-height:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg); }
+.react-flow { background:var(--bg); }
+.ice-node { width:188px; height:46px; box-sizing:border-box; border:1px solid var(--line); border-radius:7px; background:var(--panel); padding:6px 9px 6px 13px; position:relative; color:var(--ink); transition:opacity .15s; }
+.ice-node .bar { position:absolute; left:0; top:0; bottom:0; width:4px; border-radius:7px 0 0 7px; background:var(--sc); }
+.ice-node .nm { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ice-node .meta { display:flex; gap:6px; font-size:10.5px; opacity:.75; margin-top:2px; white-space:nowrap; }
+.ice-node .nb { margin-left:auto; color:var(--sc); font-weight:700; opacity:1; }
+.ice-node.dim { opacity:.25; }
+.ice-node.hl { border-color:var(--accent); }
+.ice-node.sel { box-shadow:0 0 0 2px var(--accent); }
+.ice-node.match { box-shadow:0 0 0 2px #e0a100; }
+.ice-node.root { box-shadow:0 0 0 2px #c62828; border-color:#c62828; }
+.ice-node .tag { position:absolute; top:-9px; left:10px; font-size:10px; font-weight:700; padding:0 6px; border-radius:8px; line-height:16px; background:#c62828; color:#fff; }
+.react-flow__handle { opacity:0; width:4px; height:4px; min-width:0; min-height:0; border:0; }
+.react-flow__controls-button { background:var(--panel); border-bottom:1px solid var(--line); fill:var(--ink); color:var(--ink); }
+.react-flow__controls-button svg { fill:var(--ink); }
+.react-flow__minimap { background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+.ice-node.trail { border-color:#c62828; }

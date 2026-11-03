@@ -1,43 +1,51 @@
-"""Lineage: DAG with failure / stale / schema-change overlay and root-cause highlight."""
+"""Lineage: pan, zoom, search and layer filter on one canvas; a failed test highlights its root-cause path in red."""
+from datetime import datetime, timedelta, timezone
+
 import streamlit as st
 
-from lib import dag, queries
-from lib.ui import empty_state, page_header
+from lib import console, lineage_component as lc, queries
+from lib.pages import lineage as logic
 
 EMPTY = ("No lineage yet. Add the icecore hooks, run `dbt run-operation icecore.setup`, then run dbt. "
-         "Set `root_cause: true` under `vars: icecore:` to highlight the root cause of failed tests.")
+         "Set `root_cause: true` under `vars: icecore:` to trace failed tests to their root cause.")
+CANVAS_KEY = "lineage_canvas"
 
-page_header("Lineage", "Where the problem started.", ["lineage", "node_executions"])
+console.page("Lineage", "Where the problem started.", ["lineage_latest", "node_executions", "test_results"])
+since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=15)
 
-try:
-    edges = queries.lineage_latest(limit=queries.MAX_LIMIT)
-    all_nodes = queries.node_executions(limit=queries.MAX_LIMIT) if edges else []
-    test_rows = queries.test_results() if edges else []
-except Exception as exc:  # no session, views not created yet: show the empty state, never crash
-    empty_state(EMPTY)
-    st.caption(f"{type(exc).__name__}: {exc}")
-    st.stop()
-
+edges, error = console.guarded(lambda: queries.lineage_latest(limit=queries.MAX_LIMIT))
 if not edges:
-    empty_state(EMPTY)
-    st.stop()
+    console.empty(EMPTY, error)
+nodes, node_error = console.guarded(lambda: queries.node_executions(limit=queries.MAX_LIMIT, since=since))
+tests, test_error = console.guarded(lambda: queries.test_results(since=since, limit=queries.MAX_LIMIT))
+for _e in (error, node_error, test_error):
+    if _e:
+        st.caption(f"Reading the views failed: {_e}")
 
-# overlay: each node's most recent status, so a test-only run does not grey out the models
-graph = dag.build_graph(edges, dag.latest_per_node(all_nodes), test_rows)
-
-failing = dag.failed_tests(test_rows)
-by_id = {t["test_unique_id"]: t for t in failing}
-choice = st.selectbox("Failed test (highlights its root cause)", [None] + list(by_id),
-                      format_func=lambda v: "None" if v is None else v.split(".")[-2] if v.count(".") > 1 else v)
-hl = dag.highlight(graph, choice, all_nodes, by_id[choice].get("invocation_id") if choice else None)
-if choice and hl["root_cause"] is None:
+options = logic.failed_test_options(tests)
+names = {o["id"]: o["id"].split(".")[-2] if o["id"].count(".") > 2 else o["name"] for o in options}
+choice = st.selectbox("Failed test (highlights its root-cause path)", [None] + list(names), key="lineage_test",
+                      format_func=lambda v: "None" if v is None else names.get(v, v))
+root = logic.root_cause_of(choice, options, nodes) if choice else None
+if choice and root is None:
     st.caption("No root cause recorded for this test (set `root_cause: true` and rerun).")
 elif choice:
-    st.caption(f"Root cause: `{hl['root_cause']}`")
+    st.caption(f"Root cause: `{root}`")
 
-stale = [n["id"] for n in graph["nodes"].values() if n["stale"]]
-if stale:
-    st.warning("Stale sources (from freshness tests): " + ", ".join(f"`{s}`" for s in stale))
-st.graphviz_chart(dag.to_dot(graph, hl), use_container_width=True)
-st.caption("Fill: red failed, amber warn, green success, grey skipped or never run. Status is each node's most recent "
-           "execution. Dashed orange border: stale source (inferred from freshness tests).")
+data = lc.payload(edges, nodes, tests, highlight=choice, root_cause=root)
+clicked = st.session_state.get(CANVAS_KEY)  # the id from the previous click (the component's value)
+summary = logic.pane_summary(clicked, data) if clicked else None
+canvas, pane = st.columns([3, 1]) if summary else (st.container(), None)
+with canvas:
+    lc.lineage(data, height=640, key=CANVAS_KEY)
+if summary and pane is not None:
+    with pane, st.container(border=True):
+        st.subheader(console.md(summary["label"]))
+        st.caption(console.md(summary["id"]))
+        st.write(f"{summary['status_label']} · {summary['type']}" + (f" · layer {summary['layer']}" if summary["layer"] else ""))
+        st.write(f"Upstream {summary['upstream']} · downstream {summary['downstream']}"
+                 + (f" · {summary['tests_failing']} failing test(s)" if summary["tests_failing"] else ""))
+        if st.button("Open node page", key="lineage_open", type="primary"):
+            console.open_node(summary["id"])
+st.caption("Click a node to highlight what feeds it and what it feeds. Colours: status of each node's latest run; "
+           "purple is a stale source (from freshness tests). A red path runs from the root cause to the failed test.")

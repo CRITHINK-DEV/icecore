@@ -99,9 +99,15 @@ def test_settings_latest_capabilities_picks_newest(logic):
     assert logic.latest_capabilities(rows)["edition"] == "B"
 
 
-def test_settings_read_error_shows_caption():
+def test_settings_read_error_shows_caption(monkeypatch):
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
+    from lib import queries
+
+    def boom(*a, **k):
+        raise RuntimeError("no session")
+    for name in ("capabilities", "invocations", "sla_declared", "silence_events"):
+        monkeypatch.setattr(queries, name, boom)
     at = AppTest.from_file(str(APP_DIR / "pages" / "settings.py"), default_timeout=30)
     at.run()
     assert not at.exception
@@ -124,3 +130,10 @@ def test_settings_page_renders_with_reads_patched(monkeypatch):
     assert [m.label for m in at.metric] == ["Edition", "icecore version", "Cortex anomaly engine", "Alert channels"]
     assert [s.value for s in at.subheader] == ["Capabilities", "Alert channels", "Versions per run"]
     assert not at.info
+
+
+def test_channels_ignore_a_null_notified_at():
+    rows = cl.channel_rows([], [], notified=[{"channel": "slack", "notified_at": None},
+                                             {"channel": "slack", "notified_at": T0}])
+    assert rows[0]["last_notified_at"] == T0
+    assert cl.channel_rows([], [], notified=[{"channel": "x", "notified_at": None}])[0]["last_notified_at"] is None

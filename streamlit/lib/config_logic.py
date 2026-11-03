@@ -87,6 +87,6 @@ def channel_rows(declared: list[dict], silences: list[dict], notified: list[dict
     for n in notified or []:
         if n.get("channel"):
             r = row(n["channel"])
-            if r["last_notified_at"] is None or n["notified_at"] > r["last_notified_at"]:
+            if n.get("notified_at") is not None and (r["last_notified_at"] is None or n["notified_at"] > r["last_notified_at"]):
                 r["last_notified_at"] = n["notified_at"]
     return sorted(channels.values(), key=lambda r: r["channel"])

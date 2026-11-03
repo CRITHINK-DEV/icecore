@@ -28,8 +28,8 @@ left, right = st.columns(2)
 with left:
     st.subheader("Capabilities")
     if cap:
-        st.table({"Setting": [k for k, _ in logic.capability_rows(cap)],
-                  "Value": [v for _, v in logic.capability_rows(cap)]})
+        st.dataframe([{"Setting": k, "Value": v} for k, v in logic.capability_rows(cap)], hide_index=True,
+                     width="stretch")
     else:
         st.caption("Nothing detected yet. " + logic.EMPTY_MESSAGE)
 with right:

@@ -55,8 +55,9 @@ def test_view_selects_only_from_the_core_view_and_casts_every_column():
 
 def test_unfillable_columns_are_typed_nulls():
     columns = {c["name"]: c["expr"] for c in run_macro("it_compat_test_results", {})["columns"]}
+    assert columns["model_unique_id"] == "t.tested_unique_id"
     assert sorted(n for n, e in columns.items() if e is None) == sorted([
-        "data_issue_id", "model_unique_id", "database_name", "schema_name", "table_name", "owners", "tags",
+        "data_issue_id", "database_name", "schema_name", "table_name", "owners", "tags",
         "test_results_query", "test_params", "test_alias", "result_rows"])
 
 

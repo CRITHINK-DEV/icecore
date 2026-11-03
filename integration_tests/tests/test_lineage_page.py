@@ -69,11 +69,63 @@ def test_cycle_does_not_hang():
     assert set(g["layers"]) == {"a", "b"}
 
 
+ARCH = "source.shop.raw.orders_archive"
+
+
+def _fresh(tid, status="fail", **kw):
+    return {"test_unique_id": tid, "test_name": "freshness", "status": status, "executed_at": "2026-11-02", **kw}
+
+
 def test_archive_freshness_does_not_mark_orders():
-    t = [{"test_unique_id": "test.shop.source_freshness_source_raw_orders_archive_loaded_at.a", "test_name": "freshness",
-          "status": "fail", "executed_at": "2026-11-02"}]
-    arch = "source.shop.raw.orders_archive"
-    assert dag.stale_sources([SRC, arch], t) == {arch: "fail"}
+    t = [_fresh("test.shop.source_freshness_source_raw_orders_archive_loaded_at.a")]
+    assert dag.stale_sources([SRC, ARCH], t) == {ARCH: "fail"}
+
+
+def test_tested_unique_id_marks_only_that_source():
+    # ids say nothing about the source: the tested node does
+    t = [_fresh("test.shop.freshness_check_1.a", tested_unique_id=ARCH)]
+    assert dag.stale_sources([SRC, ARCH], t) == {ARCH: "fail"}
+    t = [_fresh("test.shop.freshness_check_2.b", tested_unique_id=SRC)]
+    assert dag.stale_sources([SRC, ARCH], t) == {SRC: "fail"}
+
+
+def test_tested_unique_id_beats_a_misleading_test_id():
+    # the id contains source_raw_orders, but the test is attached to the archive
+    t = [_fresh("test.shop.source_freshness_source_raw_orders_loaded_at.a", tested_unique_id=ARCH)]
+    assert dag.stale_sources([SRC, ARCH], t) == {ARCH: "fail"}
+
+
+def test_tested_model_is_not_a_source():
+    t = [_fresh("test.shop.source_freshness_source_raw_orders_loaded_at.a", tested_unique_id=STG)]
+    assert dag.stale_sources([SRC], t) == {}
+
+
+def test_passing_freshness_test_with_tested_unique_id_is_not_stale():
+    assert dag.stale_sources([SRC], [_fresh("test.shop.f.a", status="pass", tested_unique_id=SRC)]) == {}
+
+
+def test_page_graph_marks_only_the_tested_source():
+    edges = EDGES + [{"parent_unique_id": ARCH, "child_unique_id": STG}]
+    g = dag.build_graph(edges, EXECS, [_fresh("test.shop.freshness_check_1.a", tested_unique_id=ARCH)])
+    assert g["nodes"][ARCH]["stale"] is True and g["nodes"][SRC]["stale"] is False
+
+
+def test_null_tested_unique_id_falls_back_to_the_name_heuristic():
+    t = [_fresh("test.shop.source_freshness_source_raw_orders_archive_loaded_at.a", tested_unique_id=None)]
+    assert dag.stale_sources([SRC, ARCH], t) == {ARCH: "fail"}
+
+
+def test_root_cause_kind_stale_source_marks_the_source():
+    t = [{"test_unique_id": TEST, "test_name": "not_null", "status": "fail", "executed_at": "2026-11-02",
+          "root_cause_unique_id": SRC, "root_cause_kind": "stale_source"}]
+    assert dag.stale_sources([SRC, ARCH], t) == {SRC: "fail"}
+    nodes = [{"unique_id": TEST, "type": "test", "status": "fail", "root_cause_unique_id": ARCH,
+              "root_cause_kind": "stale_source"}]
+    assert dag.stale_sources([SRC, ARCH], [], nodes) == {ARCH: "fail"}
+    other = [dict(nodes[0], root_cause_kind="upstream_failure")]
+    assert dag.stale_sources([SRC, ARCH], [], other) == {}
+    g = dag.build_graph(EDGES + [{"parent_unique_id": ARCH, "child_unique_id": STG}], nodes, [])
+    assert g["nodes"][ARCH]["stale"] is True and g["nodes"][SRC]["stale"] is False
 
 
 def test_recency_on_model_does_not_mark_source():

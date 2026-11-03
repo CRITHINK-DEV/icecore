@@ -9,7 +9,7 @@ macros:
         description: "The quoted obs schema holding the core views. Default the current one."
 
   - name: dbt_tests_view_sql
-    description: "The SELECT of the compat view dbt_tests: Elementary's 29 columns, in its order and types, over the core views NODE_EXECUTIONS and TEST_RESULTS only. One row per test that ran, from its latest execution. Filled: unique_id, name, short_name (the test's name), test_column_name, severity, type (generic or singular), package_name and generated_at. Tests are not lineage edges, so depends_on_nodes and parent_model_unique_id are NULL, like every other column icecore has no source for (description, tags, meta, test_params, paths, database_name, schema_name and the rest)."
+    description: "The SELECT of the compat view dbt_tests: Elementary's 29 columns, in its order and types, over the core views NODE_EXECUTIONS and TEST_RESULTS only. One row per test that ran, from its latest execution. Filled: unique_id, name, short_name (the test's name), test_column_name, severity, type (generic or singular), package_name and generated_at. parent_model_unique_id is the tested node (TEST_RESULTS.tested_unique_id, NULL when ambiguous). Tests are not lineage edges, so depends_on_nodes is NULL, like every other column icecore has no source for (description, tags, meta, test_params, paths, database_name, schema_name and the rest)."
     arguments:
       - name: obs
         type: string

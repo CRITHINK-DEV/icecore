@@ -9,7 +9,7 @@ macros:
       `test_name`, `test_type` (generic or singular), `"COLUMN"` (quote it), `severity`, `status`, `failures`,
       `message` (redacted by default), `execution_time_s`, `root_cause_unique_id` and `root_cause_kind` (null unless root-cause attribution wrote them), the scored-test fields `engine`, `expected`, `lower`,
       `upper`, `score` (null unless the test wrote dbt.anomaly.* keys), `executed_at` (the event TIMESTAMP) and
-      `query_id`. The spec's `model_unique_id` is not a column: no emitter writes it yet.
+      `query_id` and `tested_unique_id` (last column; the model or source the test is attached to, from `dbt.test.attached_node`: the spec's `model_unique_id`, widened to sources; null for a singular test over several nodes).
     arguments:
       - name: event_table
         type: string

@@ -4,8 +4,10 @@ Inputs are the rows the query layer returns (LINEAGE_LATEST, NODE_EXECUTIONS, TE
 status overlay per node, a stale flag per source, the root-cause highlight of a selected test, and a Graphviz DOT string.
 
 Staleness: no view records "this source is stale" (the source freshness command writes no icecore record). A source is
-marked stale only from freshness TESTS: a test result whose name or id mentions freshness or recency, whose latest
-status is fail, error or warn, and whose id contains the source's name (the last two parts of `source.<pkg>.<src>.<tbl>`).
+marked stale from a freshness or recency TEST whose latest status is fail, error or warn and whose tested node
+(TEST_RESULTS.tested_unique_id, dbt's attached_node) is the source. Only a result with no tested_unique_id (a record
+written before that key existed) falls back to the name heuristic: the test name is freshness or recency and its id contains
+`source_<src>_<tbl>`. A result whose root_cause_kind is stale_source also marks its root_cause_unique_id when that is a source.
 """
 from __future__ import annotations
 
@@ -69,24 +71,45 @@ def _is_freshness_test(t: dict) -> bool:
     return (t.get("test_name") or "").lower().split(".")[-1] in FRESHNESS_WORDS
 
 
-def stale_sources(source_ids: Iterable[str], test_rows: Iterable[dict]) -> dict[str, str]:
-    """source unique_id -> the freshness test status that marks it stale (only stale sources are returned).
+def _name_match(tid: str, sources: dict[str, str]) -> str | None:
+    """Fallback for a result with no tested_unique_id: the source whose `source_<src>_<tbl>` the test id contains, longest key
+    first, so raw.orders_archive never marks raw.orders."""
+    best = None
+    for sid, key in sources.items():
+        if re.search(rf"(?<![a-z0-9]){re.escape('source_' + key)}", tid) and (best is None or len(key) > len(sources[best])):
+            best = sid
+    return best
 
-    A test id must contain `source_<src>_<tbl>` with a boundary before `source_`; each test goes only to the source with
-    the longest matching key, so raw.orders_archive never marks raw.orders."""
+
+def stale_sources(source_ids: Iterable[str], test_rows: Iterable[dict], node_rows: Iterable[dict] | None = None) -> dict[str, str]:
+    """source unique_id -> the status of the freshness test that marks it stale (only stale sources are returned).
+
+    Order of evidence per latest test result: root_cause_kind stale_source (its root_cause_unique_id), then tested_unique_id
+    for a freshness/recency test, then the name heuristic when tested_unique_id is null. node_rows (NODE_EXECUTIONS rows, which
+    carry root_cause_kind too) are read for the root-cause evidence only."""
+    source_ids = list(source_ids)
+    known = set(source_ids)
     sources = {sid: source_key(sid).lower().replace(".", "_") for sid in source_ids}
     out: dict[str, str] = {}
+
+    def mark(sid: str | None, status: str) -> None:
+        if sid in known and out.get(sid) not in FAILED:
+            out[sid] = status
+
     for t in latest_tests(test_rows).values():
         status = (t.get("status") or "").lower()
-        if status not in FAILED | WARNED or not _is_freshness_test(t):
+        if status not in FAILED | WARNED:
             continue
-        tid = (t.get("test_unique_id") or "").lower()
-        best = None
-        for sid, key in sources.items():
-            if re.search(rf"(?<![a-z0-9]){re.escape('source_' + key)}", tid) and (best is None or len(key) > len(sources[best])):
-                best = sid
-        if best is not None:
-            out[best] = status
+        if (t.get("root_cause_kind") or "").lower() == "stale_source":
+            mark(t.get("root_cause_unique_id"), status)
+        if not _is_freshness_test(t):
+            continue
+        tested = t.get("tested_unique_id")
+        mark(tested if tested else _name_match((t.get("test_unique_id") or "").lower(), sources), status)
+    for r in latest_per_node(list(node_rows or [])):
+        status = (r.get("status") or "").lower()
+        if (r.get("type") or "") == "test" and status in FAILED | WARNED and (r.get("root_cause_kind") or "").lower() == "stale_source":
+            mark(r.get("root_cause_unique_id"), status)
     return out
 
 
@@ -108,7 +131,7 @@ def build_graph(edges: list[dict], node_rows: list[dict], test_rows: list[dict] 
             "status": ex.get("status"), "overlay": overlay_of(ex.get("status")),
             "root_cause": ex.get("root_cause_unique_id"), "stale": False,
         }
-    stale = stale_sources([u for u in nodes if u.startswith("source.")], test_rows or [])
+    stale = stale_sources([u for u in nodes if u.startswith("source.")], test_rows or [], node_rows)
     for uid, st_ in stale.items():
         nodes[uid]["stale"] = True
         nodes[uid]["stale_status"] = st_

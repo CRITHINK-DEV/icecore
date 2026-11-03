@@ -64,6 +64,21 @@ def test_runtime_is_cloud_when_dbt_cloud_variables_are_set(monkeypatch, key):
     assert run_macro("it_base_attributes", {})["dbt.runtime"] == "cloud"
 
 
+@pytest.mark.parametrize("project_dir, profiles_dir, expected", [
+    # measured inside EXECUTE DBT PROJECT (spikes/S13-dbt-projects.md, results/s13.json, key invocation_args)
+    ("/tmp/dbt", "/tmp/dbt_effective_profiles_tlp_g3gd", "snowflake_native"),
+    # a local run: either signal alone is not enough
+    ("/Users/me/shop", "/Users/me/.dbt", "core"),
+    ("/tmp/dbt", "/Users/me/.dbt", "core"),
+    ("/Users/me/shop", "/tmp/dbt_effective_profiles_x", "core"),
+])
+def test_runtime_is_snowflake_native_only_inside_execute_dbt_project(project_dir, profiles_dir, expected):
+    seen, _, res = run_capturing(["run-operation", "it_runtime",
+                                  "--args", json.dumps({"project_dir": project_dir, "profiles_dir": profiles_dir})])
+    assert res.success, res.exception
+    assert seen[-1] == expected
+
+
 def test_model_node_attributes():
     attrs = run_macro("it_node_attributes", {"unique_id": "model.icecore_integration_tests.rc_a"})
     assert attrs["dbt.node.unique_id"] == "model.icecore_integration_tests.rc_a"

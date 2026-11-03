@@ -38,7 +38,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 - **Anaconda terms.** `ICECORE_EMIT_RUN` is a Python procedure that uses Snowflake's third-party Python packages, so your organization must have accepted the Anaconda terms (an organization administrator does this once, in Snowsight).
 - **An active event table.** `SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT;` must not be empty. If it is, an admin sets it: see the [quickstart](docs/quickstart.md#1-prepare-snowflake). `icecore.setup` never creates an event table or changes this association.
 - **dbt.** dbt Core `>=1.8.0,<3.0.0` with `dbt-snowflake`. The test suite runs on dbt-core 1.8 (the floor) and on the latest release; dbt Cloud, dbt Fusion and dbt Projects on Snowflake are not tested yet.
-- **Privileges for `icecore.setup`.** The role that runs it needs USAGE on the target database, CREATE SCHEMA on it (or ownership of an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table). It needs CREATE TASK too when a model declares `meta.sla`. With `alerts: true` it also needs CREATE ALERT on the schema, USAGE on the warehouse and the notification integration, and `EXECUTE TASK` and `EXECUTE ALERT` on the account to resume the silence task and the alerts (if it lacks them, `setup` prints the grant for an admin and leaves them suspended). To set the log and trace levels itself it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account; if it lacks them, `setup` prints the statement for an admin and carries on.
+- **Privileges for `icecore.setup`.** The role that runs it needs USAGE on the target database, CREATE SCHEMA on it (or ownership of an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table). It needs CREATE TASK too when a model declares `meta.sla`, or when the Cortex engine refreshes its models on a schedule. With `alerts: true` it also needs CREATE ALERT on the schema, USAGE on the warehouse and the notification integration, and `EXECUTE TASK` and `EXECUTE ALERT` on the account to resume the silence task and the alerts (if it lacks them, `setup` prints the grant for an admin and leaves them suspended). To set the log and trace levels itself it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account; if it lacks them, `setup` prints the statement for an admin and carries on.
 - **Privileges for the role that runs dbt.** USAGE on the database, the icecore schema and the procedures, and SELECT on the views. Details: [Configuration](docs/configuration.md#what-setup-creates).
 
 ## Install
@@ -116,6 +116,8 @@ models:
 
 The other monitors are `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly`. Each metric is scored against the test's own history (30 days, at least 7 points; until then it only records metrics). An anomaly warns by default; set `vars: icecore: anomaly_severity: error` to make it fail the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test. Arguments: [Configuration](docs/configuration.md#generic-tests). To declare a schedule and let icecore detect a missed run, add `meta.sla` to a model.
 
+**Cost per model is opt-in.** Set `vars: icecore: cost: true`. The role that runs dbt then needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on the `SNOWFLAKE` database) to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns and the run carries on. Until it is on, the app's Cost page stays empty.
+
 Then read the views, not the event table:
 
 ```sql
@@ -157,7 +159,7 @@ It uploads the app files (including the Console's `components/console/build/`) a
 - **Views and external tables** have no row-count metadata, so `icecore.volume` cannot measure them.
 - **`setup` with `app: true`** does nothing yet: deploy the app as described above.
 - **Alerts and tasks use a warehouse** once resumed (`alerts: true`).
-- **Cost** appears hours after a run: Snowflake publishes query attribution with a lag, and a later dbt run writes the credits.
+- **Cost** is off by default (`cost: true` turns it on) and appears hours after a run: Snowflake publishes query attribution with a lag, and a later dbt run writes the credits.
 - **Resolve and Reopen** in the app are kept in the browser tab only. Acknowledge is the only recorded action.
 - **Snowflake only**, for good.
 

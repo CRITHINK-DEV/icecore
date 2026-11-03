@@ -16,7 +16,7 @@ The left menu has these sections. Each one shows 3 to 5 KPI tiles, a filter bar 
 | Runs | Each dbt invocation and the timeline of its nodes. |
 | Schedules and freshness | Declared schedules (`meta.sla`), missed runs, and source freshness against its limit. |
 | Schema changes | Columns added, removed or retyped. |
-| Cost | Credits per run and per model, from the query attribution the cost reader records. |
+| Cost | Credits per run and per model, from Snowflake's query attribution. Opt-in: empty until the `cost` var is on ([configuration](configuration.md#cost-per-node)), and a run's credits arrive hours later. |
 | Lineage | The DAG, left to right, with a status overlay, upstream and downstream highlight, the root-cause path, a layer filter and a node search. |
 | Models and sources | Every node, with its page: status history, tests, metrics, schema, cost. |
 | Settings and about | What `setup` detected (edition, event table, levels, Cortex), and the data-quality list of views that could not be read. |

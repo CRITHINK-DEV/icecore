@@ -71,8 +71,8 @@ dbt deps
 ```
 
 ```text
-Installing /path/to/icecore
-Installed from <local @ /path/to/icecore>
+Installing https://github.com/CRITHINK-DEV/icecore.git
+Installed from revision v0.1.0
 ```
 
 ## 3. Add the two hooks

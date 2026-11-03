@@ -81,7 +81,7 @@
 
   {#- Event table -#}
   {%- if dedicated_event_table and edition == 'STANDARD' -%}
-    {%- do notes.append('a database-level event table needs Enterprise edition; on Standard, icecore uses the account\'s active event table (' ~ (active or 'none') ~ ')') -%}
+    {%- do notes.append('a database-level event table needs Enterprise edition; on Standard, icecore uses the active event table of the account (' ~ (active or 'none') ~ ')') -%}
   {%- elif dedicated_event_table -%}
     {%- if active | upper != dedicated_event_table | trim | upper -%}
       {%- if edition not in ('ENTERPRISE', 'BUSINESS_CRITICAL', 'VIRTUAL_PRIVATE_SNOWFLAKE') -%}

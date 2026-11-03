@@ -120,7 +120,7 @@ def test_slack_text_escapes_ampersand_and_angle_brackets_and_every_webhook_clean
     assert "replace(replace(replace(coalesce(title, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')" in slack
     for webhook in ("slack", "teams"):
         sql = call("alert_message_sql", {"type": webhook, "source": "pending"})
-        assert "'[[:cntrl:]]'" in sql and "''''" in sql and "'\\\\'" in sql
+        assert "'[[:cntrl:]]'" in sql and "chr(34), chr(39)" in sql and "'\\\\'" in sql
         assert "'\\n'" not in sql  # one line: no raw newline into a JSON body template
     email = call("alert_message_sql", {"type": "email", "source": "pending"})
     assert "&amp;" not in email and "cntrl" not in email and "'\\n'" in email

@@ -114,7 +114,7 @@ end;
     {%- set previous = icecore._icecore_safe_scalar(sql, 'previous observation', relation) -%}
   {%- endif -%}
   {%- if previous is not none -%}{{ return(previous) }}{%- endif -%}
-  {{ return(run_query("select to_varchar(dateadd(second, -" ~ ((lookback_hours | float) * 3600) | int ~ ", sysdate()), '" ~ iso ~ "')").rows[0][0]) }}
+  {{ return(run_query("select to_varchar(dateadd(second, -" ~ ((lookback_hours | float) * 3600) | int ~ ", sysdate()), " ~ icecore._sql(iso, 'string') ~ ")").rows[0][0]) }}
 {% endmacro %}
 
 

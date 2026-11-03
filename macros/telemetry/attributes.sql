@@ -104,10 +104,15 @@
 {% endmacro %}
 
 
-{#- Where dbt runs: fusion (dbt 2.x), cloud (a DBT_CLOUD_* variable is set) or core.
-    snowflake_native (EXECUTE DBT PROJECT) is not detected yet: no spike measured what that runtime exposes
-    (GATE1.md, open item 5). -#}
-{% macro _icecore_runtime() %}
+{#- Where dbt runs: fusion (dbt 2.x), cloud (a DBT_CLOUD_* variable is set), snowflake_native (EXECUTE DBT PROJECT)
+    or core.
+    snowflake_native is read from the invocation's own arguments, as measured in spike S13 (spikes/S13-dbt-projects.md):
+    inside EXECUTE DBT PROJECT, dbt 1.9.4 ran with project_dir /tmp/dbt and a profiles_dir under
+    /tmp/dbt_effective_profiles_<random>. Both must match, because neither is documented by Snowflake and a
+    local run uses neither. `signals` (a dict with project_dir and profiles_dir) is for tests; the default reads
+    invocation_args_dict. -#}
+{% macro _icecore_runtime(signals=none) %}
+  {#- Fusion first: it is decided by the dbt major version alone, whatever environment it runs in. -#}
   {%- if (dbt_version | string).split('.')[0] | int >= 2 -%}
     {{ return('fusion') }}
   {%- endif -%}
@@ -116,6 +121,10 @@
       {{ return('cloud') }}
     {%- endif -%}
   {%- endfor -%}
+  {%- set signals = signals if signals is not none else (invocation_args_dict if invocation_args_dict is defined else {}) -%}
+  {%- if (signals.get('project_dir') | string) == '/tmp/dbt' and (signals.get('profiles_dir') | string).startswith('/tmp/dbt_effective_profiles') -%}
+    {{ return('snowflake_native') }}
+  {%- endif -%}
   {{ return('core') }}
 {% endmacro %}
 

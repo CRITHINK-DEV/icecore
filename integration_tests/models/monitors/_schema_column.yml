@@ -63,3 +63,20 @@ sources:
                   name: it_column_bad_bounds
                   metrics: "{{ var('it_bad_metrics', ['avg']) }}"
                   bounds: "{{ var('it_bad_bounds', {'avg': {'max': 1}}) }}"
+  - name: it_uc8_snapshot
+    schema: spikes
+    tables:
+      - name: snap
+        identifier: "{{ var('it_uc8_snap_table', 'it_uc8_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_snapshot_snap
+              config:
+                severity: warn
+      - name: wide
+        identifier: "{{ var('it_uc8_wide_table', 'it_uc8_unset') }}"
+        data_tests:
+          - icecore.schema_changes:
+              name: it_snapshot_wide
+              config:
+                severity: warn

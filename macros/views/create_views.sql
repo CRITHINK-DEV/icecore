@@ -38,6 +38,7 @@
     {'name': 'NODE_EXECUTIONS', 'sql': icecore.node_executions_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'SILENCE_EVENTS', 'sql': icecore.silence_events_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'ALERTS_FEED', 'sql': icecore.alerts_feed_view_sql(event_table=event_table, obs_schema=obs)},
+    {'name': 'SCHEMA_COLUMNS', 'sql': icecore.schema_columns_view_sql(event_table=event_table, obs_schema=obs)},
   ]) }}
 {% endmacro %}
 

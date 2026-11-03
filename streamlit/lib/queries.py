@@ -70,6 +70,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),
+    "SCHEMA_COLUMNS": ("merged", "macros/views/schema_columns.sql", (
+        "relation", "column", "data_type", "snapshot_at", "is_new", "invocation_id")),
     "SLA_DECLARED": ("merged", "macros/control/create_sla_declared_view.sql", (
         "unique_id", "expected_every_minutes", "grace_minutes", "channel", "severity")),
 }
@@ -486,3 +488,16 @@ def build_sla_declared(views_schema, unique_id=None, limit=MAX_LIMIT):
 def sla_declared(unique_id: str | None = None, limit: int = MAX_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
     """SLA_DECLARED: every model with meta.sla (created by setup, macros/control/create_sla_declared_view.sql)."""
     return _read(build_sla_declared, layer, unique_id, limit, view="SLA_DECLARED")
+
+
+def build_schema_columns(views_schema, relation=None, since=None, limit=DEFAULT_LIMIT):
+    w = _Where()
+    w.eq("relation", relation)
+    w.at_least("snapshot_at", since)
+    return _build(views_schema, "SCHEMA_COLUMNS", w, "snapshot_at desc, \"COLUMN\"", limit)
+
+
+def schema_columns(relation: str | None = None, limit: int = DEFAULT_LIMIT, since=None,
+                   layer: QueryLayer | None = None) -> list[Row]:
+    """SCHEMA_COLUMNS: the column state of a relation per schema_changes run, newest snapshot first."""
+    return _read(build_schema_columns, layer, relation, since, limit, view="SCHEMA_COLUMNS")

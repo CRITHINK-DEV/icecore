@@ -35,6 +35,13 @@ def test_normalise_maps_every_dbt_status(raw, expected):
     assert status.normalise(raw) == expected
 
 
+def test_normalise_maps_labels_back():
+    from lib.status import STATUSES, label, normalise, sort_key
+
+    assert [normalise(label(s)) for s in STATUSES] == list(STATUSES)
+    assert sort_key("🔴 Failed") == 0 and sort_key("🟢 OK") == 3
+
+
 def test_label_and_sort_failures_first():
     from lib.status import STATUSES, COLOURS, label, sort_key
 
@@ -56,6 +63,32 @@ def test_esc_and_md_escape_markup():
 
     assert not re.search(r"(?<!\\)[*_|]", out), out
     assert md("<script>") != "<script>" and "<" not in md("<script>")
+
+
+def test_md_escapes_shortcodes_and_line_starts():
+    from lib.console import md
+
+    for text in (":smile:", ":material/x:", "# h", "- a", "1. a", "> q", "a\n- b\n# c"):
+        out = md(text)
+        assert "\n" not in out
+        assert ":" not in out.replace("\\:", "") and not out.lstrip().startswith(("#", "-", ">"))
+    assert md("1. a").startswith("1\\.")
+
+
+def test_theme_config_has_only_valid_keys():
+    import tomllib
+
+    from streamlit import config
+
+    from lib.status import COLOURS
+
+    theme = tomllib.loads((APP_DIR / ".streamlit" / "config.toml").read_text())["theme"]
+    assert set(theme) <= {k.split(".", 1)[1] for k in config._config_options_template if k.startswith("theme.")
+                          and k.count(".") == 1}
+    assert all(not isinstance(v, dict) for v in theme.values()), "no theme.light / theme.dark sub-sections in 1.50"
+    assert {"base", "backgroundColor", "textColor"}.isdisjoint(theme)
+    assert (theme["redColor"], theme["orangeColor"], theme["greenColor"], theme["violetColor"],
+            theme["grayColor"]) == tuple(COLOURS[k] for k in ("failed", "warning", "ok", "late", "not_run"))
 
 
 def test_truncated_flag():
@@ -183,3 +216,19 @@ def test_table_sorts_failures_first_and_notes_truncation():
     df = at.dataframe[0].value
     assert list(df["status"]) == ["🔴 Failed", "🟢 OK"]
     assert any("Showing the latest 2 rows." in c.value for c in at.caption)
+
+
+def test_table_sorts_labelled_statuses():
+    def app():
+        import os
+        import sys
+
+        sys.path.insert(0, os.environ["APP_DIR"])
+        from lib.console import table
+
+        table([{"unique_id": "n", "status": "🟢 OK"}, {"unique_id": "f", "status": "🔴 Failed"}], {}, "t1")
+
+    import os
+
+    os.environ["APP_DIR"] = str(APP_DIR)
+    assert list(_run(app).dataframe[0].value["unique_id"]) == ["f", "n"]

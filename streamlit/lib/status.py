@@ -13,6 +13,8 @@ COLOURS: dict[str, str] = {
 
 _LABELS = {"failed": "🔴 Failed", "warning": "🟠 Warning", "ok": "🟢 OK", "late": "🟣 Late", "not_run": "⚪ Not run"}
 
+_FROM_LABEL = {v: k for k, v in _LABELS.items()}
+
 _MAP = {
     "success": "ok", "pass": "ok", "passed": "ok", "ok": "ok",
     "error": "failed", "fail": "failed", "failed": "failed", "runtime error": "failed",
@@ -23,7 +25,9 @@ _MAP = {
 
 
 def normalise(raw: str | None) -> str:
-    """Map a dbt or icecore status to one of STATUSES. Unknown or missing values are `not_run`."""
+    """Map a dbt or icecore status, or a label from `label()`, to one of STATUSES. Unknown or missing: `not_run`."""
+    if isinstance(raw, str) and raw in _FROM_LABEL:
+        return _FROM_LABEL[raw]
     return _MAP.get(str(raw).strip().lower(), "not_run") if raw is not None else "not_run"
 
 

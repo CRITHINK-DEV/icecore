@@ -1,17 +1,9 @@
-# The Console's look: neutral greys and one accent, light and dark. No other CSS in the app.
+# The Console's look. One [theme] with an accent and the status colours (lib/status.py COLOURS); no base or
+# background/text colours, so Streamlit's built-in light and dark themes both keep working. No other CSS in the app.
 [theme]
-base = "light"
 primaryColor = "#3b5bdb"
-font = "sans serif"
-
-[theme.light]
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f4f5f7"
-textColor = "#1f2328"
-primaryColor = "#3b5bdb"
-
-[theme.dark]
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1a1f29"
-textColor = "#e6e8eb"
-primaryColor = "#748ffc"
+redColor = "#c62828"
+orangeColor = "#b26a00"
+greenColor = "#2e7d32"
+violetColor = "#6a4fb3"
+grayColor = "#9e9e9e"

@@ -14,13 +14,13 @@ import streamlit as st
 
 from lib import settings
 from lib.navigation import NODE_PAGE
-from lib.status import COLOURS, label, normalise, sort_key  # noqa: F401  (COLOURS re-exported for the pages)
+from lib.status import COLOURS, STATUSES, label, normalise, sort_key  # noqa: F401  (COLOURS re-exported for the pages)
 
 WINDOWS = (7, 15)
 DEFAULT_DAYS = 15
 NODE_STATE_KEY = "icecore_console_node"
 
-_MD_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|~$>])")
+_MD_SPECIALS = re.compile(r"([\\`*_{}\[\]()#+\-.!|~$>:=])")
 
 
 # --- escaping ---------------------------------------------------------------------------------------------------
@@ -34,7 +34,10 @@ def md(s: Any) -> str:
     """Text for st.markdown: markdown specials backslash-escaped and `<` made an entity, so names render as text."""
     if s is None:
         return ""
-    return _MD_SPECIALS.sub(r"\\\1", str(s).replace("&", "&amp;").replace("<", "&lt;"))
+    text = str(s).replace("&", "&amp;").replace("<", "&lt;")
+    # a newline would start a new markdown block (list, heading, quote): keep one line, as the names are labels
+    text = re.sub(r"\s*[\r\n]+\s*", " ", text)
+    return _MD_SPECIALS.sub(r"\\\1", text)
 
 
 # --- header and states ------------------------------------------------------------------------------------------
@@ -131,8 +134,6 @@ def filter_bar(key: str, *, layers: list[str] | None, statuses: bool = True) -> 
         layer = None if chosen == "All" else chosen
     picked: list[str] = []
     if statuses:
-        from lib.status import STATUSES
-
         wanted_status = [s for s in (_param("status") or "").split(",") if s in STATUSES]
         with next(it):
             picked = list(st.pills("Status", list(STATUSES), selection_mode="multi", default=wanted_status or None,
@@ -153,10 +154,10 @@ def truncation_note(rows: list, limit: int | None) -> str | None:
 
 
 def open_node(unique_id: str) -> None:
-    """Open the node page for `unique_id`. The id travels in the query string (shareable) and in session state
-    (in case the runtime drops query parameters on a page switch)."""
+    """Open the node page for `unique_id`. The id travels in session state: st.switch_page (1.50) always clears the
+    query parameters, so a ?node= set here would be lost. The node page calls `sync_node_param()` to put it back in
+    the URL, which makes the view shareable."""
     st.session_state[NODE_STATE_KEY] = unique_id
-    st.query_params["node"] = unique_id
     st.switch_page(NODE_PAGE)
 
 
@@ -165,10 +166,18 @@ def selected_node() -> str | None:
     return _param("node") or st.session_state.get(NODE_STATE_KEY)
 
 
+def sync_node_param() -> str | None:
+    """For the node page: write the selected node into st.query_params["node"] so the link is shareable."""
+    node = selected_node()
+    if node and st.query_params.get("node") != node:
+        st.query_params["node"] = node
+    return node
+
+
 def table(rows: list[dict], column_config: dict, key: str, *, limit: int | None = None,
           node_column: str | None = "unique_id") -> dict | None:
     """Failures first, a truncation caption, and on a single-row selection open the node. Returns the selected row."""
-    ordered = sorted(rows, key=lambda r: sort_key(r["status"]) if "status" in r else 0)
+    ordered = sorted(rows, key=lambda r: sort_key(r["status"]) if "status" in r else len(STATUSES))
     shown = [{**r, "status": label(r["status"])} if "status" in r and not _already_label(r["status"]) else r
              for r in ordered]
     note = truncation_note(rows, limit)

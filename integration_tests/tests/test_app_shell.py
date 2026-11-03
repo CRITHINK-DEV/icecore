@@ -125,6 +125,15 @@ def test_global_node_search_lists_lineage_nodes_and_opens_the_node_page(monkeypa
     run_app(at=at)
     assert at.session_state["icecore_console_node"] == "model.p.stg_orders"
     assert switched == ["pages/node.py"]
+    # passes because switch_page is mocked above; the real one clears the query params, so the node page restores
+    # ?node= from the session copy through console.sync_node_param()
+    assert at.session_state["icecore_console_node"] == "model.p.stg_orders"
+
+
+def test_node_page_puts_the_selected_node_back_in_the_url():
+    at = run_app()
+    at.session_state["icecore_console_node"] = "model.p.stg_orders"
+    run_app("pages/node.py", at=at)
     assert at.query_params["node"] == ["model.p.stg_orders"]
 
 

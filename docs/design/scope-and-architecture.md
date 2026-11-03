@@ -1,6 +1,6 @@
 # Scope & Architecture — Snowflake-native dbt Observability Package
 
-Oct 27, 2026 · updated Oct 31, 2026 (Gate 1) · @anouar · Draft for review
+Oct 27, 2026 · updated Oct 31, 2026 (Gate 1) · Draft for review
 
 ## 1. Vision and positioning
 

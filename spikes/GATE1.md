@@ -1,6 +1,6 @@
 # Gate 1: how icecore writes telemetry
 
-Decision record. Decided on 31 Oct 2026 by the owner, Anouar Zbaida, after spikes S1, S2, S4 and S5. Story cb2e80f0 (S12).
+Decision record. Decided on 31 Oct 2026 by the owner after spikes S1, S2, S4 and S5. Story cb2e80f0 (S12).
 Follow-ups of the round-2 review of PR #23 (items 1 to 5 of story 43f3a439) are folded in below.
 Spike S3 ran afterwards (31 Oct 2026, `S3.md`); open item 1 records what it settled.
 

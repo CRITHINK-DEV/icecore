@@ -62,3 +62,37 @@ def test_an_existing_app_is_updated_in_place_so_its_viewers_keep_their_grants():
 def test_an_existing_app_that_is_not_live_yet_is_made_live_first():
     assert deploy.update("my_db", "icecore_obs", None) == [
         "alter streamlit MY_DB.ICECORE_OBS.ICECORE_APP add live version from last"]
+
+
+def test_the_app_settings_file_goes_to_the_stage_root(tmp_path):
+    import shutil
+    copy = tmp_path / "streamlit"
+    shutil.copytree(REPO / "streamlit", copy, ignore=shutil.ignore_patterns("node_modules", "frontend"))
+    (copy / "icecore_app.toml").write_text('views_schema = "DB.SCHEMA"\n')
+    puts = [s for s in deploy.plan("d", "s", "w", copy) if "icecore_app.toml" in s]
+    assert puts == [f"put 'file://{copy}/icecore_app.toml' @D.S.ICECORE_APP_STAGE auto_compress=false overwrite=true"]
+
+
+def test_missing_settings_are_named():
+    assert deploy.missing_settings({}) == ["ICECORE_APP_DATABASE", "ICECORE_APP_WAREHOUSE",
+                                           "SNOWFLAKE_CONNECTION_NAME (or SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER)"]
+    ok = {"ICECORE_APP_DATABASE": "d", "ICECORE_APP_WAREHOUSE": "w", "SNOWFLAKE_CONNECTION_NAME": "c"}
+    assert deploy.missing_settings(ok) == []
+    assert deploy.missing_settings({**ok, "SNOWFLAKE_CONNECTION_NAME": "", "SNOWFLAKE_ACCOUNT": "a"}) != []
+    assert deploy.missing_settings({"ICECORE_APP_DATABASE": "d", "ICECORE_APP_WAREHOUSE": "w"}, dry_run=True) == []
+
+
+def test_main_exits_2_with_a_message_and_no_traceback(monkeypatch, capsys):
+    for n in ("ICECORE_APP_DATABASE", "ICECORE_APP_WAREHOUSE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_CONNECTION_NAME"):
+        monkeypatch.delenv(n, raising=False)
+    assert deploy.main([]) == 2
+    err = capsys.readouterr().err
+    assert "ICECORE_APP_DATABASE" in err and "SNOWFLAKE_ACCOUNT" in err and "Traceback" not in err
+
+
+def test_dry_run_prints_the_make_live_step_as_conditional_and_no_done(monkeypatch, capsys):
+    monkeypatch.setenv("ICECORE_APP_DATABASE", "d")
+    monkeypatch.setenv("ICECORE_APP_WAREHOUSE", "w")
+    assert deploy.main(["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "first deploy only" in out and "add live version from last" in out and "Done" not in out

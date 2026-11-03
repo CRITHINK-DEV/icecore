@@ -47,7 +47,7 @@ The first plan was native Streamlit widgets (Streamlit 1.50 with Altair, st.navi
 - **Pure data logic** lives in `streamlit/lib/*.py` with offline tests. The host page is thin.
 - **SQL safety**: no value is ever built into SQL text. The acknowledgement is a bound `CALL ICECORE_ACK(?)` through `lib/ack.py`, never an `UPDATE`.
 - **No CDN**: the component loads nothing from the network, so it works in Streamlit in Snowflake.
-- **The views schema** is the setting `ICECORE_VIEWS_SCHEMA` (default `<session database>.ICECORE_OBS`; `lib/settings.py`).
+- **The views schema** (`lib/settings.py`) is, first match wins: the `ICECORE_VIEWS_SCHEMA` env var; `views_schema` in an optional `icecore_app.toml` at the stage root; the app's own schema, if it holds `INVOCATIONS`; `<session database>.ICECORE_OBS`.
 
 ## The decided how
 

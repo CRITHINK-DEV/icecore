@@ -42,8 +42,8 @@ Each tile has a help text that says how its number is computed.
 The app takes the views schema (`DATABASE.SCHEMA`, plain unquoted identifiers, upper-cased) from the first of these that applies:
 
 1. The `ICECORE_VIEWS_SCHEMA` environment variable (local runs).
-2. `views_schema = "DB.SCHEMA"` in an optional `streamlit/icecore_app.toml`, next to `streamlit_app.py`. This is the way to set it in Streamlit in Snowflake. Upload it with the other files (`PUT file://streamlit/icecore_app.toml @<db>.<schema>.<stage>/icecore_app`), or add it to the `artifacts` of `snowflake.yml`.
-3. The app's own schema, when the app is created in the views schema (`CREATE STREAMLIT <db>.<views schema>.ICECORE_APP`). It needs no setting and is the recommended path for a deployed app.
+2. `views_schema = "DB.SCHEMA"` in an optional `streamlit/icecore_app.toml`, next to `streamlit_app.py`. This is the way to set it in Streamlit in Snowflake. It must sit at the stage root with `streamlit_app.py` (`PUT file://streamlit/icecore_app.toml @<db>.<schema>.<stage>`); `make deploy-app` does this when the file exists. In a manual deploy, put it at the root too.
+3. The app's own schema, when it holds the views (it has `INVOCATIONS`), as when the app is created in the views schema (`CREATE STREAMLIT <db>.<views schema>.ICECORE_APP`). It needs no setting and is the recommended path for a deployed app.
 4. `<current database>.ICECORE_OBS`, the schema `icecore.setup` creates.
 
 ## Run the app on your laptop (recommended)
@@ -60,9 +60,9 @@ The app takes the views schema (`DATABASE.SCHEMA`, plain unquoted identifiers, u
 
    ```bash
    git clone https://github.com/crithink-dev/icecore.git && cd icecore
-   python3 -m venv .venv-app
-   .venv-app/bin/pip install -r streamlit/requirements-local.txt
    ```
+
+   `make app` (step 3) makes the virtualenv `.venv-app` on the first run, with the first Python 3.10 to 3.13 it finds and `streamlit/requirements-local.txt`. Set `PYTHON=<interpreter>` to choose another.
 
 2. Tell the app how to log in. Use one of:
 
@@ -100,6 +100,8 @@ The files, relative to `streamlit/`:
 The packages are in `environment.yml` (Streamlit 1.50.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
 
 ### Option 1: `make deploy-app` (recommended)
+
+**Privileges of the deploying role.** CREATE STAGE and CREATE STREAMLIT on the app's schema, and USAGE on the database, the schema and the query warehouse. Because the app runs with its owner's rights, that role (its owner) also needs SELECT on the views and USAGE on `ICECORE_ACK`.
 
 The script reads the file list from `streamlit/snowflake.yml` (including the build folder), creates a stage, uploads each file to its own folder and creates the app. It never runs a grant.
 

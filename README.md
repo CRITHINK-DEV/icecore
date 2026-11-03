@@ -34,11 +34,11 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 
 ## Requirements
 
-- **Snowflake.** Standard edition works, with the account's active event table. Enterprise edition or above can also give the database its own event table. icecore uses an event table, Snowflake Scripting and Python stored procedures, and Alerts and Tasks (only if you turn the alerts on). Cortex anomaly detection is optional: without it the native engine scores.
+- **Snowflake.** Standard edition is supported with the account's active event table (that records land there from a database with no event table of its own is not measured yet: see [Known limits](#known-limits)). Enterprise edition or above can also give the database its own event table. icecore uses an event table, Snowflake Scripting and Python stored procedures, and Alerts and Tasks (only if you turn the alerts on). Cortex anomaly detection is optional: without it the native engine scores.
 - **Anaconda terms.** `ICECORE_EMIT_RUN` is a Python procedure that uses Snowflake's third-party Python packages, so your organization must have accepted the Anaconda terms (an organization administrator does this once, in Snowsight).
 - **An active event table.** `SHOW PARAMETERS LIKE 'EVENT_TABLE' IN ACCOUNT;` must not be empty. If it is, an admin sets it: see the [quickstart](docs/quickstart.md#1-prepare-snowflake). `icecore.setup` never creates an event table or changes this association.
 - **dbt.** dbt Core `>=1.8.0,<3.0.0` with `dbt-snowflake`. The test suite runs on dbt-core 1.8 (the floor) and on the latest release; dbt Cloud, dbt Fusion and dbt Projects on Snowflake are not tested yet.
-- **Privileges for `icecore.setup`.** The role that runs it needs USAGE on the target database, CREATE SCHEMA on it (or ownership of an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table). It needs CREATE TASK too when a model declares `meta.sla`. To set the log and trace levels itself it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account; if it lacks them, `setup` prints the statement for an admin and carries on.
+- **Privileges for `icecore.setup`.** The role that runs it needs USAGE on the target database, CREATE SCHEMA on it (or ownership of an existing schema), CREATE PROCEDURE and CREATE VIEW on the schema, and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table). It needs CREATE TASK too when a model declares `meta.sla`. With `alerts: true` it also needs CREATE ALERT on the schema, USAGE on the warehouse and the notification integration, and `EXECUTE TASK` and `EXECUTE ALERT` on the account to resume the silence task and the alerts (if it lacks them, `setup` prints the grant for an admin and leaves them suspended). To set the log and trace levels itself it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account; if it lacks them, `setup` prints the statement for an admin and carries on.
 - **Privileges for the role that runs dbt.** USAGE on the database, the icecore schema and the procedures, and SELECT on the views. Details: [Configuration](docs/configuration.md#what-setup-creates).
 
 ## Install
@@ -132,12 +132,9 @@ The Console is one full-page Streamlit app: Overview, Incidents, Tests and anoma
 
 ```bash
 git clone https://github.com/crithink-dev/icecore.git && cd icecore
-python3 -m venv .venv-app
-.venv-app/bin/pip install -r streamlit/requirements-local.txt
-
 export SNOWFLAKE_CONNECTION_NAME=<your connections.toml entry>   # or SNOWFLAKE_ACCOUNT + SNOWFLAKE_USER (browser login or key pair)
 export ICECORE_VIEWS_SCHEMA=<DB>.ICECORE_OBS                      # default: <your database>.ICECORE_OBS
-make app                                                          # then open http://localhost:8501
+make app                                                          # makes .venv-app on first run; then open http://localhost:8501
 ```
 
 The role needs USAGE on the database and the views schema and SELECT on the views (and USAGE on `ICECORE_ACK` to acknowledge).
@@ -158,7 +155,6 @@ It uploads the app files (including the Console's `components/console/build/`) a
 - **Event-table delay.** Records appear in the views after a delay of seconds to about a minute.
 - **Iceberg tables.** The shipped row-count reader returns nothing for them; an opt-in `CHANGES` reader exists, needs change tracking and does read data ([spike S5](spikes/S5.md)).
 - **Views and external tables** have no row-count metadata, so `icecore.volume` cannot measure them.
-- **Elementary-compatible views** are not created yet: `setup` with `compat` set prints `planned, not available yet`.
 - **`setup` with `app: true`** does nothing yet: deploy the app as described above.
 - **Alerts and tasks use a warehouse** once resumed (`alerts: true`).
 - **Cost** appears hours after a run: Snowflake publishes query attribution with a lag, and a later dbt run writes the credits.
@@ -238,7 +234,7 @@ flowchart LR
 | **Alerts** | Snowflake Alerts to email, Slack and Teams, with deduplication and acknowledgement from the app. | `shipped` |
 | **Cortex engine and shadow scoring** | `SNOWFLAKE.ML.ANOMALY_DETECTION` when the account allows it, compared side by side with the native engine. | `shipped` |
 | **Failed-row samples** | A capped sample of failing rows on test failure (payload limits from spike S2). | `shipped` |
-| **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. | `planned` |
+| **Elementary-compatible views** | Elementary's table names and columns, so existing dashboards keep working. Turn them on with `dbt run-operation icecore.setup --args '{compat: elementary}'`: they are created in their own schema. | `shipped` |
 
 ## How icecore compares
 
@@ -265,7 +261,7 @@ Why each row holds:
 ## Coming from Elementary?
 
 > [!TIP]
-> icecore is designed to keep what Elementary got right: run and test results per invocation, failed-row samples, volume, freshness, schema and column monitors, lineage and Slack alerts. **Planned:** opt-in views with Elementary's table names and columns (`dbt_invocations`, `dbt_run_results`, `elementary_test_results` and others), so your dashboards keep working, plus a step-by-step migration guide. [Spike S4](spikes/S4.md) found that `edr report` also needs a node-metadata view and a samples view, planned for Phase 6.
+> icecore is designed to keep what Elementary got right: run and test results per invocation, failed-row samples, volume, freshness, schema and column monitors, lineage and Slack alerts. **Available:** opt-in views with Elementary's table names and columns (`dbt_invocations`, `dbt_run_results`, `elementary_test_results` and others), so your dashboards keep working. Turn them on with `dbt run-operation icecore.setup --args '{compat: elementary}'`; they are created in their own schema (see [Configuration](docs/configuration.md#icecoresetup)). [Spike S4](spikes/S4.md) found that `edr report` also needs a node-metadata view and a samples view, which are not built.
 
 ## Compatibility
 

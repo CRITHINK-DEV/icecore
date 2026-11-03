@@ -117,8 +117,20 @@ def _connect():
     return snowflake.connector.connect(**kw)
 
 
+def missing_settings(env, dry_run: bool = False) -> list[str]:
+    """The variables a deploy needs and the environment lacks (a login is not needed for --dry-run)."""
+    missing = [n for n in ("ICECORE_APP_DATABASE", "ICECORE_APP_WAREHOUSE") if not env.get(n)]
+    if not dry_run and not env.get("SNOWFLAKE_CONNECTION_NAME") and not (env.get("SNOWFLAKE_ACCOUNT") and env.get("SNOWFLAKE_USER")):
+        missing.append("SNOWFLAKE_CONNECTION_NAME (or SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER)")
+    return missing
+
+
 def main(argv: list[str]) -> int:
     env = os.environ
+    missing = missing_settings(env, "--dry-run" in argv)
+    if missing:
+        print("deploy_app: set " + ", ".join(missing) + " (see docs/app.md, Deploy it to Streamlit in Snowflake)", file=sys.stderr)
+        return 2
     try:
         stmts = plan(env.get("ICECORE_APP_DATABASE", ""), env.get("ICECORE_APP_SCHEMA", "ICECORE_OBS"),
                      env.get("ICECORE_APP_WAREHOUSE", ""))
@@ -127,6 +139,10 @@ def main(argv: list[str]) -> int:
         return 2
     if "--dry-run" in argv:
         print("\n".join(s + ";" for s in stmts))
+        print(f"-- (first deploy only, when the app is new) alter streamlit {ident('ICECORE_APP_DATABASE', env['ICECORE_APP_DATABASE'])}."
+              f"{ident('ICECORE_APP_SCHEMA', env.get('ICECORE_APP_SCHEMA', 'ICECORE_OBS'))}.{APP} add live version from last;")
+        print("-- (when the app already exists) copy files into its live version from the stage; grants stay.")
+        return 0
     else:
         conn = _connect()
         try:

@@ -43,7 +43,7 @@ The Snowflake docs show that Snowflake Scripting `SYSTEM$LOG` takes only a level
 ### Task 1: Repo scaffold and offline CI
 
 **Files:**
-- Create (in `/Users/anouarzbaida/Documents/CRITHINK/projects/icecore`, a clone of `CRITHINK-DEV/icecore`): `dbt_project.yml`, `LICENSE`, `README.md`, `.gitignore`, `docs/design/scope-and-architecture.md`, `macros/.gitkeep`, `integration_tests/dbt_project.yml`, `integration_tests/packages.yml`, `integration_tests/profiles.yml`, `integration_tests/requirements-floor.txt`, `integration_tests/requirements-latest.txt`, `integration_tests/tests/test_offline.py`, `.github/workflows/ci.yml`
+- Create (in `<workspace>/icecore`, a clone of `CRITHINK-DEV/icecore`): `dbt_project.yml`, `LICENSE`, `README.md`, `.gitignore`, `docs/design/scope-and-architecture.md`, `macros/.gitkeep`, `integration_tests/dbt_project.yml`, `integration_tests/packages.yml`, `integration_tests/profiles.yml`, `integration_tests/requirements-floor.txt`, `integration_tests/requirements-latest.txt`, `integration_tests/tests/test_offline.py`, `.github/workflows/ci.yml`
 
 **Interfaces:**
 - Produces: the dbt project `icecore` with package vars under `icecore:` (`telemetry: true`, `monitors: true`, `cost: false`, `root_cause: false`, `alerts: false`, `anomaly_engine: 'auto'`, `shadow_engine: none`, `payload_cap_kb: 64`); the integration project `icecore_integration_tests` with profile `icecore_sandbox` reading `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE` (default `ICECORE_SANDBOX`), `SNOWFLAKE_SCHEMA` (default `SPIKES`) via `env_var()`; pytest marker `sandbox` for tests that need Snowflake.
@@ -51,7 +51,7 @@ The Snowflake docs show that Snowflake Scripting `SYSTEM$LOG` takes only a level
 - [ ] **Step 1: Clone and copy the spec**
 
 ```bash
-cd /Users/anouarzbaida/Documents/CRITHINK/projects
+cd <workspace>
 gh repo clone CRITHINK-DEV/icecore && cd icecore
 mkdir -p docs/design && cp "../observe-event-table/Scope & Architecture — Snowflake-native dbt Observability Package.md" docs/design/scope-and-architecture.md
 ```

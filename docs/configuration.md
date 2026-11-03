@@ -170,11 +170,11 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var (`ICECORE_OBS`) | string | Schema to create in the target database. |
-| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The compat views are **coming**: the step prints `planned, not available yet` and does nothing. |
+| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The step creates the Elementary-compatible views in their own schema. |
 | `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
-Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
+With `app: true`, the `deploy_app` step prints `planned, not available yet` and does nothing: deploy the app with `make deploy-app` ([the app](app.md)). The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
 
 The role that runs `setup` needs:
 

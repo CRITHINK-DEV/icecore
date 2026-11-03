@@ -349,3 +349,16 @@ def test_sla_durations_are_what_the_prototype_parses(minutes, expected):
     assert sla["expected_every"] == expected == sla["grace"]
     if expected:
         assert re.fullmatch(r"\d+(?:\.\d+)?[smhd]", expected)  # console.html durStr
+
+
+def test_a_tests_own_metric_keeps_the_test_id():
+    from lib import console_data
+    rows = small_rows()
+    t1, t2 = "test.shop.not_null_orders_id.abc", "test.shop.unique_orders_id.def"
+    rows["LINEAGE_LATEST"].append({"project": "shop", "parent_unique_id": "model.shop.orders", "child_unique_id": t2})
+    rows["METRICS"] = [{"relation": t, "node_unique_id": t, "metric": "credits", "observed_at": T0, "value": 1}
+                       for t in (t1, t2)] + [
+        {"relation": "model.shop.orders", "node_unique_id": "model.shop.orders", "metric": "credits",
+         "observed_at": T0, "value": 2}]
+    got = sorted(m["unique_id"] for m in console_data.build(layer=layer_for(rows))["metrics"])
+    assert got == sorted([t1, t2, "model.shop.orders"])  # three series, not one

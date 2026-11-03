@@ -206,13 +206,16 @@ def _make_resolver(nodes, execs, schema, mets):
                 return next(iter(ids))
         return None
 
+    known = {n["unique_id"] for n in nodes}
+
     def target(r):
-        """The node a metric row is about: its node (a test maps to what it tests), a test with no known target
-        falls back to the row's relation, a row without a node to its relation."""
-        uid = node_of(r.get("node_unique_id"))
-        if uid and not uid.startswith("test."):
-            return uid
-        return resolve(r.get("relation")) or uid
+        """The node a metric row is about. A row about a node itself (its relation is a node id, such as a test's own
+        credits) keeps that id. A test's metric about a table (anomaly, volume, freshness: the relation is the
+        table) goes to the table's node, else to the node the test tests, else stays on the test."""
+        uid, relation = r.get("node_unique_id"), r.get("relation")
+        if relation in known or (uid and not uid.startswith("test.")):
+            return relation if relation in known else uid
+        return resolve(relation) or node_of(uid)
 
     return node_of, resolve, target
 

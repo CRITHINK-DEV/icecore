@@ -225,9 +225,11 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
             "detect_capabilities", "create_schema", "create_emit_procedures", "set_telemetry_levels",
             "record_capabilities", "estimate_telemetry_cost", "create_views", "create_tasks", "create_alerts"], out["steps"]
         assert out["recorded"] == "ok 1"
-        # the silence task and, Cortex being available in the sandbox, the refresh task: created suspended, never resumed here
+        # alerts is false: no silence task and no alert; Cortex being available in the sandbox, the refresh task
+        # is created suspended, never resumed here
         assert sorted((t["name"], t["status"], t["resumed"]) for t in out["tasks"]["tasks"]) == [
-            ("cortex_refresh", "ok", False), ("silence", "ok", False)], out["tasks"]
+            ("cortex_refresh", "ok", False), ("silence", "skipped", False)], out["tasks"]
+        assert out["alerts"] == []
     tasks = sf.cursor().execute(f"show tasks in schema {DATABASE}.{schema}").fetchall()
     assert tasks and all("suspended" in [str(c).lower() for c in t] for t in tasks), tasks
     assert first["levels"] == second["levels"]

@@ -184,7 +184,7 @@ def test_setup_marks_create_tasks_ready_and_suspended_by_default():
     from helpers.macros import call_macro
     steps = {s["name"]: s for s in call_macro("_icecore_setup_steps")}
     assert steps["create_tasks"]["ready"] is True
-    assert "silence_task_resume: false" in open(
+    assert "silence_task_resume: null" in open(
         os.path.join(os.path.dirname(__file__), "..", "..", "dbt_project.yml")).read()
 
 

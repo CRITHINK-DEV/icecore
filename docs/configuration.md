@@ -106,9 +106,35 @@ These keys are in the package's `dbt_project.yml`, but no merged macro reads the
 | --- | --- | --- |
 | `monitors` | `true` | **coming** |
 | `cost` | `false` | **coming** |
-| `alerts` | `false` | **coming** |
 
-The `meta.sla` and `meta.alerts` model settings, the alerts and the app are **coming** too.
+The app is **coming** too.
+
+### Alerts and tasks
+
+`alerts` is the switch for the alerts and the silence task. `alert_resume` and `silence_task_resume` override it for one object, in both directions. The Cortex refresh task is separate: it does not depend on `alerts` (it is created when Cortex is available).
+
+| `alerts` | Per-object var (`alert_resume`, `silence_task_resume`) | Result for that object |
+| --- | --- | --- |
+| any | `true` | Created and resumed, even with `alerts: false`. |
+| `true` | `false` | Created and kept suspended. |
+| `true` or `false` | `null` (default) | Follows `alerts`: `true` creates and resumes it; `false` creates nothing. |
+
+(`alerts: false` with a per-object `false` creates nothing.) The settings:
+
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `alerts` | `false` | boolean | `true`: `setup` creates one ALERT per channel of `alert_channels` and the silence TASK, **and resumes them**, unless a per-object var says `false`. `false`: it creates neither, unless a per-object var says `true`. | **Cost: a resumed alert or task runs on its warehouse every schedule period (default 5 minutes for the task) and uses the warehouse time of the account that owns it.** |
+| `alert_channels` | none | mapping | One alert per channel: `{name: {type: email\|slack\|teams, integration: <notification integration>, recipients: [...], default: true}}`. An admin creates the integrations: `setup` prints the statements. | None until an alert is resumed and finds an incident. |
+| `alert_resume` | `null` | boolean | `true` creates and resumes the alerts even with `alerts: false`; `false` keeps them suspended with `alerts: true`; `null` follows `alerts`. | Cost as above. |
+| `silence_task_resume` | `null` | boolean | Same, for the silence task. | Cost as above. |
+| `alert_schedule_minutes`, `alert_warehouse`, `silence_task_schedule`, `silence_task_warehouse` | see the macros | | Schedule and warehouse of each object. | Shorter schedules use more warehouse time. |
+
+`setup` is safe to run twice: each object has a fixed name (`ICECORE_ALERT_<CHANNEL>`, `ICECORE_SILENCE`), is created with `CREATE OR REPLACE`, and is resumed again by the same rule, so a second run leaves the same objects and no duplicates. The silence task needs at least one model with `meta.sla`. Resuming needs the `EXECUTE ALERT` and `EXECUTE TASK` privileges on the account: when the role lacks one, `setup` prints the grant and the object stays suspended. The setup output warns when it resumed something. To stop the cost, `ALTER ALERT ... SUSPEND` and `ALTER TASK ... SUSPEND`.
+
+Re-runs and upgrades:
+
+- `CREATE OR REPLACE` leaves an alert or task suspended and resets its grants (a dedup state is not affected: it lives in the event table), so `setup` resumes it again when its var asks for it. A running object whose var now says `false` is recreated suspended, for the alerts and for the silence task alike.
+- An alert or silence task that an earlier `setup` created and that the vars no longer ask for (for example after upgrading with `alerts: false`) is left exactly as it is, possibly still resumed and using warehouse time. `setup` prints one warning per object with its state and the `ALTER ... SUSPEND` and `DROP ...` statements to run. It never runs them.
 
 ## Hooks
 
@@ -147,7 +173,7 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
-Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for alerts and tasks always print the same line, because they are **coming**.
+Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
 
 The role that runs `setup` needs:
 

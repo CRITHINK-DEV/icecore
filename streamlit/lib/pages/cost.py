@@ -1,0 +1,104 @@
+"""Pure logic of the Console Cost page: tiles, the per-model table with a trend, and the top regressions.
+
+Rows in (INVOCATIONS, NODE_EXECUTIONS, METRICS, ALERTS_FEED as lib.queries returns them), tiles and table rows out.
+The credit sums themselves come from lib/cost.py. No Streamlit and no query here.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any
+
+from lib import cost as costlib
+from lib.console import Tile
+from lib.incidents import as_of
+
+TREND_POINTS = 15
+SETTLED = "no_attribution"
+SETTLED_NOTE = "settled at 0"
+
+
+def _at(row: dict, key: str = "started_at") -> datetime | None:
+    ts = row.get(key)
+    return ts.replace(tzinfo=None) if isinstance(ts, datetime) else None
+
+
+def _window(rows: list[dict], start: datetime, end: datetime) -> list[dict]:
+    return [r for r in rows if (t := _at(r)) is not None and start < t <= end]
+
+
+def _credits(rows: list[dict]) -> float:
+    return sum(float(r["credits"]) for r in rows if r.get("credits") is not None)
+
+
+def now_of(*row_lists: list[dict]) -> datetime:
+    """The newest record's time (the dbt host's clock), not the app's clock; the app's only when there are no rows."""
+    return as_of(*row_lists) or datetime.now()
+
+
+def tiles(invocation_rows: list[dict], node_rows: list[dict], *, now: datetime, days: int) -> list[Tile]:
+    start, prev_start = now - timedelta(days=days), now - timedelta(days=2 * days)
+    current = _credits(_window(invocation_rows, start, now))
+    previous = _credits(_window(invocation_rows, prev_start, start))
+    change = "—" if previous <= 0 else f"{(current - previous) / previous * 100:+.0f}%"
+    window_nodes = _window(node_rows, start, now)
+    models = costlib.credits_per_model(window_nodes)
+    total = sum(m["credits"] for m in models)
+    share = None
+    share_help = "Share of the window's credits that the most expensive model used."
+    if models and total > 0:
+        share = f"{models[0]['name']} · {models[0]['credits'] / total * 100:.0f}%"
+    unattributed = sum(1 for r in window_nodes if r.get("credits_settled") == SETTLED)
+    return [
+        Tile("Credits in window", f"{current:.2f}", help=f"Credits of the runs started in the last {days} days."),
+        Tile("Change vs previous window", change,
+             help=f"Against the {days} days before. — when there was no cost then."),
+        Tile("Top model share", share, help=share_help),
+        Tile("Unattributed runs", unattributed,
+             help="Node runs Snowflake never attributed credits to: settled at 0, not a measured cost."),
+    ]
+
+
+def per_model(node_rows: list[dict], *, now: datetime, points: int = TREND_POINTS) -> list[dict]:
+    """One row per costed model, biggest first: credits, runs, a `points`-day credit trend (oldest first, zero-filled)
+    and `attribution`, "settled at 0" where the cost record says no_attribution (blank for a measured cost)."""
+    first = (now - timedelta(days=points - 1)).date()
+    days = [first + timedelta(days=i) for i in range(points)]
+    trend: dict[str, dict] = {}
+    settled: dict[str, list[int]] = {}
+    for r in node_rows:
+        if r.get("credits") is None:
+            continue
+        uid = r["unique_id"]
+        counts = settled.setdefault(uid, [0, 0])
+        counts[1] += 1
+        counts[0] += r.get("credits_settled") == SETTLED
+        t = _at(r)
+        if t is not None and t.date() in days:
+            trend.setdefault(uid, {})[t.date()] = trend.get(uid, {}).get(t.date(), 0.0) + float(r["credits"])
+    out = []
+    for m in costlib.credits_per_model(node_rows):
+        done, total = settled[m["unique_id"]]
+        note = "" if not done else SETTLED_NOTE if done == total else f"{done} of {total} runs {SETTLED_NOTE}"
+        out.append({**m, "trend": [trend.get(m["unique_id"], {}).get(d, 0.0) for d in days], "attribution": note})
+    return out
+
+
+def regressions(metric_rows: list[dict], alert_rows: list[dict], limit: int = costlib.TOP_N) -> list[dict]:
+    """Cost regressions: the credits metric points the engines flagged above their band (worst first), then the
+    ALERTS_FEED incidents of kind 'cost' for nodes the metric rows do not already cover."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    by_relation = {r["relation"]: r.get("node_unique_id") for r in metric_rows if r.get("metric") == "credits"}
+    for r in costlib.top_regressions(metric_rows, limit):
+        uid = by_relation.get(r["relation"]) or r["relation"]
+        seen.add(uid)
+        out.append({"unique_id": uid, "relation": r["relation"], "observed_at": r["observed_at"], "credits": r["credits"],
+                    "expected": r["expected"], "excess": r["excess"], "detail": r["engine"] or "", "source": "anomaly"})
+    for a in alert_rows:
+        if a.get("kind") != "cost" or a.get("node_key") in seen:
+            continue
+        seen.add(a["node_key"])
+        out.append({"unique_id": a["node_key"], "relation": a["node_key"], "observed_at": a.get("last_detected_at"),
+                    "credits": None, "expected": None, "excess": None, "detail": a.get("title") or "",
+                    "source": "alert"})
+    return out[:limit]

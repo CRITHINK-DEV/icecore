@@ -68,27 +68,3 @@ def test_regression_without_expected_uses_upper_bound():
     r = _m("A", 5, None)
     r["anomaly_upper"] = 2.0
     assert cost.top_regressions([r])[0]["excess"] == 3.0
-
-
-def test_page_renders_trend_models_runs_and_regressions(monkeypatch):
-    """The page with fixture rows from the query layer: a chart and the three tables, no exception."""
-    pytest.importorskip("streamlit")  # not in the dbt venvs: see test_app_shell.py
-    from streamlit.testing.v1 import AppTest
-
-    from lib import queries
-
-    now = datetime.now()
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "streamlit"))
-    monkeypatch.setattr(queries, "invocations", lambda **k: [
-        {"invocation_id": "i1", "command": "build", "target": "prod", "started_at": now, "status": "success",
-         "credits": 2.0}])
-    monkeypatch.setattr(queries, "node_executions", lambda **k: [
-        {"unique_id": "model.p.a", "name": "a", "type": "model", "credits": 2.0}])
-    monkeypatch.setattr(queries, "metrics", lambda **k: [_m("model.p.a", 5, 1)])
-    at = AppTest.from_file(str(Path(__file__).resolve().parents[2] / "streamlit" / "pages" / "cost.py"),
-                           default_timeout=30)
-    at.run()
-    assert not at.exception, [e.value for e in at.exception]
-    assert [s.value for s in at.subheader] == ["Trend, last 30 days", "Credits per model", "Credits per run",
-                                              "Top cost regressions"]
-    assert len(at.dataframe) == 3

@@ -1,55 +1,63 @@
-"""Cost: credits per model, per run, trend, top regressions."""
+"""Cost: what to optimise. Credits in the window, per model with a trend, and the top regressions."""
 from datetime import datetime, timedelta
 
-import altair as alt
-import pandas as pd
 import streamlit as st
 
-from lib import cost, queries
-from lib.ui import empty_state, page_header
+from lib import charts, console, cost, queries
+from lib.pages import cost as logic
 
-page_header("Cost", "What to optimise.", ["node_executions", "invocations", "metrics"])
+console.page("Cost", "What to optimise.", ["invocations", "node_executions", "metrics", "alerts_feed"])
 
-since = datetime.now() - timedelta(days=cost.TREND_DAYS)
-try:
-    invocation_rows = queries.invocations(since=since, limit=5000)
-    models = cost.credits_per_model(queries.node_executions(since=since, limit=queries.MAX_LIMIT))
-except Exception as exc:  # no Snowpark session (offline) or the views are not created yet: show the empty state
-    invocation_rows, models, load_error = [], [], str(exc)
-else:
-    load_error = None
-starts = [r["started_at"] for r in invocation_rows if r.get("started_at")]
-now = max(starts) if starts else datetime.now()  # day buckets follow the dbt host's clock, not the app's
-runs = cost.credits_per_run(invocation_rows)
+filters = console.filter_bar("cost", layers=None, statuses=False)
 
-if not runs and not models:
-    empty_state(
-        "No cost data yet. Set `cost: true` under `vars: icecore:` in dbt_project.yml, "
-        "run `dbt run-operation icecore.setup`, then run dbt."
-    )
-    if load_error:
-        st.caption(f"Reading the views failed: {load_error}")
-    st.stop()
+since = datetime.now() - timedelta(days=cost.TREND_DAYS + 1)
+invocations, err_i = console.guarded(lambda: queries.invocations(since=since, limit=5000))
+nodes, err_n = console.guarded(lambda: queries.node_executions(since=since, limit=queries.MAX_LIMIT))
+metric_rows, err_m = console.guarded(lambda: queries.metrics(metric="credits", since=since, limit=queries.MAX_LIMIT))
+alerts, err_a = console.guarded(lambda: queries.alerts_feed(kind="cost", since=since))
 
-st.subheader("Trend, last 30 days")
-trend = pd.DataFrame(cost.daily_trend(invocation_rows, now))
-st.altair_chart(
-    alt.Chart(trend, title="Credits per day").mark_bar().encode(
-        x=alt.X("day:T", title="Day"), y=alt.Y("credits:Q", title="Credits"),
-        tooltip=["day:T", "credits:Q"]),
-    use_container_width=True)
+if not invocations and not nodes:
+    console.empty("No cost data yet. Set `cost: true` under `vars: icecore:` in dbt_project.yml, "
+                  "run `dbt run-operation icecore.setup`, then run dbt.", err_i or err_n)
+
+now = logic.now_of(invocations, nodes)
+console.kpi_row(logic.tiles(invocations, nodes, now=now, days=filters.days))
+for err in (err_n, err_m, err_a):
+    if err:
+        st.caption(f"Reading the views failed: {err}")
+
+st.altair_chart(charts.daily(cost.daily_trend(invocations, now), x="day", y="credits",
+                             title="Credits per day, last 30 days", y_title="Credits"), use_container_width=True)
 
 st.subheader("Credits per model")
-st.dataframe(pd.DataFrame(models[:50]), use_container_width=True, hide_index=True,
-             column_order=["name", "type", "credits", "runs", "avg_credits"])
+models = logic.per_model(nodes, now=now)
+console.table(
+    models[:50], key="cost_models", limit=None,
+    column_config={
+        "unique_id": None, "type": None,
+        "name": st.column_config.TextColumn("Model"),
+        "credits": st.column_config.NumberColumn("Credits", format="%.4f"),
+        "runs": st.column_config.NumberColumn("Runs"),
+        "avg_credits": st.column_config.NumberColumn("Avg per run", format="%.4f"),
+        "trend": st.column_config.LineChartColumn(f"Last {logic.TREND_POINTS} days"),
+        "attribution": st.column_config.TextColumn("Attribution"),
+    })
 
-st.subheader("Credits per run")
-st.dataframe(pd.DataFrame(runs), use_container_width=True, hide_index=True)
-
-st.subheader("Top cost regressions")
-regressions = cost.top_regressions(queries.metrics(metric="credits", since=since, limit=queries.MAX_LIMIT))
-if regressions:
-    st.dataframe(pd.DataFrame(regressions), use_container_width=True, hide_index=True)
+st.subheader("Top regressions")
+regs = logic.regressions(metric_rows, alerts)
+if regs:
+    console.table(
+        regs, key="cost_regressions",
+        column_config={
+            "unique_id": None,
+            "relation": st.column_config.TextColumn("Model"),
+            "observed_at": st.column_config.DatetimeColumn("When"),
+            "credits": st.column_config.NumberColumn("Credits", format="%.4f"),
+            "expected": st.column_config.NumberColumn("Expected", format="%.4f"),
+            "excess": st.column_config.NumberColumn("Over", format="%.4f"),
+            "detail": st.column_config.TextColumn("Engine / alert"),
+            "source": st.column_config.TextColumn("Source"),
+        })
 else:
-    empty_state("No cost regressions in the last 30 days. They appear once enough credits history exists for the "
-                "engines to score the `credits` metric.")
+    st.caption("No cost regressions in the last 30 days. They appear once enough credits history exists for the "
+               "engines to score the `credits` metric.")

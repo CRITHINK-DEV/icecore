@@ -4,8 +4,12 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [X.Y.Z] - YYYY-MM-DD
+
+First public release.
+
 ### Added
-- Streamlit app: the Console (prototype D, one full-page component) replaces the nine Streamlit pages.
+- Streamlit app: the Console (prototype D), one full-page component with Overview, Incidents, Tests and anomalies, Runs, Schedules and freshness, Schema changes, Cost, Lineage, Models and sources, and Settings. It runs locally (recommended) or as a Streamlit in Snowflake object, and its build folder ships with the app.
 - `scripts/demo/build_rich_demo.sh` (`make rich-demo`): a sandbox-only demo built by 15 real dbt runs of `examples/shop` plus a few models, with scored metrics, row-count anomalies, a freshness breach, schema changes, four declared SLAs (one missed), failed and skipped models, and open, acknowledged and resolved incidents.
 - The console data object (`streamlit/lib/console_data.py`) builds the prototype console's data from the views; the app's ALERTS_FEED read now includes `root_cause_unique_id` and `root_cause_kind`.
 - `TEST_RESULTS.tested_unique_id` (the model or source a test is attached to, from `dbt.test.attached_node`) and `NODE_EXECUTIONS.root_cause_kind`. The Lineage page marks stale sources from the tested node, and the Elementary-compatible `model_unique_id` and `parent_model_unique_id` columns are filled.
@@ -22,7 +26,6 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 - Missed-run detection (silence task) from `meta.sla`, and the `SLA_DECLARED` view listing every model with an SLA.
 - Alerts: `ALERTS_FEED` (one row per incident, deduplicated per window), Snowflake alerts to email, Slack and Teams, repeat suppression, and acknowledgements through `ICECORE_ACK` (`icecore.acknowledge`).
 - `layer` on `NODE_EXECUTIONS` and `LINEAGE` / `LINEAGE_LATEST` (`parent_layer`, `child_layer`) from the node's dbt fqn (`dbt.node.fqn`, `dbt.node.layer`), renamable with the `icecore.layers` var, and `threshold` on `METRICS` (the `max_lag` of `icecore.freshness`, in seconds).
-- Streamlit app: Runs, Lineage, Cost and SLAs pages.
 - Documentation: views reference, troubleshooting guide, CONTRIBUTING and roadmap.
 
 ### Fixed

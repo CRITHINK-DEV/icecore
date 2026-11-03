@@ -9,6 +9,7 @@ import pytest
 
 APP_DIR = Path(__file__).resolve().parents[2] / "streamlit"
 BUILD = APP_DIR / "components" / "console" / "build"
+FRONTEND = APP_DIR / "components" / "console" / "frontend"
 SRC = APP_DIR / "components" / "console" / "frontend" / "src"
 
 
@@ -145,3 +146,15 @@ def test_render_ignores_empty_values(monkeypatch):
     monkeypatch.setattr(console_component, "component", lambda: (lambda **kw: None))
     monkeypatch.setattr(st, "session_state", {}, raising=False)
     assert console_component.render({}) is None
+
+
+def test_the_overview_cards_explain_their_number_in_a_popover_not_a_native_title():
+    ui = (FRONTEND / "src" / "components" / "ui.jsx").read_text()
+    assert 'className="hpop"' in ui and 'title={help}' not in ui
+    overview = (FRONTEND / "src" / "pages" / "Overview.jsx").read_text()
+    assert overview.count("calc={") == 5
+
+
+def test_the_lineage_layer_filter_lists_only_the_groups_the_project_has():
+    model = (FRONTEND / "src" / "lib" / "model.js").read_text()
+    assert "present.has('snapshot')" in model and "['sources', 'transient'].filter(g => present.has(g))" in model

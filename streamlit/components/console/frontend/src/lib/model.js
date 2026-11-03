@@ -88,7 +88,9 @@ function setLayers(nodes) {
   const label = { sources: 'Sources & seeds', transient: 'Transient', snapshot: 'Snapshots' };
   if (layers.length) layers.forEach(l => { label[POS_OF[l]] = titleCase(l); }); else Object.assign(label, { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' });
   LAYER_LABEL = label;
-  LAYER_ORDER = ['sources', 'transient', ...MODEL_KEYS, 'snapshot'];
+  // the fixed groups only when the project has such nodes: no empty "Transient" or "Snapshots" button
+  const present = new Set(nodes.filter(n => n.type !== 'test' && n.layer != null).map(n => FIXED_GROUP[n.layer]).filter(Boolean));
+  LAYER_ORDER = [...['sources', 'transient'].filter(g => present.has(g)), ...MODEL_KEYS, ...(present.has('snapshot') ? ['snapshot'] : [])];
 }
 
 export function loadData(raw) {

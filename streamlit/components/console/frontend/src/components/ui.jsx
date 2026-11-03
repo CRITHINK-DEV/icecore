@@ -56,9 +56,13 @@ export function RunStrip({ arr }) {
   return <svg width={arr.length * (w + gap)} height={14} className="strip" aria-label="Results of the last runs">{arr.map((s, i) => <rect key={i} x={i * (w + gap)} y={s == null ? 6 : 1} width={w} height={s == null ? 2 : 12} rx="1" fill={s == null ? 'var(--line)' : s === 'pass' ? 'var(--ok)' : s === 'warn' ? 'var(--warn)' : 'var(--fail)'} opacity={s === 'pass' ? .55 : 1}><title>{fmtRun(RUNS[i].t)}: {s || 'not run'}</title></rect>)}</svg>;
 }
 
-export function Kpi({ label, value, unit, sub, tone, spark, sparkType, sparkTone, help, delta }) {
-  return <div className="kpi">
-    <div className="kpi-label">{label}{help && <span className="help" title={help} tabIndex={0} aria-label={help}>?</span>}</div>
+// help: what the number means; calc: the rows it is computed from ([label, value] pairs), shown on hover or focus of
+// the card in the same popover as the layer health cards.
+export function Kpi({ label, value, unit, sub, tone, spark, sparkType, sparkTone, help, calc, delta }) {
+  return <div className={'kpi' + (help ? ' has-help' : '')} tabIndex={help ? 0 : undefined}>
+    <div className="kpi-label">{label}{help && <span className="help" aria-hidden="true">?</span>}</div>
+    {help && <div className="hpop" role="tooltip"><h4>{label}</h4>{help}
+      {calc && calc.length > 0 && <table><tbody>{calc.map(([k, v]) => <tr key={k}><td>{k}</td><td className="n">{v}</td></tr>)}</tbody></table>}</div>}
     <div className="kpi-row"><div className={'kpi-value ' + (tone ? 't-' + tone : '')}>{value}{unit && <span className="unit">{unit}</span>}</div>{spark && <Spark data={spark} type={sparkType} tone={sparkTone || tone || 'accent'} />}</div>
     {(sub || delta) && <div className="kpi-sub">{delta}{sub}</div>}
   </div>;

@@ -26,9 +26,13 @@ if (window.parent === window) {
   s.onerror = () => { const m = document.createElement('p'); m.style.padding = '24px'; m.textContent = 'Dev mode: the mock data file did not load (' + s.src + ').'; document.getElementById('root').replaceChildren(m); };
   document.head.appendChild(s);
 } else {
-  let sig, dv = 0, lastNotice = null, notice = null, seq = 0, first = true;
+  let sig, dv = 0, lastNotice = null, notice = null, seq = 0, first = true, fallback = 900, watching = false;
+  // Fill the browser window: its height when the host page is readable (local app), else args.height (SiS frames it).
+  const fit = () => { try { const h = window.top.innerHeight; if (h > 300) return h; } catch (e) { /* cross-origin */ } return fallback; };
   onRender((args, theme) => {
-    setFrameHeight(Number(args.height) > 0 ? Number(args.height) : 900);
+    fallback = Number(args.height) > 0 ? Number(args.height) : 900;
+    setFrameHeight(fit());
+    if (!watching) { watching = true; try { window.top.addEventListener('resize', () => setFrameHeight(fit())); } catch (e) { /* cross-origin */ } }
     if (first) { first = false; if (!stored && theme && theme.base === 'dark') document.documentElement.dataset.theme = 'dark'; }
     const next = JSON.stringify(args.data == null ? null : args.data);
     if (next !== sig) { sig = next; loadData(args.data); dv += 1; }

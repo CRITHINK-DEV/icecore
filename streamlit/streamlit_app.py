@@ -25,7 +25,8 @@ st.markdown("""<style>
 [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stSidebar"],
 [data-testid="stSidebarCollapsedControl"], [data-testid="stDecoration"], footer {display: none !important;}
 [data-testid="stMainBlockContainer"], .block-container {padding: 0 !important; max-width: 100% !important;}
-[data-testid="stAppViewContainer"] > .main, section.main {overflow: hidden;}
+[data-testid="stAppViewContainer"] > .main, section.main, [data-testid="stMain"] {overflow: hidden !important;}
+[data-testid="stVerticalBlock"] {gap: 0 !important;}
 iframe[title*="icecore_console"] {display: block; border: 0;}
 </style>""", unsafe_allow_html=True)
 

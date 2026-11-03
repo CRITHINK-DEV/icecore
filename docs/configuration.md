@@ -1,6 +1,6 @@
 # Configuration
 
-This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is merged on `develop`. Features that are not merged yet are marked **coming** and have no detail here.
+This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is in this release.
 
 For a first install, follow the [quickstart](quickstart.md).
 
@@ -98,17 +98,15 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 | `root_cause` | `false` | boolean | Turn the explanation on. | Two small queries on the views at the end of a run with a failed test; no row of its own while `node_results` is on. |
 | `root_cause_lookback_hours` | `24` | integer | How far back schema changes and metric anomalies count as signals. | None. |
 
-### Declared, not read yet
+### Cost per node
 
-These keys are in the package's `dbt_project.yml`, but no merged macro reads them. Setting them changes nothing today.
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
 
-| Var | Default | Status |
-| --- | --- | --- |
-| `anomalies_per_run` | `0` | integer | Anomaly warn events you expect per run. Monitor anomalies are counted only through it. |
-| `monitors` | `true` | **coming** |
-| `cost` | `false` | **coming** |
+### Declared, not read
 
-The app is **coming** too.
+The package's `dbt_project.yml` declares `monitors: true`, but no macro reads it as a var: the monitors run when you add their tests, and setting it changes nothing. (`monitors` is an argument of `icecore.estimate_telemetry_cost`.)
 
 ### Alerts and tasks
 
@@ -171,7 +169,7 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var (`ICECORE_OBS`) | string | Schema to create in the target database. |
 | `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The step creates the Elementary-compatible views in their own schema. |
-| `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
+| `app` | `false` | boolean | `true` adds a `deploy_app` step. The step prints `planned, not available yet` and does nothing; deploy the app with `make deploy-app`. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
 With `app: true`, the `deploy_app` step prints `planned, not available yet` and does nothing: deploy the app with `make deploy-app` ([the app](app.md)). The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
@@ -226,7 +224,7 @@ These records go through `ICECORE_EMIT` while the tests run, not through `end_ru
 | `runs_per_day` | none | number | dbt runs per day that fire the hooks. Needed for the monthly figures. |
 | `nodes` | the models, seeds, snapshots and tests of the graph | integer | Nodes per run. |
 | `query_events_per_node` | `1` | integer | Queries per node, one query event each. |
-| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are **coming**. |
+| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are written when the `samples` var is on (see [Run telemetry](#run-telemetry)). |
 | `days` | `30` | integer | Days per month. |
 | `bytes_per_record` | `1500` | integer | Bytes per row at the low end of the range. The high end is the payload cap. |
 | `assumed_columns` | `10` | integer | Columns assumed for an `all_columns_anomaly` test whose tested node declares none. |
@@ -311,6 +309,6 @@ In that case no metric is written, and the test logs a warning. What happens nex
 
 A threshold you cannot check is not reported as a pass.
 
-### Coming
+### The other monitors
 
-The other monitor tests are **coming**: `icecore.schema_changes`, `icecore.column_anomaly` and `icecore.dimension_anomaly`. Their arguments will be documented here when they are merged.
+`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` are available. Their settings are under [Monitor and anomaly settings](#monitor-and-anomaly-settings), and each test's arguments are in its docs block (`dbt docs generate`).

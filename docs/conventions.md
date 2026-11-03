@@ -4,7 +4,7 @@ This page says what icecore writes to the event table and how to read it. It des
 
 You do not need this page to use icecore. Read the views instead (see [Configuration](configuration.md#what-setup-creates)). Read this page if you query the event table yourself, share it with other tools, or review what icecore stores.
 
-Features that are not merged are marked **coming** and have no detail here.
+A record kind that no code writes has no detail here.
 
 ## What writes records
 
@@ -21,7 +21,7 @@ Features that are not merged are marked **coming** and have no detail here.
 
 Why two: SQL cannot set `SCOPE`, cannot write LOG attributes and cannot write spans with your own times. Only Python can. SQL is cheaper for small frequent writes ([S1.md](../spikes/S1.md#icecore_emit_run-python)). 100 events in one `ICECORE_EMIT` `CALL` took 0.73 s on the server. 100 `CALL`s of one event took 78.3 s (S1.md, `proc.batch`, `proc.per_event`).
 
-`ICECORE_ACK` and `ICECORE_SCORE` are **coming**.
+`ICECORE_ACK` (acknowledgements) and `ICECORE_SCORE` (anomaly scoring) are created by `setup` too.
 
 ### Names and the `icecore.` prefix
 
@@ -89,9 +89,9 @@ Node keys `dbt.node.fqn` and `dbt.node.layer` are on node spans and node results
 
 The metric names written today are `freshness_lag_seconds` and `row_count`.
 
-### Not written yet
+### Other record keys
 
-The design also names keys for schema changes (`dbt.schema.*`), cost (`dbt.cost.*`), root cause (`dbt.root_cause.*`), failed-row samples (`dbt.sample.*`) and acknowledgements (`icecore.ack.*`). No merged code writes them. They are **coming**. `schema_changes` also writes `icecore.schema_signature` records (`dbt.schema.columns`, a JSON list of `{name, data_type}`, split in chunks under the payload cap: `dbt.schema.chunk_index` is the 0-based chunk and `dbt.schema.chunk_count` the number of chunks of that snapshot). The `SCHEMA_CHANGES` view exists and stays empty until its emitter is merged.
+Besides the keys above, icecore writes schema changes (`dbt.schema.*`, with `icecore.schema_signature` records: `dbt.schema.columns` is a JSON list of `{name, data_type}`, split in chunks under the payload cap, `dbt.schema.chunk_index` the 0-based chunk and `dbt.schema.chunk_count` the number of chunks of that snapshot), cost (`dbt.cost.*`, when the `cost` var is on), root cause (`dbt.root_cause.*`, when `root_cause` is on), failed-row samples (`dbt.sample.*`, when `samples` is on) and acknowledgements (`icecore.ack.*`, through `ICECORE_ACK`).
 
 ### Schema version
 
@@ -274,8 +274,8 @@ If a `CALL` fails, dbt prints one warning per hook and carries on (see [Configur
 The event table may be readable by more people than your data. icecore's rules follow from that.
 
 - **Result messages are redacted by default.** dbt's message can quote data values from a Snowflake error. `result_message: redacted` replaces quoted literals with `'?'` and cuts the text at 1,000 characters. `full` and `none` are the other modes. See [Configuration](configuration.md#result_message).
-- **Failed-row samples are opt-in.** Samples are **coming**. When they ship, they stay off until you turn them on.
-- **Acknowledgements go only through `ICECORE_ACK`.** The procedure and the app are **coming**. No other path will write an acknowledgement.
+- **Failed-row samples are opt-in.** They stay off until you set the `samples` var.
+- **Acknowledgements go only through `ICECORE_ACK`.** The procedure and the app's Acknowledge button use it. No other path writes an acknowledgement.
 - **No tables, no INSERT.** icecore creates no table and writes no row any other way than the two procedures.
 - **The procedures run as their owner.** The role that runs dbt needs USAGE on them, not write access to the event table. Writing needs no `EVENTS_VIEWER`. Reading does, when the views read the account table (GATE1.md, "What setup creates").
 - **Read views, not the table.** The views are the public interface. They apply the base filter for you.

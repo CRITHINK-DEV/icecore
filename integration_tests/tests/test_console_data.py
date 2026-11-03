@@ -199,6 +199,17 @@ def test_incidents_state_node_and_root_cause():
     assert inc["k3"]["state"] == "open" and inc["k3"]["channel"] == "slack #x"  # never resolved: no success after it
 
 
+def test_root_cause_from_alerts_feed_first_then_test_results():
+    from lib import console_data
+    rows = small_rows()
+    rows["ALERTS_FEED"][0].update(root_cause_unique_id="model.shop.feed_cause", root_cause_kind="late_source")
+    inc = {i["incident_key"]: i for i in console_data.build(layer=layer_for(rows))["incidents"]}
+    assert (inc["k1"]["root_cause"], inc["k1"]["root_cause_kind"]) == ("model.shop.feed_cause", "late_source")
+    rows["ALERTS_FEED"][0].update(root_cause_unique_id=None, root_cause_kind=None)  # null: TEST_RESULTS fills in
+    inc = {i["incident_key"]: i for i in console_data.build(layer=layer_for(rows))["incidents"]}
+    assert (inc["k1"]["root_cause"], inc["k1"]["root_cause_kind"]) == ("model.shop.stg", "schema_change")
+
+
 def test_resolved_incident():
     from lib import console_data
     rows = small_rows()

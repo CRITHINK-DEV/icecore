@@ -66,7 +66,8 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "recorded_at", "layer")),
     "ALERTS_FEED": ("merged", "macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
-        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),
+        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by",
+        "root_cause_unique_id", "root_cause_kind")),
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),

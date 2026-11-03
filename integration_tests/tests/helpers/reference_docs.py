@@ -78,7 +78,7 @@ def definitions(root: Path) -> dict:
 
 def documented(root: Path) -> dict:
     """Doc name -> yml entry, from every .yml under macros/. The docs of a generic test live in macros/tests/<name>.yml
-    under the name test_<name>: dbt reads them only from macro-paths, so `dbt docs generate` shows nothing for a yml in tests/generic/."""
+    under the name test_<name>: dbt 1.8 reads them only from macro-paths (so `dbt docs generate` shows nothing for a yml in tests/generic/); newer dbt also reads tests/generic."""
     found = {}
     for path in sorted((root / "macros").rglob("*.yml")):
         for entry in (yaml.safe_load(path.read_text()) or {}).get("macros") or []:
@@ -136,9 +136,15 @@ def _prose(entry: dict) -> str:
     return " ".join(str(entry["description"]).split())
 
 
-def _call(d: dict) -> str:
+RUN_OPERATIONS = {"setup", "doctor", "estimate_telemetry_cost", "set_telemetry_levels", "acknowledge", "refresh_cortex_models"}
+
+
+def _call(d: dict) -> tuple[str, str]:
     required = [a for a, default in d["args"] if default is None]
-    return "{{ icecore." + d["name"] + "(" + ", ".join(required) + ") }}"
+    if d["name"] in RUN_OPERATIONS:
+        args = " --args '{" + ", ".join(f"{a}: <{a}>" for a in required) + "}'" if required else ""
+        return "bash", "dbt run-operation icecore." + d["name"] + args
+    return "sql", "{{ icecore." + d["name"] + "(" + ", ".join(required) + ") }}"
 
 
 def render_macros(root: Path = REPO) -> str:
@@ -164,7 +170,8 @@ def render_macros(root: Path = REPO) -> str:
         lines += [f"## {title}", "", blurb, ""]
         for key in names:
             d = defs[key]
-            lines += [f"### `{d['name']}`", "", _prose(docs[key]), "", "```sql", _call(d), "```", ""]
+            lang, call = _call(d)
+            lines += [f"### `{d['name']}`", "", _prose(docs[key]), "", "```" + lang, call, "```", ""]
             lines += _table(d, docs[key])
     unlisted = [k for k, d in defs.items() if d["kind"] == "macro" and d["file"].split("/")[1] not in GROUPS]
     assert not unlisted, f"add the folder of {unlisted} to GROUPS"

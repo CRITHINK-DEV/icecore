@@ -1,5 +1,5 @@
 {#- icecore.all_columns_anomaly: the default column metrics for every column of the relation in one test (UC2).
-    Documented in macros/tests/all_columns_anomaly.yml (dbt reads a generic test's docs only from macro-paths).
+    Documented in macros/tests/all_columns_anomaly.yml (on dbt 1.8, a generic test's docs are read only from macro-paths).
     The columns come from icecore.get_columns_signature (SHOW COLUMNS) minus `exclude_columns`. One change window is
     opened (icecore.get_change_window) and each column's metrics are computed over it (icecore.compute_column_metrics,
     one query per column, over the changed rows only), emitted with icecore.emit_metric (one per metric, with the

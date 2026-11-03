@@ -1,4 +1,4 @@
-{#- icecore.schema_changes: zero-scan schema drift test (UC2). Documented in macros/tests/schema_changes.yml (dbt reads a generic test's docs only from macro-paths).
+{#- icecore.schema_changes: zero-scan schema drift test (UC2). Documented in macros/tests/schema_changes.yml (on dbt 1.8, a generic test's docs are read only from macro-paths).
     The current columns come from icecore.get_columns_signature (SHOW COLUMNS, no data scan). The baseline is the
     signature the previous run wrote as an `icecore.schema_signature` record, read back through
     icecore.base_events() for this relation. The diff (icecore.diff_schema) is emitted as one

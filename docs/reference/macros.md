@@ -52,8 +52,8 @@ Detects what the account supports for icecore, with reads only, each inside a gu
 
 Checks an icecore install and reports; it never fails the run. `dbt run-operation icecore.doctor`. Re-detects the capabilities (detect_capabilities, reads only), then checks in order: an active event table; the obs schema's levels (`LOG_LEVEL` at least INFO, `TRACE_LEVEL` ALWAYS; the `ALTER SCHEMA` fix is printed, never run); one guarded test `CALL` of `ICECORE_EMIT` and of `ICECORE_EMIT_RUN`, tagged `icecore.doctor.probe = true`, and an informational probe of `ICECORE_ACK` with a key that is no incident (never a failure and never a grant suggestion: the dbt role must not hold it; nothing is written) (an `icecore.doctor_probe` span event and an INFO LOG record), so a missing procedure or grant shows; and the icecore records of the last 24 hours, counted through `base_events` on Snowflake's clock, without doctor's probes and the `icecore.capabilities` records of setup and doctor. Reports `OK: <n> icecore records in the last 24 h`, or `no records in 24 h` with the likely cause: the first failed check (event table, levels, procedures), else the telemetry hooks (`on-run-start: icecore.start_run()` and `on-run-end: icecore.end_run(results)`; on dbt 1.8, `source freshness` fires them only with the `source_freshness_run_project_hooks` flag, spikes/S3.md). Records were found but a check failed, or the count could not be read: status `warn`. Then records the capabilities through `ICECORE_EMIT`, as setup does. Returns `{status, cause, message, records_24h, checks, database, schema, probes, capabilities, recorded}`; status is `ok`, `no_records` or `warn`, and each check is `{name, ok, detail}`.
 
-```sql
-{{ icecore.doctor() }}
+```bash
+dbt run-operation icecore.doctor
 ```
 
 | Argument | Type | Default | What it does |
@@ -64,8 +64,8 @@ Checks an icecore install and reports; it never fails the run. `dbt run-operatio
 
 Estimates the rows icecore writes to the event table and the ingestion credits, before telemetry is turned on. `dbt run-operation icecore.estimate_telemetry_cost --args '{runs_per_day: 24}'`; `setup` runs it too. Reads only the dbt graph and runs no query. Rows per run follow the write-path design (spec section 4; spikes/GATE1.md, "Consequences for the build"): one start record, the invocation span, one end LOG, one span per node (models, seeds, snapshots and tests), one node-result LOG per node (only when the `node_results` var is on), `query_events_per_node` query events per node (only when the `query_events` var is on; both counts come from the macro next to end_run's emitter list, so a new emitter cannot be left out unnoticed), the lineage records (only when the `lineage` var is on: the graph's edges split under the payload cap, as `emit_lineage` splits them), one sample per failing test with `store_failures` (only when the `samples` var is on, which is not the default), plus the rows the procedures write themselves: one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag, not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5: Telemetry Data Ingest, 0.0212 Platform Credits per GB. The range runs from `bytes_per_record` per row to the payload cap per row, with GB taken as 10^9 bytes. Until Telemetry Data Ingest replaces Logging on an account, Logging is billed instead (1.25 x serverless compute plus 0.28 credits per 1000 file batches), which a row count cannot predict; the message says to check `METERING_HISTORY` for the service types `TELEMETRY_DATA_INGEST` and `LOGGING`. Monitor metrics are not included. Without a usable `runs_per_day` it prints the rows per run, asks for `runs_per_day` and does not fail. Returns `{status, nodes, runs_per_day, days, records_per_run, rows_per_run, emit_run_calls, rows_per_month, gb_per_month, credits_per_month, credits_per_gb, message}`; status is `ok` or `needs_runs_per_day`.
 
-```sql
-{{ icecore.estimate_telemetry_cost() }}
+```bash
+dbt run-operation icecore.estimate_telemetry_cost
 ```
 
 | Argument | Type | Default | What it does |
@@ -118,8 +118,8 @@ The `LOG_LEVEL` and `TRACE_LEVEL` effective on the obs schema (`SHOW PARAMETERS 
 
 Makes sure icecore's records are captured, without ACCOUNTADMIN for normal use (spikes/GATE1.md, "Prerequisites" and open item 7). Levels belong to the schema that holds the `ICECORE_EMIT` procedures (the obs schema), never to the session, the account or the whole database: `LOG_LEVEL` at least INFO and `TRACE_LEVEL` ALWAYS, effective on that schema (set there or inherited). `ON_EVENT` is not enough: it lands the span events of `ICECORE_EMIT` but drops the explicit spans that `ICECORE_EMIT_RUN` writes without an event (measured 1 Nov 2026, `spikes/results/gate1_followups.json`). When the levels are sufficient nothing is changed. Otherwise the one statement icecore may run, `ALTER SCHEMA <db>.<schema> SET LOG_LEVEL = 'INFO'` and/or `TRACE_LEVEL = 'ALWAYS'` (only the missing ones), is tried inside a guard; it needs `MODIFY LOG LEVEL` and `MODIFY TRACE LEVEL` on the account, so when the role lacks them it is printed for an admin and the run goes on. icecore never proposes `ALTER DATABASE ... SET TRACE_LEVEL`, which would trace every procedure and UDF in the database. Everything else is printed, never run: `ALTER ACCOUNT SET EVENT_TABLE` when no event table is active (ACCOUNTADMIN), and, on Enterprise or above when a dedicated table is requested, `CREATE EVENT TABLE`, its clustering key and `ALTER DATABASE <db> SET EVENT_TABLE`. On Standard a dedicated table is not available and the account's active table is used. A custom event table gets the recommended clustering key `(TO_DATE(TIMESTAMP), RECORD_TYPE)`; when the views read the account table, a note says readers need the `SNOWFLAKE.EVENTS_VIEWER` application role. Returns `{database, levels_ok, executed, printed, notes}` and logs every line as `icecore: ...`.
 
-```sql
-{{ icecore.set_telemetry_levels(capabilities) }}
+```bash
+dbt run-operation icecore.set_telemetry_levels --args '{capabilities: <capabilities>}'
 ```
 
 | Argument | Type | Default | What it does |
@@ -135,8 +135,8 @@ Makes sure icecore's records are captured, without ACCOUNTADMIN for normal use (
 
 Installs icecore in one command: `dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app: false, runs_per_day: 24}'`. Runs one ordered list of steps: detect_capabilities (reads only), `CREATE SCHEMA IF NOT EXISTS` for the obs schema, create_emit_procedures (`ICECORE_EMIT`, `ICECORE_EMIT_RUN`, `ICECORE_ACK`, `ICECORE_NOTIFIED` and `ICECORE_SCORE`, `CREATE OR REPLACE ... COPY GRANTS`, so grants made by an admin survive a re-run), set_telemetry_levels (the database's levels only; what the role cannot run is printed for an admin), records the capabilities as an `icecore.capabilities` span event through the new `ICECORE_EMIT`, then prints the telemetry cost estimate (`estimate_telemetry_cost`) and creates the views (`create_views`: `CREATE OR REPLACE VIEW ... COPY GRANTS` over `icecore.base_events()`, so grants made on them survive a re-run). With `compat: elementary` it then creates the Elementary-compatible views in their own schema (`create_compat_views`), then creates the tasks (`create_tasks`, one list, created suspended: the silence task when a model declares meta.sla, and the Cortex model refresh task only when Cortex is available, with the grant the dbt role needs printed). Then create_alerts creates one suspended ALERT per channel of var `icecore.alert_channels` (nothing when none is configured) and prints the notification integrations and grants an admin must run; it needs CREATE ALERT on the schema. The step that does not exist yet (deploy_app) keeps its place in the list and is reported as planned. Idempotent: a second run leaves the schema, the procedures' and views' DDL and their grants as they were, and changes no level that is already sufficient. Creates no tables. When `schema` differs from the `obs_schema` var, a warning says to set the var, because dbt runs write through the procedures of the var's schema. The role needs USAGE on the target database, CREATE SCHEMA on it (or an existing schema it can use) CREATE PROCEDURE and CREATE VIEW on the schema (and CREATE TASK for the silence task; its procedure `ICECORE_SILENCE_CHECK` runs with its owner's rights, so grant USAGE on it to nobody but the task's owner: the dbt role never needs it), and read access to the event table the views read (the `EVENTS_VIEWER` application role when it is the account table) (spikes/GATE1.md, "What setup creates and the grants it needs"). Returns `{database, schema, compat, app, capabilities, procedures, alerts, levels, recorded, estimate, steps}`, each step `{name, status, detail}` with status `done` or `planned`.
 
-```sql
-{{ icecore.setup() }}
+```bash
+dbt run-operation icecore.setup
 ```
 
 | Argument | Type | Default | What it does |
@@ -168,7 +168,7 @@ The hooks and the emitters behind them.
 
 ### `base_attributes`
 
-Invocation-level attributes that go on every icecore record, as a dict of typed values. Each `CALL` of the emitter procedures is its own trace (spikes/GATE1.md), so views and the app group a run on `dbt.invocation_id`, never on `TRACE`. Keys: `dbt.invocation_id` (string, dbt's `invocation_id`); `dbt.runtime` (string: `fusion` when dbt is 2.x, `cloud` when `DBT_CLOUD_RUN_ID`, `DBT_CLOUD_PROJECT_ID`, `DBT_CLOUD_JOB_ID` or `DBT_CLOUD_ENVIRONMENT_ID` is set, else `core`; `snowflake_native` is not detected yet, because no spike measured what `EXECUTE DBT PROJECT` exposes, GATE1.md open item 5); `dbt.command` (string, `flags.WHICH`: `build`, `run`, `test`, `run-operation`, ...); `dbt.target` (string, `target.name`); `dbt.project` (string, the root project's name); `icecore.version` (string, the installed package's `version` from its dbt_project.yml, read from dbt's runtime config; `unknown` when the runtime does not expose it); `icecore.schema_version` (number, the record layout version, currently 1; views use it to read older records). Renders without a connection.
+Invocation-level attributes that go on every icecore record, as a dict of typed values. Each `CALL` of the emitter procedures is its own trace (spikes/GATE1.md), so views and the app group a run on `dbt.invocation_id`, never on `TRACE`. Keys: `dbt.invocation_id` (string, dbt's `invocation_id`); `dbt.runtime` (string: `fusion` when dbt is 2.x, `cloud` when `DBT_CLOUD_RUN_ID`, `DBT_CLOUD_PROJECT_ID`, `DBT_CLOUD_JOB_ID` or `DBT_CLOUD_ENVIRONMENT_ID` is set, `snowflake_native` inside `EXECUTE DBT PROJECT` (invocation `project_dir` is `/tmp/dbt` and `profiles_dir` starts with `/tmp/dbt_effective_profiles`, measured in spike S13; a heuristic on paths Snowflake does not document, if they change the value falls back to `core`), else `core`); `dbt.command` (string, `flags.WHICH`: `build`, `run`, `test`, `run-operation`, ...); `dbt.target` (string, `target.name`); `dbt.project` (string, the root project's name); `icecore.version` (string, the installed package's `version` from its dbt_project.yml, read from dbt's runtime config; `unknown` when the runtime does not expose it); `icecore.schema_version` (number, the record layout version, currently 1; views use it to read older records). Renders without a connection.
 
 ```sql
 {{ icecore.base_attributes() }}
@@ -322,8 +322,8 @@ Acknowledging incidents.
 
 Acknowledge an incident of the alerts_feed view. Calls the ICECORE_ACK procedure, which refuses a key that is not a current unacknowledged incident and records the caller (CURRENT_USER) as acknowledged_by itself, so there is no `by` argument. Run it with dbt run-operation icecore.acknowledge. Returns the status, `ok 1` or an `icecore-error` message that is also logged as a warning. The app calls the same macro.
 
-```sql
-{{ icecore.acknowledge(incident_key) }}
+```bash
+dbt run-operation icecore.acknowledge --args '{incident_key: <incident_key>}'
 ```
 
 | Argument | Type | Default | What it does |
@@ -1132,6 +1132,20 @@ The SELECT of the `schema_changes` view, one row per detected column change. It 
 
 ```sql
 {{ icecore.schema_changes_view_sql() }}
+```
+
+| Argument | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `event_table` | string | `none` | The relation to read. Default none, resolved with `resolve_event_table` when the macro executes. |
+| `database` | string | `none` | The database whose procedures wrote the records. Default `target.database`. |
+| `obs_schema` | string | `none` | The schema holding the emitter procedures. Default the `obs_schema` var. |
+
+### `schema_columns_view_sql`
+
+The SELECT of the `schema_columns` view, one row per column per schema_changes run (the full column state, not the changes). It reads `icecore.base_events()` and the span events named `icecore.schema_signature`, which the schema_changes test writes on every run, one per chunk of columns under the payload cap. Columns: `relation`, `"COLUMN"` (quote it), `data_type`, `snapshot_at` (the same for every column of one run), `is_new` (the relation had a previous snapshot and the column is not in it; false on the first snapshot, as in Elementary). Only complete snapshots (every chunk landed) are listed and `invocation_id`.
+
+```sql
+{{ icecore.schema_columns_view_sql() }}
 ```
 
 | Argument | Type | Default | What it does |

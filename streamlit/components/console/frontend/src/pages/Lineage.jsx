@@ -1,21 +1,56 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import ReactFlowView, { MiniMap, Controls, Background, Handle, Position, MarkerType, useReactFlow } from 'reactflow';
-import dagre from 'dagre';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import ReactFlowView, { MiniMap, Controls, Background, Handle, Position, MarkerType, useReactFlow, useNodesInitialized } from 'reactflow';
+import { NODE_W, NODE_H, layoutCore } from '../lib/layout.js';
+import { layoutAsync } from '../lib/layoutAsync.js';
 import { MS, fmtSec, fmtSpan, fmtCr, sum, rcKind } from '../lib/format.js';
 import { LAST, NODE, ASSETS, PARENTS, CHILDREN, TESTS_OF, TRF, EX, SLA_BY, FRESH, isBad, latestIdx, latestTest, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER, STATUS_LABEL, STATUS_TONE, incAsset, declaredRoot, NOT_RECORDED } from '../lib/model.js';
 import { useApp, pal, statusColor } from '../lib/charts.jsx';
 import { Ic, ICON, StatusPill, Layer, Kpi, Seg, PageHead } from '../components/ui.jsx';
 
 /* ---------------- Lineage (the one custom component) ---------------- */
-export const NODE_W = 196, NODE_H = 48;
-export function layoutGraph(ids) {
-  const g = new dagre.graphlib.Graph(); g.setGraph({ rankdir: 'LR', nodesep: 14, ranksep: 64, marginx: 20, marginy: 20 }); g.setDefaultEdgeLabel(() => ({}));
-  const set = new Set(ids); const edges = [];
-  ids.forEach(id => g.setNode(id, { width: NODE_W, height: NODE_H }));
-  ids.forEach(id => (PARENTS[id] || []).forEach(p => { if (set.has(p)) { g.setEdge(p, id); edges.push([p, id]); } }));
-  dagre.layout(g);
-  const pos = {}; ids.forEach(id => { const n = g.node(id); pos[id] = { x: n.x - NODE_W / 2, y: n.y - NODE_H / 2 }; });
-  return { pos, edges };
+export { NODE_W, NODE_H };
+const edgesOf = ids => { const set = new Set(ids); const edges = []; ids.forEach(id => (PARENTS[id] || []).forEach(p => { if (set.has(p)) edges.push([p, id]); })); return edges; };
+export function layoutGraph(ids) { const edges = edgesOf(ids); return { pos: layoutCore(ids, edges), edges }; }
+
+/* Large projects. A graph up to SYNC_MAX nodes is laid out as in the prototype (synchronously: demo-size graphs draw
+   exactly as before). A larger one is laid out in a web worker, so the tab never blocks. Above LINEAGE_MAX nodes only a
+   neighbourhood is drawn: upstream and downstream of one node, as many hops as stay under the limit. */
+export const SYNC_MAX = 150, LINEAGE_MAX = 300;
+function useLayout(ids, key) {
+  const sync = ids.length <= SYNC_MAX;
+  const syncLay = useMemo(() => (sync ? layoutGraph(ids) : null), [key]); // eslint-disable-line
+  const [asyncLay, setAsyncLay] = useState(null);
+  useEffect(() => {
+    if (sync) return undefined;
+    let live = true; const edges = edgesOf(ids);
+    layoutAsync(ids, edges).then(pos => { if (live) setAsyncLay({ key, pos, edges }); }, () => { if (live) setAsyncLay({ key, pos: layoutCore(ids, edges), edges }); });
+    return () => { live = false; };
+  }, [key]); // eslint-disable-line
+  return sync ? syncLay : asyncLay && asyncLay.key === key ? asyncLay : null;
+}
+/* The ids of `ids` within N hops upstream (parents only) and downstream (children only) of `center`, for the largest
+   N that keeps the total at or under `max`; if even one hop is too many, its first nodes up to `max`. Prototype order. */
+export function around(center, ids, max = LINEAGE_MAX) {
+  const allowed = new Set(ids); const keep = new Set([center]); let up = [center], down = [center];
+  while (up.length || down.length) {
+    const ring = new Set(); const nu = [], nd = [];
+    up.forEach(x => (PARENTS[x] || []).forEach(y => { if (allowed.has(y) && !keep.has(y) && !ring.has(y)) { ring.add(y); nu.push(y); } }));
+    down.forEach(x => (CHILDREN[x] || []).forEach(y => { if (allowed.has(y) && !keep.has(y) && !ring.has(y)) { ring.add(y); nd.push(y); } }));
+    if (!ring.size) break;
+    if (keep.size + ring.size > max) { if (keep.size === 1) [...ring].slice(0, max - 1).forEach(y => keep.add(y)); break; }
+    ring.forEach(y => keep.add(y)); up = nu; down = nd;
+  }
+  return ids.filter(id => keep.has(id));
+}
+/* Where a large graph opens: the node with the most failures (failing tests, plus a failed build), else the most connected. */
+export function defaultCenter(ids, status) {
+  let best = null, score = -1;
+  ids.forEach(id => {
+    const fails = (TESTS_OF[id] || []).filter(t => isBad(latestTest(t))).length + (status[id] && status[id].status === 'failed' ? 1 : 0);
+    const s = fails ? 1e6 + fails : (PARENTS[id] || []).length + (CHILDREN[id] || []).length;
+    if (s > score) { score = s; best = id; }
+  });
+  return best;
 }
 export const walk = (id, map) => { const out = new Set(); const st = [id]; while (st.length) { const x = st.pop(); (map[x] || []).forEach(p => { if (!out.has(p)) { out.add(p); st.push(p); } }); } return out; };
 export const ancestors = id => walk(id, PARENTS);
@@ -41,14 +76,22 @@ export function IceNode({ data }) {
 export const nodeTypes = { ice: IceNode };
 export function FlowCtl({ fitKey, centerOn, pos }) {
   const rf = useReactFlow();
-  useEffect(() => { const t = setTimeout(() => rf.fitView({ padding: 0.12, duration: 300 }), 30); return () => clearTimeout(t); }, [fitKey]); // eslint-disable-line
+  /* Fit once per graph, after its nodes are measured: a new neighbourhood (or a layout from the worker) arrives as new
+     nodes, and fitView does nothing until every node has its size, so it is retried on the next frames until it applies. */
+  const inited = useNodesInitialized(); const fitted = useRef(null);
+  useEffect(() => {
+    if (!inited || fitted.current === fitKey) return undefined;
+    let raf = 0, tries = 0;
+    const fit = () => { if (rf.fitView({ padding: 0.12, duration: 300 }) !== false || ++tries > 60) fitted.current = fitKey; else raf = requestAnimationFrame(fit); };
+    const t = setTimeout(fit, 30); return () => { clearTimeout(t); cancelAnimationFrame(raf); };
+  }, [fitKey, inited]); // eslint-disable-line
   useEffect(() => { if (centerOn && centerOn.id && pos[centerOn.id]) rf.setCenter(pos[centerOn.id].x + NODE_W / 2, pos[centerOn.id].y + NODE_H / 2, { zoom: 1.15, duration: 450 }); }, [centerOn]); // eslint-disable-line
   return null;
 }
 export function LineageCanvas({ ids, focus, mode, onSelect, compact, centerOn }) {
   const { status, theme } = useApp();
   const key = ids.join(',');
-  const { pos, edges } = useMemo(() => layoutGraph(ids), [key]); // eslint-disable-line
+  const lay = useLayout(ids, key); const pos = lay ? lay.pos : {}; const edges = lay ? lay.edges : [];
   const hl = useMemo(() => {
     if (!focus || mode === 'none' || !ids.includes(focus)) return null;
     if (mode === 'root') { const rc = rootCause(focus, status); return { set: rc.path, root: new Set(rc.roots), impacted: rc.impacted, mode, declared: rc.declared }; }
@@ -58,7 +101,7 @@ export function LineageCanvas({ ids, focus, mode, onSelect, compact, centerOn })
     return { set, root: new Set(), impacted: new Set(), mode };
   }, [focus, mode, status, key]); // eslint-disable-line
   const p = useMemo(() => pal(), [theme]);
-  const nodes = useMemo(() => ids.map(id => {
+  const nodes = useMemo(() => (lay ? ids : []).map(id => {
     const n = NODE[id]; const tids = TESTS_OF[id] || []; const ft = tids.filter(t => isBad(latestTest(t))).length;
     const imp = !!(hl && hl.impacted.has(id));
     return { id, type: 'ice', position: pos[id], draggable: false, connectable: false,
@@ -73,7 +116,7 @@ export function LineageCanvas({ ids, focus, mode, onSelect, compact, centerOn })
     return { id: s + '>' + t, source: s, target: t, animated: on && hl.mode === 'root',
       style: { stroke: col, strokeWidth: on || imp ? 2 : 1.1, opacity: hl && !on && !imp ? 0.2 : on || imp ? 1 : 0.55, strokeDasharray: imp ? '5 4' : undefined },
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: col } };
-  }).concat(hl && hl.declared && ids.includes(hl.declared.id) && hl.declared.id !== focus ? [{ id: 'rc-link', source: hl.declared.id, target: focus, animated: true, label: `root cause: ${rcKind(hl.declared.kind).toLowerCase() || 'traced'}`,
+  }).concat(lay && hl && hl.declared && ids.includes(hl.declared.id) && hl.declared.id !== focus ? [{ id: 'rc-link', source: hl.declared.id, target: focus, animated: true, label: `root cause: ${rcKind(hl.declared.kind).toLowerCase() || 'traced'}`,
     labelStyle: { fill: p.fail, fontWeight: 600, fontSize: 11 }, labelBgStyle: { fill: p.panel }, labelBgPadding: [4, 2],
     style: { stroke: p.fail, strokeWidth: 2, strokeDasharray: '6 4' }, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: p.fail } }] : []), [edges, hl, p, focus, ids]);
   return <ReactFlowView nodes={nodes} edges={rfEdges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.12 }} minZoom={0.15} maxZoom={2}
@@ -82,7 +125,7 @@ export function LineageCanvas({ ids, focus, mode, onSelect, compact, centerOn })
     <Background gap={18} size={1} color={p.line} />
     {!compact && <MiniMap pannable zoomable nodeColor={n => statusColor(p, n.data.status)} nodeStrokeWidth={0} maskColor={theme === 'dark' ? 'rgba(10,14,20,.6)' : 'rgba(240,243,247,.65)'} style={{ width: 170, height: 110 }} />}
     <Controls showInteractive={false} position={compact ? 'top-right' : 'bottom-left'} />
-    <FlowCtl fitKey={key} centerOn={centerOn} pos={pos} />
+    <FlowCtl fitKey={lay ? key : key + ':pending'} centerOn={centerOn} pos={pos} />
   </ReactFlowView>;
 }
 
@@ -125,7 +168,13 @@ export function Lineage() {
   const [q, setQ] = useState(''); const [centerOn, setCenterOn] = useState(null);
   const focus = route.q.focus || null; const mode = route.q.mode || (focus ? 'both' : 'none');
   const setFocus = (id, m) => nav('lineage', null, { focus: id || undefined, mode: id ? (m || (mode === 'none' ? 'both' : mode)) : undefined });
-  const ids = useMemo(() => ASSETS.filter(n => { const g = LAYER_GROUP(n.layer); return groups.has(g) || !LAYER_ORDER.includes(g); }).map(n => n.unique_id), [groups]); // a layer outside the prototype's six is always shown
+  const all = useMemo(() => ASSETS.filter(n => { const g = LAYER_GROUP(n.layer); return groups.has(g) || !LAYER_ORDER.includes(g); }).map(n => n.unique_id), [groups]); // a layer outside the prototype's six is always shown
+  /* Above LINEAGE_MAX nodes: the neighbourhood of the last selected node (it stays when the selection is cleared), or of the node with the most failures. */
+  const big = all.length > LINEAGE_MAX;
+  const [center, setCenter] = useState(null);
+  useEffect(() => { if (focus && NODE[focus]) setCenter(focus); }, [focus]);
+  const c = !big ? null : center && all.includes(center) ? center : focus && all.includes(focus) ? focus : defaultCenter(all, status);
+  const ids = useMemo(() => (big ? around(c, all) : all), [all, c, big]);
   const counts = {}; ASSETS.forEach(n => { const s = status[n.unique_id].status; counts[s] = (counts[s] || 0) + 1; });
   const failingNow = ASSETS.filter(n => status[n.unique_id].status === 'failed');
   const affected = new Set(); failingNow.forEach(n => descendants(n.unique_id).forEach(x => affected.add(x)));
@@ -146,6 +195,7 @@ export function Lineage() {
         {matches.length > 0 && <div className="res">{matches.map(m => <button key={m.unique_id} onClick={() => pick(m.unique_id)}><span>{m.name}</span><StatusPill s={status[m.unique_id].status} /></button>)}</div>}</div>
       <Seg label="Highlight" options={[['none', 'Off'], ['up', 'Upstream', !focus], ['down', 'Downstream', !focus], ['both', 'Both', !focus], ['root', 'Root cause', !focus]]} value={mode} onChange={m => nav('lineage', null, { focus: focus || undefined, mode: m })} />
     </div>
+    {big && <p className="note">Showing {ids.length} of {all.length} nodes around {NODE[c].name}</p>}
     <div className="lin-wrap">
       <div className="legend" aria-label="Status legend">
         {['failed', 'warn', 'stale', 'ok', 'notrun'].map(s => <div key={s} className="row"><i style={{ background: `var(--${STATUS_TONE[s] === 'muted' ? 'muted' : STATUS_TONE[s]})` }} />{STATUS_LABEL[s]}<b>{counts[s] || 0}</b></div>)}

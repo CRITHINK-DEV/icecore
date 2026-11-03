@@ -13,6 +13,7 @@ const mock = () => ({ name: 'icecore-mock', configureServer(server) {
 export default defineConfig({
   base: './',
   plugins: [react(), mock()],
+  worker: { format: 'iife', rollupOptions: { output: { entryFileNames: 'assets/layout.worker.js' } } },
   build: { outDir: '../build', emptyOutDir: true, assetsInlineLimit: 100000, chunkSizeWarningLimit: 2000,
            rollupOptions: { output: { entryFileNames: 'assets/console.js', assetFileNames: 'assets/console[extname]' } } },
 });

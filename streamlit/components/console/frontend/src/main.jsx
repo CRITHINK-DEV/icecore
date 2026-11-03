@@ -23,7 +23,7 @@ if (window.parent === window) {
   const s = document.createElement('script');
   s.src = MOCK_FILE;
   s.onload = () => { loadData(window.ICECORE_DATA); mount({ dv: 1 }); };
-  s.onerror = () => { document.getElementById('root').innerHTML = '<p style="padding:24px">Dev mode: the mock data file did not load (' + s.src + ').</p>'; };
+  s.onerror = () => { const m = document.createElement('p'); m.style.padding = '24px'; m.textContent = 'Dev mode: the mock data file did not load (' + s.src + ').'; document.getElementById('root').replaceChildren(m); };
   document.head.appendChild(s);
 } else {
   let sig, dv = 0, lastNotice = null, notice = null, seq = 0, first = true;

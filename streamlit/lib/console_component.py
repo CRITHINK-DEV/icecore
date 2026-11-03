@@ -5,10 +5,11 @@ The React app is a committed Vite build in components/console/build (no CDN, fon
 source_freshness, schema_changes, slas, incidents, capabilities, plus `errors`, a list of {view, error}) and an
 optional `notice` shown once as a toast. Navigation, node pages, lineage, drawers and the theme stay in the browser.
 
+Send 30 days of data for all layers: the window (7 or 15 days) and layer choices filter in the browser, per page.
+
 `render` returns the browser's action, once, or None:
   {"action": "ack", "incident_key": str, "nonce": str}      Acknowledge clicked
   {"action": "refresh", "nonce": str}                        Refresh clicked
-  {"action": "filters", "days": int, "layer": str, "nonce": str}   window or layer changed (Overview, Runs, Cost)
 A component keeps its last value across reruns, so the same nonce is returned only the first time.
 """
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 import datetime as _dt
 import decimal
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -33,9 +35,23 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
+def _finite(value: Any) -> Any:
+    """NaN and +/-Infinity (float or Decimal) -> None, recursively: the browser's JSON.parse rejects them."""
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, decimal.Decimal) and not value.is_finite():
+        return None
+    return value
+
+
 def to_json_safe(data: dict) -> dict:
-    """The payload as plain JSON types: Decimal -> float, datetime/date -> ISO text, anything else -> str."""
-    return json.loads(json.dumps(data, default=_json_default))
+    """The payload as plain JSON types: Decimal -> float, datetime/date -> ISO text, NaN/Infinity -> None,
+    anything else -> str."""
+    return json.loads(json.dumps(_finite(data), default=_json_default, allow_nan=False))
 
 
 def component():

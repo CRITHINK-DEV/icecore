@@ -9,6 +9,7 @@ import pytest
 
 APP_DIR = Path(__file__).resolve().parents[2] / "streamlit"
 BUILD = APP_DIR / "components" / "console" / "build"
+SRC = APP_DIR / "components" / "console" / "frontend" / "src"
 
 
 @pytest.fixture(autouse=True)
@@ -44,6 +45,62 @@ def test_build_takes_no_script_source_from_the_url():
     assert "location.search" not in js
     assert re.search(r"""\.src\s*=\s*["']icecore-mock-data\.js["']|=\s*["']icecore-mock-data\.js["']""", js)
 
+
+
+def test_no_filters_action():
+    # Python always sends 30 days for all layers; the window and layer filters stay in the browser (review of #128).
+    js = (BUILD / "assets" / "console.js").read_text()
+    assert not re.search(r"""["']filters["']""", js)
+    from lib import console_component
+
+    assert "filters" not in (console_component.__doc__ or "")
+
+
+def test_each_page_keeps_its_own_window():
+    # The prototype's behaviour: every page opens at 15 days, whatever another page chose.
+    for page in ("Overview", "Runs", "Cost"):
+        src = (SRC / "pages" / f"{page}.jsx").read_text()
+        assert "const [win, setWin] = useState('15');" in src, page
+    assert "useSticky" not in (SRC / "components" / "ui.jsx").read_text()
+
+
+def test_tooltips_escape_data_not_their_own_markup():
+    # esc() wraps data values only; a tooltip's own <b> must stay markup.
+    for page in ("Tests", "Runs"):
+        src = (SRC / "pages" / f"{page}.jsx").read_text()
+        assert not re.search(r"esc\([^()]*'<", src), page
+
+
+def test_dev_error_message_uses_text_not_html():
+    assert "innerHTML" not in (SRC / "main.jsx").read_text()
+
+
+def test_lineage_layout_can_run_off_the_main_thread():
+    # Large graphs: the dagre layout runs in a worker shipped with the build; only a neighbourhood above LINEAGE_MAX.
+    assert (BUILD / "assets" / "layout.worker.js").is_file()
+    lineage = (SRC / "pages" / "Lineage.jsx").read_text()
+    assert "from 'dagre'" not in lineage and "layoutAsync" in lineage
+    m = re.search(r"LINEAGE_MAX = (\d+)", lineage)
+    assert m and int(m.group(1)) <= 300
+
+
+def test_render_drops_non_finite_numbers(monkeypatch):
+    # NaN or Infinity in the args makes the browser's JSON.parse fail and blanks the whole Console.
+    pytest.importorskip("streamlit")
+    import json
+    import streamlit as st
+
+    from lib import console_component
+
+    seen = {}
+    monkeypatch.setattr(console_component, "component", lambda: (lambda **kw: seen.update(kw)))
+    monkeypatch.setattr(st, "session_state", {}, raising=False)
+    data = {"runs": [{"credits": float("nan"), "duration_s": float("inf"), "n": [float("-inf"), 1.5, decimal.Decimal("NaN")]}],
+            "metrics": [{"value": decimal.Decimal("Infinity"), "expected": decimal.Decimal("2.5")}]}
+    console_component.render(data)
+    assert seen["data"] == {"runs": [{"credits": None, "duration_s": None, "n": [None, 1.5, None]}],
+                            "metrics": [{"value": None, "expected": 2.5}]}
+    json.dumps(seen["data"], allow_nan=False)
 
 def test_render_declares_from_the_build_path(monkeypatch):
     st = pytest.importorskip("streamlit")

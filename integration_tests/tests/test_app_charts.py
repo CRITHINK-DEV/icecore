@@ -96,7 +96,7 @@ def test_runs_chart_x_is_the_run_order_not_time():
     spec = _charts().runs_chart(runs).to_dict()
     bars = spec["layer"][0]
     assert bars["encoding"]["x"]["type"] == "ordinal"
-    assert len(next(iter(spec["datasets"].values()))) == 3
+    assert len(spec["data"]["values"]) == 3
     assert len(bars["encoding"]["x"]["sort"]) == 3 and len(set(bars["encoding"]["x"]["sort"])) == 3
 
 

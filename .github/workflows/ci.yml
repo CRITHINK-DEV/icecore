@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# One run per pull request (or branch): a new push cancels the run of the previous one, which is out of date.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   offline:
     runs-on: ubuntu-latest

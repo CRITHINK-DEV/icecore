@@ -64,12 +64,15 @@ VIEWS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "execution_time_s", "started_at", "completed_at", "query_id", "query_ids", "credits", "credits_settled",
         "root_cause_unique_id",
         "recorded_at", "layer", "root_cause_kind")),
-    "ALERTS_FEED": ("pr", "#57 macros/views/alerts_feed.sql", (
+    "ALERTS_FEED": ("merged", "macros/views/alerts_feed.sql", (
         "incident_key", "kind", "node_key", "window_start", "severity", "title", "first_detected_at",
-        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by")),
+        "last_detected_at", "occurrences", "last_invocation_id", "acknowledged_at", "acknowledged_by",
+        "root_cause_unique_id", "root_cause_kind")),
     "SILENCE_EVENTS": ("merged", "macros/views/silence_events.sql", (
         "unique_id", "expected_at", "grace", "expected_every_minutes", "last_success_at", "detected_at", "channel",
         "severity")),
+    "SCHEMA_COLUMNS": ("merged", "macros/views/schema_columns.sql", (
+        "relation", "column", "data_type", "snapshot_at", "is_new", "invocation_id")),
     "SLA_DECLARED": ("merged", "macros/control/create_sla_declared_view.sql", (
         "unique_id", "expected_every_minutes", "grace_minutes", "channel", "severity")),
 }
@@ -121,9 +124,12 @@ def qualified(views_schema: str, view: str) -> str:
     return f"{schema.upper()}.{view}"
 
 
-def _select_list(view: str) -> str:
+def _select_list(view: str, present: frozenset[str] | None = None) -> str:
+    """The view's columns; with `present` (upper-case names the view really has), only those."""
     cols = []
     for name in VIEWS[view][2]:
+        if present is not None and name.upper() not in present:
+            continue
         cols.append('"COLUMN" as "column"' if name == "column" else name)
     return ", ".join(cols)
 
@@ -375,11 +381,41 @@ def is_available(view: str) -> bool:
     return VIEWS[view][0] == "merged"
 
 
+# Columns a view really has, per (views schema, view), learned when a read hits a column the view does not have yet:
+# a view created by an older icecore lacks the newest columns until `icecore.setup` runs again. Kept for the app
+# process: after setup upgrades the views, restart the app to read the new columns.
+_VIEW_COLUMNS: dict[tuple[str, str], frozenset[str]] = {}
+_MISSING_COLUMN = "invalid identifier"
+
+
+def _view_columns(layer: QueryLayer, view: str) -> frozenset[str]:
+    rows = layer.session.sql(f"describe view {qualified(layer.views_schema, view)}").collect()
+    return frozenset(str(_as_row(r).get("name", "")).upper() for r in rows)
+
+
+def _only_present(built: tuple[str, list[Any]], view: str, present: frozenset[str]) -> tuple[str, list[Any]]:
+    sql, params = built
+    return sql.replace(_select_list(view), _select_list(view, present), 1), params
+
+
 def _read(builder: Callable, layer: QueryLayer | None, *args, view: str, **kwargs) -> list[dict]:
+    """Rows of one view. A view from an older icecore that lacks some of VIEWS' columns is read with the columns it
+    has (looked up once with DESCRIBE VIEW); the missing keys are simply absent and pages show "not recorded yet"."""
     if not is_available(view):
         return []
     layer = layer or default_layer()
-    return layer.run(builder(layer.views_schema, *args, **kwargs))
+    built = builder(layer.views_schema, *args, **kwargs)
+    key = (layer.views_schema.upper(), view)
+    present = _VIEW_COLUMNS.get(key)
+    if present is not None:
+        return layer.run(_only_present(built, view, present))
+    try:
+        return layer.run(built)
+    except Exception as exc:
+        if _MISSING_COLUMN not in str(exc).lower():
+            raise
+        present = _VIEW_COLUMNS[key] = _view_columns(layer, view)
+        return layer.run(_only_present(built, view, present))
 
 
 # --- one function per view ---------------------------------------------------------------------------------------
@@ -453,3 +489,36 @@ def build_sla_declared(views_schema, unique_id=None, limit=MAX_LIMIT):
 def sla_declared(unique_id: str | None = None, limit: int = MAX_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
     """SLA_DECLARED: every model with meta.sla (created by setup, macros/control/create_sla_declared_view.sql)."""
     return _read(build_sla_declared, layer, unique_id, limit, view="SLA_DECLARED")
+
+
+def build_schema_columns(views_schema, relation=None, since=None, limit=DEFAULT_LIMIT):
+    w = _Where()
+    w.eq("relation", relation)
+    w.at_least("snapshot_at", since)
+    return _build(views_schema, "SCHEMA_COLUMNS", w, "snapshot_at desc, \"COLUMN\"", limit)
+
+
+def schema_columns(relation: str | None = None, limit: int = DEFAULT_LIMIT, since=None,
+                   layer: QueryLayer | None = None) -> list[Row]:
+    """SCHEMA_COLUMNS: the column state of a relation per schema_changes run, newest snapshot first."""
+    return _read(build_schema_columns, layer, relation, since, limit, view="SCHEMA_COLUMNS")
+
+
+def build_node_executions_newest(views_schema, since=None, limit=DEFAULT_LIMIT):
+    w = _Where()
+    w.at_least("started_at", since)
+    return _build(views_schema, "NODE_EXECUTIONS", w, "started_at desc nulls last, unique_id", limit)
+
+
+def node_executions_newest(since=None, limit: int = DEFAULT_LIMIT, layer: QueryLayer | None = None) -> list[Row]:
+    """NODE_EXECUTIONS, newest first, so that a limit drops the oldest rows (node_executions reads oldest first)."""
+    return _read(build_node_executions_newest, layer, since, limit, view="NODE_EXECUTIONS")
+
+
+def current_user(layer: QueryLayer | None = None) -> str | None:
+    """The Snowflake user of this session (who an acknowledgement is recorded for), or None when it cannot be read."""
+    try:
+        rows = (layer or default_layer()).session.sql("select current_user()").collect()
+        return str(rows[0][0]) if rows else None
+    except Exception:
+        return None

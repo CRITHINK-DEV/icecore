@@ -2,7 +2,7 @@
 
 This guide takes an empty dbt project on Snowflake to its first icecore records. It takes about 15 minutes. Most of that is the one-time Snowflake setup.
 
-icecore is pre-release and not on dbt Hub yet. Step 2 shows the entry for the first release and what to use until then.
+icecore is not on dbt Hub: you install it from its Git repository, pinned to a release tag (step 2).
 
 You need:
 
@@ -49,15 +49,15 @@ The role that runs dbt needs USAGE on the database, on the icecore schema and on
 
 ## 2. Install the package
 
-Add icecore to `packages.yml`:
+Add icecore to `packages.yml`, pinned to a release tag:
 
 ```yaml
 packages:
-  - package: crithink-dev/icecore
-    version: [">=0.1.0-alpha", "<1.0.0"]
+  - git: "https://github.com/crithink-dev/icecore.git"
+    revision: v0.1.0
 ```
 
-Until the first release is on dbt Hub, install from a clone of the repository:
+To use a clone of the repository instead, point at it:
 
 ```yaml
 packages:
@@ -71,8 +71,8 @@ dbt deps
 ```
 
 ```text
-Installing /path/to/icecore
-Installed from <local @ /path/to/icecore>
+Installing https://github.com/CRITHINK-DEV/icecore.git
+Installed from revision v0.1.0
 ```
 
 ## 3. Add the two hooks
@@ -221,4 +221,4 @@ Run `dbt run-operation icecore.doctor` first. A failed check names the missing p
 
 - [Configuration](configuration.md): every var, argument and view, including how much of dbt's result message is stored.
 - To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests).
-- The other monitor tests and the app are coming.
+- The other monitor tests (`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) are in [Configuration](configuration.md#monitor-and-anomaly-settings). The app is in [The app](app.md).

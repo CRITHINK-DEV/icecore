@@ -147,7 +147,7 @@ def test_integration_project_wires_both_hooks_next_to_the_s3_probe():
 
 def test_readme_install_section_shows_the_two_hook_lines():
     readme = (REPO / "README.md").read_text()
-    install = readme[readme.index("## Try it in 60 seconds"):readme.index("## How it works")]
+    install = readme[readme.index("## Set up"):readme.index("## First monitors")]
     assert 'on-run-start: "{{ icecore.start_run() }}"' in install
     assert 'on-run-end: "{{ icecore.end_run(results) }}"' in install
     assert "telemetry: false" in install

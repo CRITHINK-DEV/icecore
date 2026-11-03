@@ -17,13 +17,14 @@ entities:
     artifacts:
       - streamlit_app.py
       - environment.yml
+      - .streamlit/config.toml
       - lib/__init__.py
-      - lib/navigation.py
+      - lib/ack.py
+      - lib/console_component.py
+      - lib/console_data.py
+      - lib/incidents.py
+      - lib/queries.py
       - lib/settings.py
-      - lib/ui.py
-      - pages/runs.py
-      - pages/tests_and_anomalies.py
-      - pages/lineage.py
-      - pages/cost.py
-      - pages/slas.py
-      - pages/settings.py
+      - lib/status.py
+      - src: components/console/build/**
+        dest: components/console/build

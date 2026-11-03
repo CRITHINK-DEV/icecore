@@ -1,6 +1,6 @@
 # Configuration
 
-This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is merged on `develop`. Features that are not merged yet are marked **coming** and have no detail here.
+This page lists every setting icecore reads today: the `icecore` var, the setup and doctor operations, the hooks and the views. It describes what is in this release.
 
 For a first install, follow the [quickstart](quickstart.md).
 
@@ -33,6 +33,10 @@ These keys control what the `start_run` and `end_run` hooks write.
 | `node_results` | `true` | boolean | `end_run` writes one record per node result: status, rows affected, execution time, message, test failures. | Cost: one row per node per run. Privacy: carries `dbt.result.message`, see `result_message`. |
 | `query_events` | `true` | boolean | `end_run` adds one `icecore.query` event with the Snowflake query id to each node's span. | Cost: one row per node query per run. The query id is what cost attribution joins on later. |
 | `lineage` | `true` | boolean | `end_run` writes the project's dependency edges (parent and child unique ids, between models, seeds, snapshots and sources) as log records. The whole graph is sent every run, not only the selected nodes. Edges that do not fit under `payload_cap_kb` are split over as many records as needed, and none is dropped. A graph with no edges writes no record. | Cost: at least one row per run, one more for each payload cap of edges. Privacy: unique ids only, no data. |
+| `samples` | `false` | boolean | Opt-in. `end_run` writes the failed rows of failed tests that have `store_failures` on, as log records. | Privacy: they copy row values; list sensitive columns in `sample_exclude_columns`. |
+| `sample_rows` | `10` | integer | Rows per sample, 1 to 1,000. Rows are dropped from the end until the record fits `payload_cap_kb`, and the record is marked truncated. | Cost: one record per failed test per run. |
+| `sample_exclude_columns` | `[]` | list | Column names, any case, whose sampled values are written as `?`. | |
+| `samples_on_warn` | `false` | boolean | Also sample tests that only warned. | |
 | `layers` | `{}` | mapping | Renames the layer of models. A model's layer is the first folder under `models/` (`models/bronze/orders.sql` is `bronze`). `layers: {brz: bronze}` makes a model in `models/brz` read as `bronze`; a folder not in the mapping is its own layer. Seeds, snapshots and sources have the resource type as layer (`seed`, `snapshot`, `source`). A model directly in `models/`, with no folder, has no layer. A value that is not a mapping is ignored, with one warning per run and a failed `layers` check in `icecore.doctor`. The mapping is applied when the record is written (`dbt.node.layer`), so a record keeps the layer it had then. | None. Folder and layer names are written to the event table. |
 | `result_message` | `redacted` | string | How much of dbt's result message reaches the event table: `redacted`, `full` or `none`. An unknown value reads as `redacted`. | Privacy, see below. |
 | `payload_cap_kb` | `64` | number | Largest size of one record's attributes. A longer string is cut and the record gets `icecore.truncated = true`. Clamped to 1 to 256. | Cost: the high end of the cost estimate. Snowflake silently drops a record of about 1 MB (spike S2). |
@@ -98,17 +102,15 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 | `root_cause` | `false` | boolean | Turn the explanation on. | Two small queries on the views at the end of a run with a failed test; no row of its own while `node_results` is on. |
 | `root_cause_lookback_hours` | `24` | integer | How far back schema changes and metric anomalies count as signals. | None. |
 
-### Declared, not read yet
+### Cost per node
 
-These keys are in the package's `dbt_project.yml`, but no merged macro reads them. Setting them changes nothing today.
+| Var | Default | Type | What it does | Privacy or cost effect |
+| --- | --- | --- | --- | --- |
+| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
 
-| Var | Default | Status |
-| --- | --- | --- |
-| `anomalies_per_run` | `0` | integer | Anomaly warn events you expect per run. Monitor anomalies are counted only through it. |
-| `monitors` | `true` | **coming** |
-| `cost` | `false` | **coming** |
+### Declared, not read
 
-The app is **coming** too.
+The package's `dbt_project.yml` declares `monitors: true`, but no macro reads it as a var: the monitors run when you add their tests, and setting it changes nothing. (`monitors` is an argument of `icecore.estimate_telemetry_cost`.)
 
 ### Alerts and tasks
 
@@ -170,11 +172,11 @@ dbt run-operation icecore.setup --args '{schema: ICECORE_OBS, compat: none, app:
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
 | `schema` | the `obs_schema` var (`ICECORE_OBS`) | string | Schema to create in the target database. |
-| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The compat views are **coming**: the step prints `planned, not available yet` and does nothing. |
-| `app` | `false` | boolean | `true` adds a `deploy_app` step. The app is **coming**: the step prints `planned, not available yet` and does nothing. |
+| `compat` | `none` | string | Any other value, such as `elementary`, adds a `create_compat_views` step. The step creates the Elementary-compatible views in their own schema. |
+| `app` | `false` | boolean | `true` adds a `deploy_app` step. The step prints `planned, not available yet` and does nothing; deploy the app with `make deploy-app`. |
 | `runs_per_day` | none | number | dbt runs per day, for the monthly part of the cost estimate. Without it the estimate prints rows per run and asks for it. |
 
-Checked on the sandbox with `compat: elementary, app: true`: steps 8 and 11 print `planned, not available yet`. The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
+With `app: true`, the `deploy_app` step prints `planned, not available yet` and does nothing: deploy the app with `make deploy-app` ([the app](app.md)). The steps for tasks and alerts follow the `alerts` var: see [Alerts and tasks](#alerts-and-tasks).
 
 The role that runs `setup` needs:
 
@@ -226,7 +228,7 @@ These records go through `ICECORE_EMIT` while the tests run, not through `end_ru
 | `runs_per_day` | none | number | dbt runs per day that fire the hooks. Needed for the monthly figures. |
 | `nodes` | the models, seeds, snapshots and tests of the graph | integer | Nodes per run. |
 | `query_events_per_node` | `1` | integer | Queries per node, one query event each. |
-| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are **coming**. |
+| `failing_tests_per_run` | `0` | integer | Failing tests per run that send a sample. Samples are written when the `samples` var is on (see [Run telemetry](#run-telemetry)). |
 | `days` | `30` | integer | Days per month. |
 | `bytes_per_record` | `1500` | integer | Bytes per row at the low end of the range. The high end is the payload cap. |
 | `assumed_columns` | `10` | integer | Columns assumed for an `all_columns_anomaly` test whose tested node declares none. |
@@ -311,6 +313,6 @@ In that case no metric is written, and the test logs a warning. What happens nex
 
 A threshold you cannot check is not reported as a pass.
 
-### Coming
+### The other monitors
 
-The other monitor tests are **coming**: `icecore.schema_changes`, `icecore.column_anomaly` and `icecore.dimension_anomaly`. Their arguments will be documented here when they are merged.
+`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` are available. Their settings are under [Monitor and anomaly settings](#monitor-and-anomaly-settings), and each test's arguments are in its docs block (`dbt docs generate`).

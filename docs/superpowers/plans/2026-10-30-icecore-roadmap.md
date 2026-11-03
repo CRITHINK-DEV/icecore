@@ -1,7 +1,7 @@
 # icecore build roadmap
 
 **Spec:** `Scope & Architecture — Snowflake-native dbt Observability Package.md` (moves to `docs/design/scope-and-architecture.md` in the repo in Phase 1, Task 1).
-**Repo:** `CRITHINK-DEV/icecore` (private), cloned to `/Users/anouarzbaida/Documents/CRITHINK/projects/icecore`.
+**Repo:** `CRITHINK-DEV/icecore` (public).
 
 Six phases, about 15 weeks of part-time effort, three gates (section 9 of the spec). Only Phase 1 has a detailed plan. Each later phase is planned after the gate before it, because Gate 1 decides how telemetry is written, and that changes the macros of every phase after it.
 

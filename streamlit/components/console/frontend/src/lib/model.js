@@ -17,7 +17,9 @@ export function normalise(raw) {
   const d = raw && typeof raw === 'object' ? { ...raw } : {};
   LISTS.forEach(k => { d[k] = Array.isArray(d[k]) ? d[k].filter(r => r && typeof r === 'object') : []; });
   d.project = d.project == null ? NOT_RECORDED : String(d.project);
-  d.capabilities = d.capabilities && typeof d.capabilities === 'object' ? d.capabilities : {};
+  d.capabilities = d.capabilities && typeof d.capabilities === 'object' ? { ...d.capabilities } : {};
+  const std = d.capabilities.layer_standard;
+  d.capabilities.layer_standard = Array.isArray(std) ? std.filter(s => s != null && String(s).trim() !== '').map(s => String(s).trim()) : null;
   d.errors = Array.isArray(d.errors) ? d.errors : [];
   d.nodes = d.nodes.filter(n => n.unique_id).map(n => {
     const uid = String(n.unique_id); const type = n.type || uid.split('.')[0];
@@ -46,7 +48,7 @@ export function normalise(raw) {
 }
 
 export let D, RUNS, NR, LAST, RUN_IDX, AS_OF, NODE, ASSETS, TESTS, BY_NAME, PARENTS, CHILDREN, TESTS_OF, TR, TRF, TRC, FAILS, TESTED,
-  EX, EX_RUN, SERIES, SERIES_LIST, SLAS, SLA_BY, FRESH, SCHEMA, CAP;
+  EX, EX_RUN, SERIES, SERIES_LIST, SLAS, SLA_BY, FRESH, SCHEMA, CAP, LAYER_ISSUES, LAYER_ISSUES_OF;
 
 export const testTarget = t => { const d = (t.depends_on || []).filter(x => NODE[x]); return d.length ? d[d.length - 1] : null; };
 export const isBad = s => s === 'fail' || s === 'error';
@@ -64,6 +66,8 @@ const FIXED_GROUP = { transient: 'transient', seed: 'sources', source: 'sources'
 const canonLayer = l => (l === 'gold_analytics' ? 'gold' : l);
 const titleCase = l => String(l).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 let POS_OF = {};
+export let LAYER_SEQ = [];            // the project's model layers, upstream first (all of them, not only the first 8)
+export let HAS_MODEL_LAYERS = false;
 export let MODEL_KEYS = ['bronze', 'silver', 'gold'];
 export let LAYER_LABEL = { sources: 'Sources & seeds', transient: 'Transient', bronze: 'Bronze', silver: 'Silver', gold: 'Gold', snapshot: 'Snapshots' };
 export let LAYER_ORDER = ['sources', 'transient', 'bronze', 'silver', 'gold', 'snapshot'];
@@ -82,7 +86,9 @@ function setLayers(nodes) {
   const acc = {};
   nodes.filter(n => n.type === 'model' && n.layer != null && !FIXED_GROUP[n.layer] && n.layer !== 'test').forEach(n => {
     const l = canonLayer(n.layer); const a = acc[l] || (acc[l] = { sum: 0, n: 0 }); a.sum += dep(n.unique_id); a.n += 1; });
-  const layers = Object.keys(acc).sort((a, b) => acc[a].sum / acc[a].n - acc[b].sum / acc[b].n || a.localeCompare(b)).slice(0, POS_KEYS.length);
+  LAYER_SEQ = Object.keys(acc).sort((a, b) => acc[a].sum / acc[a].n - acc[b].sum / acc[b].n || a.localeCompare(b));
+  HAS_MODEL_LAYERS = LAYER_SEQ.length > 0;
+  const layers = LAYER_SEQ.slice(0, POS_KEYS.length);
   POS_OF = {}; layers.forEach((l, i) => { POS_OF[l] = POS_KEYS[i]; });
   MODEL_KEYS = layers.length ? layers.map((_, i) => POS_KEYS[i]) : ['bronze', 'silver', 'gold'];
   const label = { sources: 'Sources & seeds', transient: 'Transient', snapshot: 'Snapshots' };
@@ -142,6 +148,38 @@ export function loadData(raw) {
   FRESH = {}; D.source_freshness.forEach(f => { FRESH[f.unique_id] = f; });
   SCHEMA = D.schema_changes.map(c => ({ ...c, t: parseT(c.detected_at) })).sort((a, b) => b.t - a.t);
   CAP = D.capabilities || {};
+  LAYER_ISSUES = layerIssues(); LAYER_ISSUES_OF = {};
+  LAYER_ISSUES.forEach(i => { (LAYER_ISSUES_OF[i.unique_id] = LAYER_ISSUES_OF[i.unique_id] || []).push(i); });
+}
+
+/* Layer design checks, inside one project (story cfc1e7fc). They inform only: nothing here feeds a score, a status
+   or an incident. Models only; a model in a group icecore makes on its own (transient, seed, source, snapshot) is
+   never flagged, and with no model layer at all there is nothing to check.
+   - backward: the model reads a model of a layer further downstream (layers upstream first, as setLayers orders them);
+   - nolayer: the model sits directly under models/ (no layer), counted only when the model ran or is in the lineage,
+     so a layer that is merely not recorded is not flagged;
+   - standard: var icecore.layer_standard is declared (capabilities.layer_standard, a list) and the layer is not in it. */
+export const LAYER_ISSUE_LABEL = { backward: 'Backward dependency', nolayer: 'No layer', standard: 'Not in the standard' };
+const layerName = l => (POS_OF[l] ? LAYER_LABEL[POS_OF[l]] : titleCase(l));
+function layerIssues() {
+  if (!HAS_MODEL_LAYERS) return [];
+  const rank = {}; LAYER_SEQ.forEach((l, i) => { rank[l] = i; });
+  const std = CAP.layer_standard ? CAP.layer_standard.map(s => s.toLowerCase()) : null;
+  const out = [];
+  ASSETS.filter(n => n.type === 'model' && !FIXED_GROUP[n.layer]).forEach(n => {
+    const id = n.unique_id;
+    if (n.layer == null) {
+      if (EX[id] || PARENTS[id].length || CHILDREN[id].length) out.push({ unique_id: id, name: n.name, kind: 'nolayer', reason: 'Sits directly under models/, in no layer folder' });
+      return;
+    }
+    const l = canonLayer(n.layer);
+    const down = PARENTS[id].map(p => NODE[p]).filter(p => p.type === 'model' && p.layer != null && rank[canonLayer(p.layer)] > rank[l]).sort((a, b) => a.name.localeCompare(b.name));
+    if (down.length) out.push({ unique_id: id, name: n.name, kind: 'backward', parents: down.map(p => p.unique_id),
+      reason: `Reads ${down.map(p => `${p.name}, from ${layerName(canonLayer(p.layer))}`).join(', and ')}, ${down.length > 1 ? 'downstream layers' : 'a downstream layer'}` });
+    if (std && !std.includes(l.toLowerCase())) out.push({ unique_id: id, name: n.name, kind: 'standard', reason: `Layer \u201c${n.layer}\u201d is not one of ${CAP.layer_standard.join(', ')}` });
+  });
+  const order = { backward: 0, nolayer: 1, standard: 2 };
+  return out.sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name));
 }
 loadData({});
 

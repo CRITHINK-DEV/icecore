@@ -31,6 +31,7 @@ vars:
     shadow_engine: none
     payload_cap_kb: 64
     layers: {}                          # {folder: layer}: renames the first folder under models/ in dbt.node.layer (UC7)
+    layer_standard: null                # [layer, ...]: the layers the project allows; the app flags a model outside it (informative only)
     obs_schema: ICECORE_OBS              # schema of the emitter procedures and views, in the target database (Gate 1)
     history_delay_minutes: 1             # metric history leaves out the newest minutes: ingestion lag (spike S3)
     silence_task_schedule: 5 MINUTE      # schedule of the silence task (UC6)

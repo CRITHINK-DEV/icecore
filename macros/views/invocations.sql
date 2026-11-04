@@ -1,7 +1,8 @@
 {#- UC5 invocations view: one row per dbt invocation (spec section 7), from three records of the write path joined
     on dbt.invocation_id (macros/telemetry/start_run.sql, end_run.sql, spans.sql):
       - the `icecore.run_start` span event (ICECORE_EMIT, written by on-run-start): runtime, command, target,
-        project, dbt.version, dbt.invocation.started_at;
+        project, dbt.version, dbt.invocation.started_at, and icecore.layer_standard (var icecore.layer_standard, sent
+        as JSON text because ICECORE_EMIT drops list values) as the array layer_standard, null when not declared;
       - the `icecore.invocation` span (ICECORE_EMIT_RUN, at on-run-end): dbt.invocation.started_at / completed_at /
         duration_s;
       - the run-end LOG (`icecore.kind = run_end`, ICECORE_EMIT_RUN): dbt.invocation.status (success, warn, error)
@@ -84,7 +85,9 @@ select
     try_to_number(run_end.attributes:"dbt.invocation.nodes_failed"::string) as nodes_failed,
     try_to_number(run_end.attributes:"dbt.invocation.nodes_warned"::string) as nodes_warned,
     try_to_number(run_end.attributes:"dbt.invocation.nodes_skipped"::string) as nodes_skipped,
-    cost_total.credits as credits
+    cost_total.credits as credits,
+    coalesce(as_array(try_parse_json(as_varchar(run_start.attributes:"icecore.layer_standard"))),
+             as_array(run_start.attributes:"icecore.layer_standard")) as layer_standard
 from ids
 left join run_start on run_start.invocation_id = ids.invocation_id
 left join invocation_span on invocation_span.invocation_id = ids.invocation_id

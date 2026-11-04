@@ -61,6 +61,21 @@ def test_start_record_follows_the_engine_vars():
     assert record["attrs"]["icecore.shadow_engine"] == "native"
 
 
+def test_start_record_carries_the_layer_standard_as_json_text_when_declared():
+    # var icecore.layer_standard (story cfc1e7fc): the app reads it from INVOCATIONS.layer_standard. ICECORE_EMIT
+    # (SYSTEM$ADD_EVENT) drops list values, so emit sends it as JSON text and the view parses it back.
+    record, = run_macro("it_run_start_record", {}, with_vars({"layer_standard": ["bronze", " silver ", "gold"]}))
+    assert json.loads(record["attrs"]["icecore.layer_standard"]) == ["bronze", "silver", "gold"]
+    record, = run_macro("it_run_start_record", {})
+    assert "icecore.layer_standard" not in record["attrs"]
+
+
+@pytest.mark.parametrize("value", ["bronze", {"a": "b"}, None, 3])
+def test_a_layer_standard_that_is_not_a_list_is_not_recorded(value):
+    record, = run_macro("it_run_start_record", {}, with_vars({"layer_standard": value}))
+    assert "icecore.layer_standard" not in record["attrs"]
+
+
 @pytest.mark.parametrize("off", [False, "false"])
 def test_hooks_are_noops_when_telemetry_is_false(off):
     # Offline, any query would fail to connect: success proves neither hook ran one.

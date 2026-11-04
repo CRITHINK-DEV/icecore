@@ -158,6 +158,16 @@ def test_every_string_renderer_yields_exactly_one_statement_for_every_payload(mo
             assert len(split(sql)) == 1, (renderer, payload, sql[:200])
 
 
+def test_a_hostile_layer_standard_travels_as_data_in_one_statement(monkeypatch):
+    # var icecore.layer_standard is project config (attacker data): it reaches SQL only inside the JSON literal that
+    # icecore._sql builds for the guarded CALL, and every payload keeps the CALL one statement.
+    payloads_in(monkeypatch, PAYLOADS)
+    out = run_macro("it_run_start_call", {})
+    assert len(split(out["sql"])) == 1
+    sent = json.loads(out["record"]["attrs"]["icecore.layer_standard"])
+    assert sent == [p.strip() for p in PAYLOADS if p.strip()]
+
+
 NAME_PAYLOADS = [
     "$$", "'", "\\", ";", "\n", '"', "a'b", 'a"b', "a;b", "\\'; drop table x; --", '"; drop table x; --', "a\\b",
     "MY-DB", "My DB", 'Mixed Case "Orders"',

@@ -1,14 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Fragment } from 'react';
 import { fmtSec, sum } from '../lib/format.js';
-import { LAST, ASSETS, TESTS, TESTS_OF, EX, isBad, latestTest, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER, STATUS_LABEL } from '../lib/model.js';
+import { LAST, ASSETS, TESTS, TESTS_OF, EX, isBad, latestTest, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER, STATUS_LABEL, HAS_MODEL_LAYERS, LAYER_ISSUES, LAYER_ISSUES_OF, LAYER_ISSUE_LABEL } from '../lib/model.js';
 import { useApp, pal, statusColor, base, ax, EChart } from '../lib/charts.jsx';
-import { StatusPill, Layer, Spark, Kpi, Seg, Card, PageHead, DataTable } from '../components/ui.jsx';
+import { Pill, StatusPill, Layer, Spark, Kpi, Seg, Card, PageHead, DataTable } from '../components/ui.jsx';
 
 /* ---------------- Models (catalog entry to node pages) ---------------- */
 export function Models() {
   const { status, go, theme } = useApp();
-  const [lay, setLay] = useState('all'); const [st, setSt] = useState('all'); const [q, setQ] = useState('');
-  const rows = ASSETS.filter(n => (lay === 'all' || LAYER_GROUP(n.layer) === lay) && (st === 'all' || status[n.unique_id].status === st) && (!q || n.name.toLowerCase().includes(q.toLowerCase())));
+  const [lay, setLay] = useState('all'); const [st, setSt] = useState('all'); const [q, setQ] = useState(''); const [ld, setLd] = useState('all');
+  const rows = ASSETS.filter(n => (lay === 'all' || LAYER_GROUP(n.layer) === lay) && (st === 'all' || status[n.unique_id].status === st) && (!q || n.name.toLowerCase().includes(q.toLowerCase()))
+    && (ld === 'all' || LAYER_ISSUES_OF[n.unique_id]));
+  const flagged = new Set(LAYER_ISSUES.map(i => i.unique_id)).size;
   const opt = useMemo(() => { const p = pal(); const ss = ['failed', 'warn', 'stale', 'notrun', 'ok'];
     return base(p, {
       grid: { left: 120, right: 20, top: 30, bottom: 46 },
@@ -30,6 +32,7 @@ export function Models() {
     <div className="fbar">
       <Seg label="Layer" options={[['all', 'All'], ...LAYER_ORDER.map(l => [l, LAYER_LABEL[l]])]} value={lay} onChange={setLay} />
       <Seg label="Status" options={[['all', 'All'], ...['failed', 'warn', 'stale', 'ok'].map(s => [s, STATUS_LABEL[s]])]} value={st} onChange={setSt} />
+      {HAS_MODEL_LAYERS && <Seg label="Layer design" options={[['all', 'All'], ['issues', `Issues (${flagged})`]]} value={ld} onChange={setLd} />}
       <div className="fgrp"><label htmlFor="mq">Search</label><input id="mq" className="inp" placeholder="Name" value={q} onChange={e => setQ(e.target.value)} /></div>
     </div>
     <Card title="Status by layer" sub="Count of nodes per layer and status.">
@@ -41,6 +44,7 @@ export function Models() {
           { key: 'name', label: 'Name', render: r => <b>{r.name}</b> },
           { key: 'type', label: 'Type' },
           { key: 'layer', label: 'Layer', render: r => <Layer l={r.layer} />, sort: r => LAYER_ORDER.indexOf(LAYER_GROUP(r.layer)) },
+          ...(HAS_MODEL_LAYERS ? [{ key: 'ld', label: 'Layer design', render: r => { const is = LAYER_ISSUES_OF[r.unique_id]; return is ? <div className="cell2">{is.map(i => <Fragment key={i.kind}><span><Pill tone="warn">{LAYER_ISSUE_LABEL[i.kind]}</Pill></span><small>{i.reason}</small></Fragment>)}</div> : <span className="muted">—</span>; }, sort: r => (LAYER_ISSUES_OF[r.unique_id] || []).length || null, desc: true }] : []),
           { key: 'st', label: 'Status', render: r => <StatusPill s={status[r.unique_id].status} />, sort: r => ({ failed: 4, stale: 3, warn: 2, notrun: 1, ok: 0 })[status[r.unique_id].status] },
           { key: 'tests', label: 'Tests passing', num: true, render: r => { const t = TESTS_OF[r.unique_id] || []; const f = t.filter(x => isBad(latestTest(x))).length; return t.length ? <span className={f ? 't-fail' : ''}>{t.length - f} / {t.length}</span> : <span className="muted">—</span>; }, sort: r => (TESTS_OF[r.unique_id] || []).length },
           { key: 'dur', label: 'Latest build', num: true, desc: true, render: r => fmtSec(EX[r.unique_id] && EX[r.unique_id][LAST] ? EX[r.unique_id][LAST].execution_time_s : null), sort: r => (EX[r.unique_id] && EX[r.unique_id][LAST] ? EX[r.unique_id][LAST].execution_time_s : null) },

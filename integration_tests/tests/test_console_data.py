@@ -45,7 +45,7 @@ CONTRACT = {
                   "node_unique_id": S, "state": S},
 }
 TOP = {"project", "generated_at", "capabilities", "errors", *CONTRACT}
-CAPS = {"edition": S, "event_table": S, "cortex": B, "icecore_version": S, "dbt_versions": L}
+CAPS = {"edition": S, "event_table": S, "cortex": B, "icecore_version": S, "dbt_versions": L, "layer_standard": L}
 
 
 def validate(data):
@@ -190,7 +190,8 @@ def test_mapping_of_each_key():
     assert d["slas"] == [{"unique_id": "model.shop.orders", "name": "orders", "expected_every": "90m", "grace": "10m",
                           "last_success_at": "2026-11-02T08:00:00"}]
     assert d["capabilities"] == {"edition": "Enterprise", "event_table": "DB.T.EVENTS", "cortex": True,
-                                 "icecore_version": "0.9.0", "dbt_versions": ["1.8.10", "1.9.4"]}
+                                 "icecore_version": "0.9.0", "dbt_versions": ["1.8.10", "1.9.4"],
+                                 "layer_standard": None}
 
 
 def test_incidents_state_node_and_root_cause():
@@ -380,3 +381,36 @@ def test_incident_relations_read_as_node_names():
     assert inc["k2"]["node_unique_id"] == "model.shop.orders"
     assert (inc["k4"]["node"], inc["k4"]["title"]) == ("orders|N", "column N of orders added")
     assert inc["k5"]["node"] == '"DB"."S"."UNKNOWN"|row_count||' and inc["k5"]["node_unique_id"] is None  # no match: raw
+
+
+# --- layer_standard (story cfc1e7fc): var icecore.layer_standard, recorded on each run's start, read from INVOCATIONS --
+
+@pytest.mark.parametrize("value,expected", [
+    ('[\n  "bronze",\n  "silver",\n  "gold"\n]', ["bronze", "silver", "gold"]),   # a VARIANT comes back as JSON text
+    (["staging", "marts"], ["staging", "marts"]),
+    ([], []),
+    (None, None),
+    ("not json", None),
+    ('{"a": 1}', None),                                                            # not a list: no standard
+    ('["ok", 3, null, ""]', ["ok", "3"]),
+])
+def test_layer_standard_comes_from_the_newest_run(value, expected):
+    from lib import console_data
+    rows = small_rows()
+    rows["INVOCATIONS"][0]["layer_standard"] = value                    # inv2, the newest run
+    rows["INVOCATIONS"][1]["layer_standard"] = '["older"]'
+    d = console_data.build(layer=layer_for(rows))
+    assert d["capabilities"]["layer_standard"] == expected
+    validate(d)
+
+
+def test_layer_standard_is_null_without_the_column():
+    # a view created before the column existed: the read leaves it out and nothing fails
+    from lib import console_data
+    d = console_data.build(layer=layer_for(small_rows()))
+    assert d["capabilities"]["layer_standard"] is None and d["errors"] == []
+
+
+def test_invocations_reads_layer_standard():
+    from lib import queries
+    assert "layer_standard" in queries.VIEWS["INVOCATIONS"][2]

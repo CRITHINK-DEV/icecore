@@ -49,6 +49,7 @@ One row per dbt invocation. It joins three records on `dbt.invocation_id`: the `
 | `status` | text | `success`, `warn`, `error`, `unknown`, `running` or `unfinished` | `dbt.invocation.status`, else derived |
 | `nodes_total`, `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped` | number | Node counts. Null if unfinished | `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped` |
 | `credits` | float | Sum of the run's node credits: for each node, its latest `cost` record. Null when no node has a cost record (the `cost` var is off, or attribution has not landed yet) | `dbt.cost.credits` of the `cost` records |
+| `layer_standard` | array | Var `icecore.layer_standard` as the run declared it (a list of layer names). Null when not declared | `icecore.layer_standard` of `icecore.run_start` (JSON text) |
 
 ## `NODE_EXECUTIONS`
 

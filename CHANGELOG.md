@@ -5,7 +5,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 ## [Unreleased]
 
 ### Changed
-- The SQL safety scan (`test_sql_safety.py`) now also flags `$${{ v }}$$` and any other `{{ }}` pasted into a `$$` body, `'%(v)s' % {...}`, `.format(` of any literal but `'{:,}'`, and a `log(` that is the SQL function (only the Jinja `log(` message is exempt); it no longer flags an apostrophe in a word, `/* it's */`, or `ilike '%s%'`. No macro changed.
+- The SQL safety scan (`test_sql_safety.py`) now also flags `$${{ v }}$$` and any other `{{ }}` pasted into a `$$` body, `'%(v)s' % {...}`, `.format(` of any literal but `'{:,}'`, and a `log(` that is the SQL function (only the Jinja `log(` message is exempt); it no longer flags an apostrophe in a word, `/* it's */`, or `ilike '%s%'`. An icecore._sql call concatenated to anything else, a `%s` deeper in a literal, a `$$` made by a `{{ }}`, and a query inside a `log(` are flagged too. No macro changed.
 
 ## [0.1.0] - 2026-11-03
 

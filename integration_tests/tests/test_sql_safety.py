@@ -299,6 +299,8 @@ HAND_QUOTING = [
     re.compile(r"""\\?['"]%s(?!\w|%['"])|(?<![\w%])%s\\?['"]"""),
     # '%(v)s' % {...}
     re.compile(r"%\(\w+\)s"),
+    # a %s deeper in a literal, then the % operator: "a = 'ICE_%s'" % v, '%%%s%%' % v
+    re.compile(r"""%s[^\n]*?['"]\s*%\s*(?![%}])\S"""),
     # str.format
     re.compile(r"\.format\("),  # only the exact literal '{:,}'.format(n), a number for a person, is exempt (NUMBER_FORMAT)
     # a body or its delimiter built with an operator: "$$ " ~ x, x ~ " $$"
@@ -311,13 +313,98 @@ HAND_QUOTING = [
 # `set literal = icecore._icecore_sql_literal` (also unprefixed, or after a condition): a quoting helper bound to a local
 # name without a call, called later by that name
 ALIAS = re.compile(r"\bset\s+(\w+)\s*=[^%]*?\b(?:icecore\.)?_\w*(?:literal|quote|identifier|sql)\w*\b(?!\s*\()")
-CALL_OF_SQL = re.compile(r"\{\{-?\s*icecore\._sql\([^{}]*\)\s*-?\}\}")
+EXPRESSION = re.compile(r"\{\{-?(.*?)-?\}\}", re.S)
+EXEC_CALL = re.compile(r"\b(?:run_query|statement|load_result)\(|\badapter\.|\.execute\(")  # code, not a message
 SQL_CALL = "{{SQL}}"  # what a call of icecore._sql leaves behind: still a {{ }}, so a quote around it is seen
 # dropping quotes to compare two names builds no SQL: replace(x, '"', '')
 DROP_QUOTES = re.compile(rf"replace\([^()]*?,\s*{QUOTE}\s*,\s*(?:''|\"\")\s*\)")
 NUMBER_FORMAT = re.compile(r"""(['"])\{:,\}\1\.format\(""")
 STRING = re.compile(r"""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*\"""")
 SEGMENT = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.S)
+
+
+def _call_end(text: str, open_at: int) -> int:
+    """Index just after the `)` that closes the `(` at open_at (quotes respected), or -1."""
+    depth, quote, j = 0, None, open_at
+    while j < len(text):
+        c = text[j]
+        if quote:
+            if c == "\\":
+                j += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return -1
+
+
+def whole_call(segment: str, names: str) -> bool:
+    """True when a `{{ }}` segment is exactly one call of icecore.<names>(...): the closing parenthesis ends the expression,
+    so nothing is concatenated to it (`{{ icecore._sql(a) ~ lower(v) }}` is not one call)."""
+    m = EXPRESSION.fullmatch(segment)
+    if not m:
+        return False
+    expr = m.group(1).strip()
+    head = re.match(rf"icecore\.(?:{names})\(", expr)
+    return bool(head) and _call_end(expr, head.end() - 1) == len(expr)
+
+
+def split_top(expr: str) -> list[str]:
+    """expr split at every ~ or + outside quotes and parentheses."""
+    parts, depth, quote, last, j = [], 0, None, 0, 0
+    while j < len(expr):
+        c = expr[j]
+        if quote:
+            if c == "\\":
+                j += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c in "~+" and depth == 0:
+            parts.append(expr[last:j].strip())
+            last = j + 1
+        j += 1
+    return parts + [expr[last:].strip()]
+
+
+SAFE_PIECE = re.compile(r"""(['"])[ ._,()]*\1""")  # a literal that cannot hold a quote, a dollar sign or a backslash
+
+
+def collapse_sql_calls(code: str) -> str:
+    """A `{{ }}` that is exactly one call of icecore._sql becomes {{SQL}} (same line count)."""
+    return SEGMENT.sub(lambda m: SQL_CALL + "\n" * m.group(0).count("\n") if m.group(0).startswith("{{") and whole_call(m.group(0), "_sql") else m.group(0), code)
+
+
+def sql_concatenations(code: str) -> set[int]:
+    """Lines of a `{{ }}` that joins an icecore._sql call to anything but another call or a plain `.`/space literal: the
+    other part is a value (or text) pasted next to a name that _sql validated."""
+    lines = set()
+    for m in SEGMENT.finditer(code):
+        if not m.group(0).startswith("{{"):
+            continue
+        inner = EXPRESSION.fullmatch(m.group(0)).group(1)
+        parts = split_top(inner)
+        if len(parts) > 1 and any(whole_call("{{" + p + "}}", "_sql") for p in parts):
+            if not all(whole_call("{{" + p + "}}", "_sql") or SAFE_PIECE.fullmatch(p) for p in parts):
+                lines.add(_line_of(code, m.start()))
+    return lines
+
+
+def dollar_expressions(code: str) -> set[int]:
+    """Lines of a `{{ }}` that holds a `$$` of its own: the delimiter of a body is built by Jinja."""
+    return {_line_of(code, m.start()) for m in SEGMENT.finditer(code) if m.group(0).startswith("{{") and "$$" in m.group(0)}
 
 
 def _blank(text: str) -> str:
@@ -354,7 +441,8 @@ def strip_messages(text: str) -> str:
                 depth -= 1
             j += 1
         end = j - 1 if depth == 0 else j
-        out += [text[i:m.end()], _blank(text[m.end():end])]
+        arg = text[m.end():end]
+        out += [text[i:m.end()], arg if EXEC_CALL.search(arg) else _blank(arg)]  # a query inside a message is code
         i = end
     return "".join(out) + text[i:]
 
@@ -365,7 +453,7 @@ def _line_of(text: str, index: int) -> int:
 
 # Inside a `$$` body only text that cannot end it may be pasted in: what icecore._sql builds (the string context leaves no `$`,
 # the ident and name contexts refuse `$$`), or a helper that returns an icecore._sql identifier.
-BODY_SAFE = re.compile(r"\{\{SQL\}\}|\{\{-?\s*icecore\.(?:_icecore_procedure|_icecore_silence_name|obs_schema)\(")
+BODY_HELPERS = "_icecore_procedure|_icecore_silence_name|obs_schema"  # only as the whole expression
 # (file, expression) of a `{{ }}` in a `$$` body that is provably safe but not built by icecore._sql in the same expression.
 BODY_ALLOWED = {
     # macros/telemetry/emit.sql, _icecore_guarded_call_sql: refused above the body unless _icecore_procedure_problem finds
@@ -406,7 +494,8 @@ def quoted_expressions(code: str, path: str = "") -> set[int]:
                 continue
             i += 1
         expression = m.group(0).strip("{}-").strip()
-        trusted = not in_quote and in_dollar and (BODY_SAFE.match(m.group(0)) or (path, expression) in BODY_ALLOWED)
+        trusted = not in_quote and in_dollar and (m.group(0) == SQL_CALL or whole_call(m.group(0), BODY_HELPERS)
+                                                  or (path, expression) in BODY_ALLOWED)
         if (in_quote or in_dollar) and m.group(0).startswith("{{") and not trusted:
             lines.add(_line_of(code, m.start()))
         pos = m.end()
@@ -421,7 +510,8 @@ def odd_quote_literals(code: str) -> set[int]:
         seg = m.group(0)
         for lit in STRING.finditer(seg):
             body = lit.group(0)[1:-1].replace("\\'", "'").replace('\\"', '"')
-            body = re.sub(r"(?<=\w)'(?=\w)", "", body)  # it's, can't: an apostrophe inside a word is prose, not a quote
+            # it's, don't, we're: a contraction after two letters is prose. N'a, E'a, X'a stay quotes (a one-letter SQL prefix)
+            body = re.sub(r"(?<=\w\w)'(?=(?:s|t|re|ve|ll|d|m)\b)", "", body)
             if (body.count("'") + body.count('"')) % 2 == 0:
                 continue
             before, after = seg[:lit.start()].rstrip(), seg[lit.end():].lstrip()
@@ -432,11 +522,13 @@ def odd_quote_literals(code: str) -> set[int]:
 
 def scan_text(text: str, path: str = "") -> list[tuple[int, str]]:
     """(line number, line) of every hand-built quote, quoted `{{ }}`, retired wrapper or alias call in a macro file."""
-    code = CALL_OF_SQL.sub(lambda m: SQL_CALL + "\n" * m.group(0).count("\n"), strip_messages(strip_comments(text)))
+    code = strip_messages(strip_comments(text))
+    flagged = sql_concatenations(code) | dollar_expressions(code)
+    code = collapse_sql_calls(code)
     lines = code.splitlines()
     aliases = {m.group(1) for m in map(ALIAS.search, lines) if m}
     call_of_alias = re.compile(r"(?<![\w.])(?:%s)\s*\(" % "|".join(map(re.escape, aliases))) if aliases else None
-    flagged = quoted_expressions(code, path) | odd_quote_literals(code)
+    flagged |= quoted_expressions(code, path) | odd_quote_literals(code)
     original = text.splitlines()
     hits = []
     for n, line in enumerate(lines, 1):
@@ -509,6 +601,24 @@ def test_only_icecore_sql_builds_literals_and_identifiers():
     """{%- set q = 'a = {}'.format(v) -%}""",
     """{%- set q = "a = {}".format(v) -%}""",
     """{%- set q = 'a = {:,}'.format(v) -%}""",
+    # second review of #124 (#136): an exempt call is safe only as the whole expression
+    """execute immediate $$ select {{ icecore.obs_schema(s) ~ '.' ~ t }} $$""",
+    """execute immediate $$ call {{ icecore._icecore_procedure('P', s) ~ v }}(1) $$""",
+    """execute immediate $$ call {{ icecore._icecore_silence_name('V', s) + v }} $$""",
+    """from {{ icecore._sql(a, 'ident') ~ lower(v) }}""",
+    """from {{ lower(v) ~ icecore._sql(a, 'ident') }}""",
+    """from {{ icecore._sql(a, 'ident') ~ '.' ~ v }}""",
+    # a %s inside a longer literal, then % x
+    """{%- set q = "where a = 'ICE_%s'" % v -%}""",
+    """{%- set q = "where a like '%%%s%%'" % v -%}""",
+    """{%- set q = 'where a = %s and b = 1' % v -%}""",
+    # an apostrophe after one letter is a SQL prefix (N'a'), not prose
+    """{{ run_query("select N'a" ~ v ~ "b'as c") }}""",
+    """{{ run_query("select E's" ~ v ~ "e's") }}""",
+    # the log argument holds a query; a $$ made by a {{ }}
+    """{% do log(run_query("select '" ~ v ~ "'")) %}""",
+    """{{ log(run_query("select 1 where a = '" ~ v ~ "'")) }}""",
+    """{{ '$$' }}{{ v }}{{ '$$' }}""",
 ])
 def test_the_scan_catches_every_hand_quoting_pattern(line):
     # an open comment hides nothing: the scan of a one-line text is the scan of the file
@@ -552,6 +662,11 @@ select {{ icecore._sql(v, 'string') }}""",
     # a `$$` body takes only what icecore._sql builds, or a helper that returns an icecore._sql identifier
     """execute immediate $$ select {{ icecore._sql(v, 'string') }} from {{ icecore._icecore_procedure('P', schema) }} $$""",
     """{{ log("it's " ~ x) }}""",
+    """{{ icecore._sql(a, 'ident') ~ '.' ~ icecore._sql(b, 'ident') }}""",
+    """{{ icecore._sql(a, 'ident') ~ ' ' ~ icecore._sql(b, 'string') }}""",
+    """execute immediate $$ call {{ icecore.obs_schema(s) }}.x {{ icecore._icecore_procedure('P', s) }}(1) $$""",
+    """{{ return("it's " ~ name ~ ", don't retry; we're done") }}""",
+    """{% do log(run_query(sql).rows | length ~ " rows, it's fine") %}""".replace("run_query(sql).rows","rows"),
 ])
 def test_the_scan_leaves_legitimate_lines_alone(line):
     assert not scan_text(line), line

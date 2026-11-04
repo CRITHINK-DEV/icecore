@@ -4,6 +4,9 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+- Reference pages for every public macro and every generic test argument (`docs/reference/macros.md`, `tests.md`), generated from the `.yml` docs; generic test docs moved to `macros/tests/` so `dbt docs generate` shows them; a check fails for an undocumented public macro.
+
 ## [0.1.0] - 2026-11-03
 
 First public release.

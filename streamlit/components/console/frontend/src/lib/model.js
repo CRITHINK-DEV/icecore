@@ -19,7 +19,8 @@ export function normalise(raw) {
   d.project = d.project == null ? NOT_RECORDED : String(d.project);
   d.capabilities = d.capabilities && typeof d.capabilities === 'object' ? { ...d.capabilities } : {};
   const std = d.capabilities.layer_standard;
-  d.capabilities.layer_standard = Array.isArray(std) ? std.filter(s => s != null && String(s).trim() !== '').map(s => String(s).trim()) : null;
+  const listed = Array.isArray(std) ? std.filter(s => s != null && String(s).trim() !== '').map(s => String(s).trim()) : [];
+  d.capabilities.layer_standard = listed.length ? listed : null;   // an empty list declares no standard
   d.errors = Array.isArray(d.errors) ? d.errors : [];
   d.nodes = d.nodes.filter(n => n.unique_id).map(n => {
     const uid = String(n.unique_id); const type = n.type || uid.split('.')[0];
@@ -154,17 +155,68 @@ export function loadData(raw) {
 
 /* Layer design checks, inside one project (story cfc1e7fc). They inform only: nothing here feeds a score, a status
    or an incident. Models only; a model in a group icecore makes on its own (transient, seed, source, snapshot) is
-   never flagged, and with no model layer at all there is nothing to check.
-   - backward: the model reads a model of a layer further downstream (layers upstream first, as setLayers orders them);
+   never flagged, and with no model layer at all there is nothing to check. Layers are compared by their raw name.
+   - backward: the model reads a model of a layer further downstream, in the check order (checkOrder below);
    - nolayer: the model sits directly under models/ (no layer), counted only when the model ran or is in the lineage,
      so a layer that is merely not recorded is not flagged;
-   - standard: var icecore.layer_standard is declared (capabilities.layer_standard, a list) and the layer is not in it. */
+   - standard: var icecore.layer_standard is declared (capabilities.layer_standard, a non-empty list) and the layer is
+     not in it (any case). */
 export const LAYER_ISSUE_LABEL = { backward: 'Backward dependency', nolayer: 'No layer', standard: 'Not in the standard' };
-const layerName = l => (POS_OF[l] ? LAYER_LABEL[POS_OF[l]] : titleCase(l));
+const layerName = l => { const c = canonLayer(l); return POS_OF[c] ? LAYER_LABEL[POS_OF[c]] : titleCase(l); };
+
+/* The upstream-first order the backward check uses: layer -> rank (undefined: not ranked, never checked).
+   - A declared standard gives the order: the project says it, list it upstream first. A layer outside the standard is
+     not ranked (it is flagged "not in the standard" instead).
+   - Without one, the order must not come from the edges it judges: an average DAG depth does (a backward edge deepens
+     its reader, and a layer of few models then moves downstream of what it reads, so the wrong model is flagged).
+     The order is the one with the fewest backward edges between layers (a minimum feedback arc set: exact over
+     every order up to 8 layers, adjacent swaps beyond), so an edge is flagged only when it is outnumbered by the
+     edges running the other way between the same two layers. A tie keeps the order of the layers' minimum model
+     depth (the shallowest model of a layer: a backward edge only deepens the offender, never the layer it reads
+     from), then the name. The limit: when a layer is read by another layer more than it reads it, the graph says it
+     is upstream; only a declared standard can say otherwise. */
+function checkOrder(models) {
+  const rank = {};
+  if (CAP.layer_standard) {
+    CAP.layer_standard.forEach((l, i) => { const k = l.toLowerCase(); if (rank[k] == null) rank[k] = i; });
+    return l => rank[String(l).toLowerCase()];
+  }
+  const depth = {};
+  const dep = (id, seen = new Set()) => {
+    if (depth[id] != null) return depth[id];
+    if (seen.has(id)) return 0; seen.add(id);
+    const ps = PARENTS[id] || [];
+    return (depth[id] = ps.length ? 1 + Math.max(...ps.map(p => dep(p, seen))) : 0);
+  };
+  const minD = {};
+  models.forEach(n => { const d = dep(n.unique_id); if (minD[n.layer] == null || d < minD[n.layer]) minD[n.layer] = d; });
+  const base = Object.keys(minD).sort((a, b) => minD[a] - minD[b] || a.localeCompare(b));
+  const at = {}; base.forEach((l, i) => { at[l] = i; });
+  const N = base.length; const c = base.map(() => Array(N).fill(0));   // c[i][j]: edges from a parent in i to a child in j
+  models.forEach(n => PARENTS[n.unique_id].forEach(p => { const q = NODE[p];
+    if (q.type === 'model' && at[q.layer] != null && q.layer !== n.layer) c[at[q.layer]][at[n.layer]] += 1; }));
+  const cost = o => { let k = 0; for (let x = 0; x < o.length; x++) for (let y = x + 1; y < o.length; y++) k += c[o[y]][o[x]]; return k; };
+  let best = base.map((_, i) => i);
+  if (N <= 8) {
+    let bestCost = cost(best); const used = Array(N).fill(false); const cur = [];
+    const walk = () => {   // indices in increasing order: the first order of the lowest cost is the closest to `base`
+      if (cur.length === N) { const k = cost(cur); if (k < bestCost) { bestCost = k; best = [...cur]; } return; }
+      for (let i = 0; i < N; i++) if (!used[i]) { used[i] = true; cur.push(i); walk(); cur.pop(); used[i] = false; }
+    };
+    walk();
+  } else {
+    for (let moved = true; moved;) { moved = false;
+      for (let i = 0; i + 1 < N; i++) { const a = best[i], b = best[i + 1]; if (c[a][b] < c[b][a]) { best[i] = b; best[i + 1] = a; moved = true; } } }
+  }
+  best.forEach((i, r) => { rank[base[i]] = r; });
+  return l => rank[l];
+}
+
 function layerIssues() {
   if (!HAS_MODEL_LAYERS) return [];
-  const rank = {}; LAYER_SEQ.forEach((l, i) => { rank[l] = i; });
   const std = CAP.layer_standard ? CAP.layer_standard.map(s => s.toLowerCase()) : null;
+  const models = ASSETS.filter(n => n.type === 'model' && n.layer != null && !FIXED_GROUP[n.layer] && n.layer !== 'test');
+  const rank = checkOrder(models);
   const out = [];
   ASSETS.filter(n => n.type === 'model' && !FIXED_GROUP[n.layer]).forEach(n => {
     const id = n.unique_id;
@@ -172,11 +224,12 @@ function layerIssues() {
       if (EX[id] || PARENTS[id].length || CHILDREN[id].length) out.push({ unique_id: id, name: n.name, kind: 'nolayer', reason: 'Sits directly under models/, in no layer folder' });
       return;
     }
-    const l = canonLayer(n.layer);
-    const down = PARENTS[id].map(p => NODE[p]).filter(p => p.type === 'model' && p.layer != null && rank[canonLayer(p.layer)] > rank[l]).sort((a, b) => a.name.localeCompare(b.name));
+    const r = rank(n.layer);
+    const down = r == null ? [] : PARENTS[id].map(p => NODE[p]).filter(p => p.type === 'model' && p.layer != null && !FIXED_GROUP[p.layer]
+      && rank(p.layer) != null && rank(p.layer) > r).sort((a, b) => a.name.localeCompare(b.name));
     if (down.length) out.push({ unique_id: id, name: n.name, kind: 'backward', parents: down.map(p => p.unique_id),
-      reason: `Reads ${down.map(p => `${p.name}, from ${layerName(canonLayer(p.layer))}`).join(', and ')}, ${down.length > 1 ? 'downstream layers' : 'a downstream layer'}` });
-    if (std && !std.includes(l.toLowerCase())) out.push({ unique_id: id, name: n.name, kind: 'standard', reason: `Layer \u201c${n.layer}\u201d is not one of ${CAP.layer_standard.join(', ')}` });
+      reason: `Reads ${down.map(p => `${p.name}, from ${layerName(p.layer)}`).join(', and ')}, ${down.length > 1 ? 'downstream layers' : 'a downstream layer'}` });
+    if (std && !std.includes(n.layer.toLowerCase())) out.push({ unique_id: id, name: n.name, kind: 'standard', reason: `Layer “${n.layer}” is not one of ${CAP.layer_standard.join(', ')}` });
   });
   const order = { backward: 0, nolayer: 1, standard: 2 };
   return out.sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name));

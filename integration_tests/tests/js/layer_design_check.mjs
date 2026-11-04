@@ -23,6 +23,21 @@ run('nolayer', [...BASE, n('model.p.root_model', 'model', null, ['model.p.stg_a'
 run('standard', [...BASE, n('model.p.fx', 'model', 'exports', ['model.p.fct'])], { layer_standard: ['staging', 'intermediate', 'marts'] }, ['model.p.fx']);
 run('nostandard', [...BASE, n('model.p.fx', 'model', 'exports', ['model.p.fct'])], { layer_standard: null }, ['model.p.fx']);
 run('nolayers', [n('source.p.raw', 'source', 'source'), n('model.p.a', 'model', null, ['source.p.raw'])], {}, ['model.p.a']);
+// review of #138: an empty standard is no standard; the raw layer is compared; the checked edges cannot flip the order
+run('emptyStd', BASE, { layer_standard: [] });
+out.emptyStd.cap = m.CAP.layer_standard;
+const GA = [n('source.p.raw', 'source', 'source'), n('model.p.brz', 'model', 'bronze', ['source.p.raw']),
+  n('model.p.fct', 'model', 'gold', ['model.p.brz']), n('model.p.agg', 'model', 'gold_analytics', ['model.p.fct'])];
+m.loadData({ nodes: GA, capabilities: { layer_standard: ['bronze', 'gold_analytics'] }, ...ex(['model.p.brz', 'model.p.fct', 'model.p.agg']) });
+out.rawStd = issues();
+m.loadData({ nodes: GA, capabilities: { layer_standard: ['bronze', 'gold'] }, ...ex(['model.p.brz', 'model.p.fct', 'model.p.agg']) });
+out.rawStdOut = issues();
+const REV = [n('source.p.raw', 'source', 'source'), n('model.p.stg_a', 'model', 'staging', ['source.p.raw']),
+  n('model.p.fct', 'model', 'marts', ['model.p.stg_a']), n('model.p.stg_b', 'model', 'staging', ['model.p.fct'])];
+const REV_IDS = ['model.p.stg_a', 'model.p.fct', 'model.p.stg_b'];
+m.loadData({ nodes: REV, capabilities: {}, ...ex(REV_IDS) }); out.reviewer = issues();
+m.loadData({ nodes: REV, capabilities: { layer_standard: ['staging', 'marts'] }, ...ex(REV_IDS) }); out.reviewerStd = issues();
+m.loadData({ nodes: REV, capabilities: { layer_standard: ['marts', 'staging'] }, ...ex(REV_IDS) }); out.reviewerStdReversed = issues();
 // the flags inform only: the same project with and without a standard scores the same
 m.loadData({ nodes: [...BASE, n('model.p.fx', 'model', 'exports', ['model.p.fct'])], capabilities: { layer_standard: ['staging'] }, ...ex([...IDS, 'model.p.fx']) });
 const a = snap(); m.loadData({ nodes: [...BASE, n('model.p.fx', 'model', 'exports', ['model.p.fct'])], capabilities: {}, ...ex([...IDS, 'model.p.fx']) });

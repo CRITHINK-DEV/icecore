@@ -23,12 +23,11 @@ export function HealthStrip({ health }) {
     </div></Fragment>)}</div>;
 }
 
-/* Layer design, one line under the layer cards (placement A of story cfc1e7fc): the issues of lib/model.js layerIssues,
-   listed in the .hpop popover on hover or focus. Informative only: not counted in any score. */
+/* Layer design, one line under the layer cards (placement A of story cfc1e7fc), only when there are issues: the issues
+   of lib/model.js layerIssues, listed in the .hpop popover on hover or focus. Informative only: not counted in any score. */
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 export function LayerCheck() {
-  if (!HAS_MODEL_LAYERS) return null;
-  if (!LAYER_ISSUES.length) return <div className="note lcheck-ok">Layer design · no issues</div>;
+  if (!HAS_MODEL_LAYERS || !LAYER_ISSUES.length) return null;   // no issue: nothing, the Overview looks as before
   const k = kind => LAYER_ISSUES.filter(i => i.kind === kind).length;
   const counts = [[k('backward'), 'backward dependency', 'backward dependencies'], [k('nolayer'), 'model with no layer', 'models with no layer'], [k('standard'), 'outside the standard', 'outside the standard']]
     .filter(([n]) => n).map(([n, one, many]) => plural(n, one, many)).join(', ');

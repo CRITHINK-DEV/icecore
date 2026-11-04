@@ -61,3 +61,40 @@ def test_no_model_layer_means_no_check(out):
 
 def test_the_flags_inform_only(out):
     assert out["informOnly"]["same"] is True          # same health and status with and without a standard
+
+
+# --- review of #138 ---------------------------------------------------------------------------------------------
+
+def test_an_empty_standard_means_no_standard_and_flags_nothing(out):
+    assert out["emptyStd"]["issues"] == [] and out["emptyStd"]["cap"] is None
+
+
+def test_the_raw_layer_is_compared_with_the_standard(out):
+    # gold_analytics is its own name in the standard: never folded into gold
+    # the reviewer's case: a standard of [bronze, gold_analytics] does not flag the gold_analytics model
+    assert out["rawStd"] == [{"id": "model.p.fct", "kind": "standard",
+                              "reason": "Layer \u201cgold\u201d is not one of bronze, gold_analytics"}]
+    assert out["rawStdOut"] == [{"id": "model.p.agg", "kind": "standard",
+                                 "reason": "Layer \u201cgold_analytics\u201d is not one of bronze, gold"}]
+
+
+def test_the_offending_edge_cannot_flip_the_layer_order(out):
+    # stg_a -> fct (marts), and stg_b (staging) reads fct: stg_b is the offender, with or without a standard
+    want = [{"id": "model.p.stg_b", "kind": "backward", "reason": "Reads fct, from Marts, a downstream layer"}]
+    assert out["reviewer"] == want
+    assert out["reviewerStd"] == want
+
+
+def test_a_declared_standard_gives_the_order(out):
+    # the standard lists marts first: then fct, which reads staging, is the one reading downstream
+    assert out["reviewerStdReversed"] == [{"id": "model.p.fct", "kind": "backward",
+                                           "reason": "Reads stg_a, from Staging, a downstream layer"}]
+
+
+def test_a_project_without_issues_shows_no_layer_design_line():
+    # the owner approved only the line that shows issues: with none, the Overview looks as before
+    src = (ROOT / "streamlit" / "components" / "console" / "frontend" / "src" / "pages" / "Overview.jsx").read_text()
+    assert "no issues" not in src
+    assert "if (!HAS_MODEL_LAYERS || !LAYER_ISSUES.length) return null;" in src
+    js = (ROOT / "streamlit" / "components" / "console" / "build" / "assets" / "console.js").read_text()
+    assert "no issues" not in js, "rebuild the frontend (npm run build)"

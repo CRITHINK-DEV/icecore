@@ -72,3 +72,6 @@ macros:
       - name: schema
         type: string
         description: The obs schema holding the view. Default the `obs_schema` var.
+      - name: node_unique_id
+        type: string
+        description: Keep only the series of this node. Default none, every node.

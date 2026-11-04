@@ -4,6 +4,9 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+- Reference pages for every public macro and every generic test argument (`docs/reference/macros.md`, `tests.md`), generated from the `.yml` docs; generic test docs moved to `macros/tests/` so `dbt docs generate` shows them; a check fails for an undocumented public macro.
+
 ### Fixed
 - Console Overview: the layer health strip follows the number of model layers. With 4 or more, the cards keep their width and wrap three per row instead of shrinking ("4 models, 19 tests" no longer wraps); 1 to 3 layers look as before.
 

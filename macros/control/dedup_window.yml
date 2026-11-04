@@ -25,6 +25,12 @@ macros:
       - name: window_minutes
         type: integer
         description: The dedup window in minutes. Default `dedup_window_minutes()`.
+      - name: channel_sql
+        type: string
+        description: >
+          A SQL expression that yields the channel name, used in place of the literal `channel` when the SELECT runs
+          inside an alert that reads the name from its own JSON. Default none: `channel` is quoted as a literal. It is
+          SQL text built by icecore, never a value from a user.
 
   - name: dedup_window_minutes
     description: >

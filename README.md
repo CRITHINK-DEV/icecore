@@ -114,7 +114,7 @@ models:
           max_lag: 2h
 ```
 
-The other monitors are `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly`. Each metric is scored against the test's own history (30 days, at least 7 points; until then it only records metrics). An anomaly warns by default; set `vars: icecore: anomaly_severity: error` to make it fail the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test. Arguments: [Configuration](docs/configuration.md#generic-tests). To declare a schedule and let icecore detect a missed run, add `meta.sla` to a model.
+The other monitors are `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly`. Each metric is scored against the test's own history (30 days, at least 7 points; until then it only records metrics). An anomaly warns by default; set `vars: icecore: anomaly_severity: error` to make it fail the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test. Arguments: [Configuration](docs/configuration.md#generic-tests) and the [generic test reference](docs/reference/tests.md). To declare a schedule and let icecore detect a missed run, add `meta.sla` to a model.
 
 **Cost per model is opt-in.** Set `vars: icecore: cost: true`. The role that runs dbt then needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on the `SNOWFLAKE` database) to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns and the run carries on. Until it is on, the app's Cost page stays empty.
 
@@ -292,6 +292,8 @@ Changing the account-level event table needs `ACCOUNTADMIN`. `icecore.setup` is 
 - [Contributing](CONTRIBUTING.md): how to run the tests and what a pull request must meet.
 - [Event-table conventions](docs/conventions.md): what icecore writes to the event table, the attributes, and how to read it.
 - [Views reference](docs/reference/views.md): every view `setup` creates, with columns, types and source keys.
+- [Macro reference](docs/reference/macros.md): every public macro, with its arguments, types and defaults.
+- [Generic test reference](docs/reference/tests.md): every `icecore.*` test and each of its arguments.
 - [Troubleshooting](docs/troubleshooting.md): by symptom, with how to confirm and the fix.
 - [Spike S5](spikes/S5.md): how reliable zero-scan metadata is, per table kind.
 

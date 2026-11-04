@@ -1,5 +1,5 @@
 {#- icecore.dimension_anomaly: incremental per-value row counts of one dimension column (UC2). Documented in
-    dimension_anomaly.yml.
+    macros/tests/dimension_anomaly.yml (on dbt 1.8, a generic test's docs are read only from macro-paths).
     Reads the rows that changed since the previous observation (icecore.get_change_window), counts them per value of
     the tested column (icecore.compute_dimension_metrics: the `max_values` most frequent values, the rest grouped as
     other), emits one `window_rows` metric per value with dimension `<column>=<value>` and compares each with the

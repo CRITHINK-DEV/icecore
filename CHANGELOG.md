@@ -4,8 +4,14 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+- Reference pages for every public macro and every generic test argument (`docs/reference/macros.md`, `tests.md`), generated from the `.yml` docs; generic test docs moved to `macros/tests/` so `dbt docs generate` shows them; a check fails for an undocumented public macro.
+
 ### Changed
 - The SQL safety scan (`test_sql_safety.py`) now also flags `$${{ v }}$$` and any other `{{ }}` pasted into a `$$` body, `'%(v)s' % {...}`, `.format(` of any literal but `'{:,}'`, and a `log(` that is the SQL function (only the Jinja `log(` message is exempt); it no longer flags an apostrophe in a word, `/* it's */`, or `ilike '%s%'`. An icecore._sql call concatenated to anything else, a `%s` deeper in a literal, a `$$` made by a `{{ }}`, and a query inside a `log(` are flagged too. `| format(` and `%` of a `%s` literal (unless every argument is an `icecore._sql` call) and wrapped or filtered `_sql` concatenations are flagged too. No macro changed.
+
+### Fixed
+- Console Overview: the layer health strip follows the number of model layers. With 4 or more, the cards keep their width and wrap three per row instead of shrinking ("4 models, 19 tests" no longer wraps); 1 to 3 layers look as before.
 
 ## [0.1.0] - 2026-11-03
 

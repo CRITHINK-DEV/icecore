@@ -1,0 +1,31 @@
+version: 2
+
+macros:
+  - name: sla_declared_view_ddl
+    description: >
+      The `CREATE OR REPLACE VIEW ... COPY GRANTS` statement for the `SLA_DECLARED` view, returned as text and not run.
+      One row per model that declares `meta.sla`, with `unique_id`, `expected_every_minutes`, `grace_minutes`, `channel`
+      and `severity` (default `warn`). Entries without an expected interval are left out. The entries travel as one
+      escaped JSON literal, so `meta.sla` text is data and never SQL. With no entries the view is still created, with
+      zero rows.
+    arguments:
+      - name: entries
+        type: list
+        description: The SLA entries, as returned by `collect_sla_config`. A list of dicts with `unique_id`, `expected_every_minutes`, `grace_minutes`, `channel` and `severity`.
+      - name: schema
+        type: string
+        description: The obs schema that holds the view. Default the `obs_schema` var (`ICECORE_OBS`).
+
+  - name: create_sla_declared_view
+    description: >
+      Creates the `SLA_DECLARED` view, which lists every model that declares `meta.sla` whether or not it was ever
+      silent. Called by the `create_tasks` step of `setup`; you rarely call it yourself. Does nothing at parse time and
+      returns `skipped`. Otherwise returns `ok`, or the error text when the DDL failed, with one logged warning: it
+      never fails the run.
+    arguments:
+      - name: schema
+        type: string
+        description: The obs schema that holds the view. Default the `obs_schema` var (`ICECORE_OBS`).
+      - name: entries
+        type: list
+        description: The SLA entries. Default none, read from the project with `collect_sla_config`.

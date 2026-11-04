@@ -316,4 +316,4 @@ A threshold you cannot check is not reported as a pass.
 
 ### The other monitors
 
-`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` are available. Their settings are under [Monitor and anomaly settings](#monitor-and-anomaly-settings), and each test's arguments are in its docs block (`dbt docs generate`).
+`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly` are available. Their settings are under [Monitor and anomaly settings](#monitor-and-anomaly-settings), and each test's arguments are in its docs block (`dbt docs generate`) and in the [generic test reference](reference/tests.md). Every public macro is in the [macro reference](reference/macros.md).

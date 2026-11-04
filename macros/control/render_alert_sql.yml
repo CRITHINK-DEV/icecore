@@ -14,6 +14,9 @@ macros:
       - name: schema
         type: string
         description: The obs schema to create them in, also the schema the feed and the base filter read. Default the `obs_schema` var.
+      - name: resume
+        type: boolean
+        description: Resume the alerts after creating them. Default none, which follows the var `alert_resume` when set, otherwise the var `alerts`.
 
   - name: alert_channels
     description: >

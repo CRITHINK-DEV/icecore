@@ -17,7 +17,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -26,10 +26,6 @@ NOW = "convert_timezone('UTC', current_timestamp())::timestamp_ntz"
 
 def quoted(table: str) -> str:
     return f'"{DATABASE}"."{SCHEMA}"."{table}"'
-
-
-def statuses(res) -> dict:
-    return {r.node.name: r.status.value for r in res.result.results}
 
 
 @pytest.fixture(scope="module")
@@ -87,7 +83,7 @@ def e2e(dbt, sf):
 
             icecore = {"obs_schema": schema, **(extra_vars or {})}
             res = invoke(["build", "--select", " ".join(select), "--vars", json.dumps({"icecore": icecore, **names})], [collect])
-            return statuses(res), lines
+            return node_statuses(res), lines
 
         # run 1: defaults (anomaly_severity warn, engine auto: no Cortex model, so native)
         first, first_lines = build(["it_anom_volume_spike", "it_anom_volume_error", "it_anom_volume_threshold", "it_anom_volume_threshold_warn", "it_anom_volume_warn",

@@ -81,6 +81,14 @@ def test_procedures_keep_their_grants_when_replaced():
         assert re.search(r"\([^)]*\)\s+COPY GRANTS\s+RETURNS (STRING|VARIANT)", ddl), ddl
 
 
+def test_the_appended_dbt_query_comment_is_left_out_of_a_view_text():
+    body = "create or replace view V(\n\tA\n) as select 1 as a"
+    comment = ('\n/* {"app": "dbt", "dbt_version": "1.12.6", "profile_name": "icecore_sandbox", "target_name": "sandbox",'
+               ' "connection_name": "macro_setup"} */;')
+    assert without_query_comment(body + comment) == body + ";"
+    assert without_query_comment(body + ";") == body + ";"
+
+
 def test_one_plain_identifier_helper():
     """The three copies (_icecore_identifier, _icecore_levels_identifier, _icecore_capability_identifier) are one."""
     sources = "\n".join(p.read_text() for p in (REPO / "macros").rglob("*.sql"))
@@ -172,6 +180,15 @@ def fresh_schema(sf, run_id):
         sf.cursor().execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
 
 
+DBT_QUERY_COMMENT = re.compile(r'\n/\* \{"app": "dbt".*?\} \*/(?=;?\s*$)', re.S)
+
+
+def without_query_comment(ddl: str) -> str:
+    """A view's text without dbt's query comment: dbt-snowflake 1.12 appends it to every statement (before the last ';'),
+    so the stored text names the macro that ran it (macro_setup, macro_it_call). dbt 1.8 puts it first, out of the text."""
+    return DBT_QUERY_COMMENT.sub("", ddl)
+
+
 def _state(sf, schema):
     cur = sf.cursor(DictCursor)
     shown = cur.execute(f"show schemas like '{schema}' in database {DATABASE}").fetchall()
@@ -183,7 +200,8 @@ def _state(sf, schema):
         state[proc + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
     for view in sorted(r["name"] for r in cur.execute(f'show views in schema "{DATABASE}"."{schema}"').fetchall()):
         qualified = f'"{DATABASE}"."{schema}"."{view}"'
-        state[view + "_ddl"] = cur.execute(f"select get_ddl('view', '{qualified}')").fetchone()
+        state[view + "_ddl"] = {k: without_query_comment(v)
+                                for k, v in cur.execute(f"select get_ddl('view', '{qualified}')").fetchone().items()}
         grants = cur.execute(f"show grants on view {qualified}").fetchall()
         state[view + "_grants"] = sorted((g["privilege"], g["granted_to"], g["grantee_name"]) for g in grants)
     return state
@@ -210,7 +228,8 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
     assert before["schema_created_on"] and ("USAGE", "ROLE", "PUBLIC") in before["ICECORE_EMIT_grants"]
     assert ("SELECT", "ROLE", "PUBLIC") in before["METRICS_grants"]
     assert {"METRICS_ddl", "SCHEMA_CHANGES_ddl"} <= set(before)  # the views exist, with their DDL compared too
-    # dbt's query comment (it names the connection) must not end up in the stored view text
+    # dbt's query comment (it names the connection) never starts the stored view text; dbt-snowflake 1.12 appends it
+    # instead, and _state compares the views without it
     assert not any(next(iter(v.values())).lstrip().startswith("/*") for k, v in before.items() if k.endswith("_ddl") and k.startswith(("METRICS", "SCHEMA_CHANGES"))), before["METRICS_ddl"]
 
     first, _ = call("setup", {"schema": schema})

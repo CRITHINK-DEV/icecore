@@ -117,7 +117,7 @@ Read the output for three things:
 - The cost line is an estimate of what icecore will write to your event table each month. `runs_per_day` is how often dbt runs.
 - Steps 8 and 9 create the silence task and the alerts only when the `alerts` var is `true`. By default it is `false`, so they create no alert and no silence task. With `alerts: true` they are also **resumed**, and a resumed alert or task runs on a warehouse every period: that is warehouse time on your account. See [Alerts and tasks](configuration.md#alerts-and-tasks).
 
-Running `setup` again changes nothing. To use another schema, pass `schema` and set the `obs_schema` var to the same name: see [Configuration](configuration.md#where-icecore-writes).
+Running `setup` again changes nothing. Recent dbt-snowflake versions (1.12 does, 1.8 does not) add dbt's query comment at the end of every statement it runs, so `GET_DDL` of an icecore view ends with a `/* {"app": "dbt", ... } */` line that names your profile and target. To keep it out, set `query-comment: {append: false}` in your `dbt_project.yml`. To use another schema, pass `schema` and set the `obs_schema` var to the same name: see [Configuration](configuration.md#where-icecore-writes).
 
 ## 5. Run dbt
 

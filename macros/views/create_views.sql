@@ -12,7 +12,7 @@
   {%- set created = [] -%}
   {%- if execute -%}
     {%- for view in icecore._icecore_views(schema) -%}
-      {%- do run_query(icecore._icecore_view_ddl(view['name'], view['sql'], schema)) -%}
+      {%- do run_query(icecore._icecore_view_statement(icecore._icecore_view_ddl(view['name'], view['sql'], schema))) -%}
       {%- do created.append(icecore._icecore_procedure(view['name'], schema)) -%}
     {%- endfor -%}
     {%- do log('icecore: created ' ~ (created | join(', ')), info=True) -%}
@@ -40,6 +40,14 @@
     {'name': 'ALERTS_FEED', 'sql': icecore.alerts_feed_view_sql(event_table=event_table, obs_schema=obs)},
     {'name': 'SCHEMA_COLUMNS', 'sql': icecore.schema_columns_view_sql(event_table=event_table, obs_schema=obs)},
   ]) }}
+{% endmacro %}
+
+
+{#- How a view's DDL is run: `execute immediate '<DDL as an escaped literal>'`. dbt-snowflake 1.12 appends its query
+    comment (profile, target, calling macro) to every statement before the last ';', and inside CREATE VIEW it would
+    stay in the view's text; here it lands on the EXECUTE IMMEDIATE, so the view's text is the same whoever runs it. -#}
+{% macro _icecore_view_statement(ddl) %}
+  {{ return('execute immediate ' ~ icecore._sql(ddl, 'string')) }}
 {% endmacro %}
 
 

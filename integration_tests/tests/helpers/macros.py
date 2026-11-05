@@ -37,6 +37,12 @@ def invoke(args: list[str], callbacks=None) -> dbtRunnerResult:
         )
 
 
+def node_statuses(res: dbtRunnerResult) -> dict:
+    """{node name: status} of a dbt command. dbt 1.12 also lists the on-run-start/end hooks among the results; they are
+    left out, so dbt 1.8 and the latest give the same dict."""
+    return {r.node.name: r.status.value for r in res.result.results if not r.node.unique_id.startswith("operation.")}
+
+
 def install_deps() -> None:
     """dbt deps, once per test session (under pytest-xdist, once before the workers start)."""
     global _deps_done

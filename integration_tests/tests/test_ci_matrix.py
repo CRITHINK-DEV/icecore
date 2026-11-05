@@ -34,7 +34,7 @@ def test_the_release_check_runs_the_sandbox_suite_on_floor_and_latest_in_four_pa
     assert "pip install -r requirements-${{ matrix.requirements }}.txt" in runs
     # The Gate 1 spikes (tests/spikes/) measure Snowflake, not icecore: the manual `sandbox` dispatch runs them, a release
     # does not (they took 1 h 47 min of the 2 h 12 min serial run).
-    assert "pytest -m sandbox -n 12 --dist loadgroup --ignore=tests/spikes" in runs
+    assert 'pytest -m "sandbox and not timed" -n 12 --dist loadgroup --ignore=tests/spikes' in runs
 
 
 def test_the_release_timeout_covers_one_part():
@@ -50,7 +50,19 @@ def test_the_sandbox_jobs_never_run_on_a_pull_request_into_develop():
     # Every test names its objects with its own run_id, so parts and runs may overlap; a job-level concurrency group
     # would hold all parts but one back.
     assert "concurrency" not in release
-    assert "pytest -m sandbox -n 12 --dist loadgroup" in [s.get("run", "") for s in single["steps"]]
+    runs = [s.get("run", "") for s in single["steps"]]
+    assert runs.index('pytest -m "sandbox and not timed" -n 12 --dist loadgroup') < runs.index('pytest -m "sandbox and timed"')
+
+
+def test_the_timed_tests_run_alone_after_every_part_one_version_at_a_time():
+    # test_scale asserts how long Snowflake takes; with ~90 tests sharing the X-Small warehouse it measured the queue
+    # (53.5 s against 45 s, run 42064975322), and passes run alone.
+    job = CI["jobs"]["release-sandbox-timed"]
+    assert job["needs"] == "release-sandbox"
+    assert job["if"] == "!cancelled() && (" + RELEASE_IF + ")"
+    assert job["strategy"]["matrix"] == {"requirements": ["floor", "latest"]} and job["strategy"]["max-parallel"] == 1
+    assert 'pytest -m "sandbox and timed"' in [s.get("run", "") for s in job["steps"]]
+    assert "ICECORE_TEST_SHARD" not in job.get("env", {})
 
 
 def test_the_offline_checks_the_branch_rules_require_are_kept():

@@ -32,7 +32,9 @@ def test_the_release_check_runs_the_sandbox_suite_on_floor_and_latest_in_four_pa
     assert job["env"]["ICECORE_TEST_SHARD"] == "${{ matrix.part }}/4"
     runs = [s.get("run", "") for s in job["steps"]]
     assert "pip install -r requirements-${{ matrix.requirements }}.txt" in runs
-    assert "pytest -m sandbox -n 12 --dist loadgroup" in runs
+    # The Gate 1 spikes (tests/spikes/) measure Snowflake, not icecore: the manual `sandbox` dispatch runs them, a release
+    # does not (they took 1 h 47 min of the 2 h 12 min serial run).
+    assert "pytest -m sandbox -n 12 --dist loadgroup --ignore=tests/spikes" in runs
 
 
 def test_the_release_timeout_covers_one_part():

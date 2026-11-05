@@ -73,7 +73,7 @@ Each list shows the keys added to the base keys above. `snow.query.id` as a reco
 
 | Kind | Attributes |
 | --- | --- |
-| `icecore.run_start` (event) | `dbt.version`, `dbt.invocation.started_at`, `icecore.anomaly_engine`, `icecore.shadow_engine`, `icecore.level`, `icecore.message` |
+| `icecore.run_start` (event) | `dbt.version`, `dbt.invocation.started_at`, `icecore.anomaly_engine`, `icecore.shadow_engine`, `icecore.layer_standard` (JSON text, only when var `layer_standard` is a list), `icecore.level`, `icecore.message` |
 | `icecore.capabilities` (event) | `icecore.capability.database`, `.edition`, `.edition_source`, `.event_table`, `.event_table_level`, `.log_level`, `.trace_level`, `.cortex`, `.cortex_reason`, `icecore.level`, `icecore.message` |
 | `icecore.metric` (event) | `dbt.metric.name`, `dbt.metric.value` (always a number), `dbt.node.relation`, and when given `dbt.metric.column`, `dbt.metric.dimension`, `dbt.anomaly.engine`, `.expected`, `.lower`, `.upper`, `.score`, `.is_anomaly`, `icecore.metric.threshold` (seconds, `icecore.freshness` with `max_lag`), plus `icecore.level` |
 | `icecore.invocation` (span) | `dbt.version`, `icecore.anomaly_engine`, `icecore.shadow_engine`, `dbt.invocation.started_at`, `.completed_at`, `.duration_s` |

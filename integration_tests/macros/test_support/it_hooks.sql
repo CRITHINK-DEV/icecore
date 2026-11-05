@@ -7,6 +7,15 @@
   {% do _it_result(icecore._icecore_emit_records([icecore._icecore_run_start_event()])) %}
 {% endmacro %}
 
+{#- The run_start record with the layer standard of IT_PAYLOADS (JSON: YAML vars cannot carry every payload), and the
+    guarded CALL statement that would send it (no connection used). -#}
+{% macro it_run_start_call() %}
+  {% set event = icecore._icecore_run_start_event() %}
+  {% do event['attributes'].update({'icecore.layer_standard': icecore._icecore_layer_standard(fromjson(env_var('IT_PAYLOADS')))}) %}
+  {% set records = icecore._icecore_emit_records([event]) %}
+  {% do _it_result({'record': records[0], 'sql': icecore._icecore_guarded_call_sql(icecore._icecore_procedure('ICECORE_EMIT'), records)}) %}
+{% endmacro %}
+
 {#- What each hook renders, and what end_run would send, with no connection used when telemetry is off. -#}
 {% macro it_hooks_render(results) %}
   {% do _it_result({

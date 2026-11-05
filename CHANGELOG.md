@@ -4,14 +4,19 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-05
+
 ### Added
+- CI: the Snowflake sandbox suite runs on dbt 1.8 and on the latest dbt for every release (a pull request into `main`, or a manual dispatch with `release` ticked), never on other pull requests nor on a schedule. It runs in parallel, 4 parts per dbt version with the tests that share a setup kept together, then the timed tests (`test_scale`) alone: about 20 minutes. The Gate 1 spikes run only on the manual sandbox dispatch.
 - Reference pages for every public macro and every generic test argument (`docs/reference/macros.md`, `tests.md`), generated from the `.yml` docs; generic test docs moved to `macros/tests/` so `dbt docs generate` shows them; a check fails for an undocumented public macro.
 - Console: layer design checks inside the project, informative only (no score, status or incident changes). The Overview shows one line under the layer cards with the issues in a hover popover, and Models & sources gets a "Layer design" filter and column. Checks: a model reading a model of a layer further downstream, a model directly under `models/`, and, with the new var `layer_standard` (a list, recorded on `icecore.run_start` and read as `INVOCATIONS.layer_standard`), a model whose layer is not in the standard.
 
 ### Changed
+- CI: the offline suite runs in parallel (pytest-xdist) over 5 runners, about 7 minutes instead of about 48, with the same tests. Contributors: both requirements files pin `pytest<9.2`, because pytest 9.2 drops pytest-xdist's `--dist loadgroup` groups.
 - The SQL safety scan (`test_sql_safety.py`) now also flags `$${{ v }}$$` and any other `{{ }}` pasted into a `$$` body, `'%(v)s' % {...}`, `.format(` of any literal but `'{:,}'`, and a `log(` that is the SQL function (only the Jinja `log(` message is exempt); it no longer flags an apostrophe in a word, `/* it's */`, or `ilike '%s%'`. An icecore._sql call concatenated to anything else, a `%s` deeper in a literal, a `$$` made by a `{{ }}`, and a query inside a `log(` are flagged too. `| format(` and `%` of a `%s` literal (unless every argument is an `icecore._sql` call) and wrapped or filtered `_sql` concatenations are flagged too. No macro changed.
 
 ### Fixed
+- With dbt-snowflake 1.12, dbt appends its query comment (profile, target, calling macro) to every statement, and it ended up in the text of icecore's views. `setup` now creates the views and the Elementary-compatible views through `EXECUTE IMMEDIATE`, so the comment stays out on any dbt version and running `setup` twice leaves identical views.
 - Console Overview: the layer health strip follows the number of model layers. With 4 or more, the cards keep their width and wrap three per row instead of shrinking ("4 models, 19 tests" no longer wraps); 1 to 3 layers look as before.
 
 ## [0.1.0] - 2026-11-03

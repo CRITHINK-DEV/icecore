@@ -26,13 +26,28 @@ def pytest_configure(config):
         os.environ[DEPS_DONE] = "1"
 
 
+def xdist_group(item) -> str | None:
+    """The test's file when the test uses a module- or class-scoped fixture, so that setup is built once, on one worker."""
+    if any(defs[-1].scope in ("module", "class") for defs in item._fixtureinfo.name2fixturedefs.values()):
+        return item.nodeid.split("::")[0]
+    return None
+
+
+@pytest.hookimpl(tryfirst=True)  # before pytest-xdist reads the xdist_group marks
 def pytest_collection_modifyitems(config, items):
-    """ICECORE_TEST_SHARD=i/n (CI): keep the i-th of n parts of the tests, picked by a stable hash of each test id."""
+    """Tests that share a module-scoped setup get one xdist group (`--dist loadgroup` keeps it on one worker).
+    ICECORE_TEST_SHARD=i/n (CI): keep the i-th of n parts, picked by a stable hash of each group or lone test id."""
+    keys = {}
+    for item in items:
+        group = xdist_group(item)
+        if group:
+            item.add_marker(pytest.mark.xdist_group(name=group))
+        keys[item.nodeid] = group or item.nodeid
     shard = os.environ.get("ICECORE_TEST_SHARD")
     if not shard:
         return
     index, total = (int(x) for x in shard.split("/"))
-    keep = [item for item in items if zlib.crc32(item.nodeid.encode()) % total == index - 1]
+    keep = [item for item in items if zlib.crc32(keys[item.nodeid].encode()) % total == index - 1]
     if len(keep) < len(items):
         config.hook.pytest_deselected(items=[item for item in items if item not in keep])
         items[:] = keep

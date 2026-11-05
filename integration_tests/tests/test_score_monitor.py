@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from helpers.macros import MacroFailed, call_macro, invoke, run_macro_with_logs
+from helpers.macros import MacroFailed, call_macro, install_deps, invoke, run_macro_with_logs
 
 REL = {"database": "ICECORE_SANDBOX", "schema": "SPIKES", "identifier": "ORDERS", "quoted": True}
 VOLUME = {"metric": "row_count", "value": 1000}
@@ -103,7 +103,7 @@ def test_invalid_settings_are_refused(kwargs):
 # --- the five tests take the arguments (parse only, no connection) --------------------------------
 
 def test_the_five_tests_take_the_scoring_arguments_and_refuse_a_bad_engine():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -129,7 +129,7 @@ def test_an_invalid_anomaly_severity_is_refused():
 
 
 def test_the_tests_set_dbts_warn_and_error_thresholds_in_their_config():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
     spike = nodes["it_anom_volume_spike"].config

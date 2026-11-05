@@ -16,7 +16,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, install_deps, invoke, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -35,7 +35,7 @@ def quoted(table: str) -> str:
 # --- offline: parse only, no connection -----------------------------------------------------------
 
 def test_project_with_the_generic_tests_parses_and_registers_them():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -57,7 +57,7 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
     {"it_bad_bounds": {"avg": {"min": True}}},         # nor a boolean
 ])
 def test_invalid_bounds_fail_at_parse(var_args):
-    assert invoke(["deps"]).success
+    install_deps()
     assert not invoke(["parse", "--vars", json.dumps(var_args)]).success
 
 

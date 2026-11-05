@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from helpers.macros import IT_DIR, install_deps, invoke, run_macro
+from helpers.macros import install_deps, invoke, run_macro, target_dir
 
 P = "icecore_integration_tests"
 SRC = "source.icecore_integration_tests.rc_raw.orders"
@@ -24,7 +24,7 @@ FIXTURE_TAG = "root_cause_fixture"
 def test_id() -> str:
     install_deps()
     assert invoke(["parse"]).success
-    manifest = json.load(open(IT_DIR / "target" / "manifest.json"))
+    manifest = json.load(open(target_dir() / "manifest.json"))
     ids = [uid for uid, n in manifest["nodes"].items()
            if n["resource_type"] == "test" and n.get("attached_node") == C]
     assert len(ids) == 1, ids

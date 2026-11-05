@@ -26,3 +26,7 @@ data_tests:
   icecore_integration_tests:
     monitors:
       +tags: ["icecore_fixture"]
+
+# The test project sends no anonymous usage events: each costs about 0.45 s per dbt call.
+flags:
+  send_anonymous_usage_stats: false

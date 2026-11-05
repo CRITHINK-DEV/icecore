@@ -83,3 +83,11 @@ def test_dependabot_opens_its_pull_requests_on_develop():
 def test_the_readme_states_the_tested_versions():
     row = next(l for l in (REPO / "README.md").read_text().splitlines() if l.startswith("| dbt Core"))
     assert "1.8" in row and "latest" in row and "every release" in row
+
+
+def test_the_install_snippets_name_the_package_version():
+    version = yaml.safe_load((REPO / "dbt_project.yml").read_text())["version"]
+    for doc in ("README.md", "docs/quickstart.md"):
+        revisions = [line.split("revision:")[1].strip() for line in (REPO / doc).read_text().splitlines() if "revision:" in line]
+        assert revisions == [f"v{version}"], (doc, revisions)
+    assert f"## [{version}] - " in (REPO / "CHANGELOG.md").read_text()

@@ -54,7 +54,7 @@ Add icecore to `packages.yml`, pinned to a release tag:
 ```yaml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.1.0
+    revision: v0.1.1
 ```
 
 To use a clone of the repository instead, point at it:
@@ -72,7 +72,7 @@ dbt deps
 
 ```text
 Installing https://github.com/CRITHINK-DEV/icecore.git
-Installed from revision v0.1.0
+Installed from revision v0.1.1
 ```
 
 ## 3. Add the two hooks

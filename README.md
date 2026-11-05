@@ -30,7 +30,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 ![The Console overview](docs/assets/app/v2-overview.png)
 
 > [!NOTE]
-> **This is the first public release (`v0.1.0`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
+> **This is an early public release (`v0.1.1`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Add icecore to `packages.yml`, pinned to the release tag, then install:
 # packages.yml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.1.0
+    revision: v0.1.1
 ```
 
 ```bash

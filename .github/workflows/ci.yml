@@ -94,7 +94,7 @@ jobs:
           key_path="$RUNNER_TEMP/snowflake_key.p8"
           printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
           echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
-      - run: pytest -m sandbox
+      - run: pytest -m sandbox -n 12 --dist loadgroup
       - name: Spike S4 with the pinned Elementary (macros/compat/ELEMENTARY_VERSION)
         # Separate venv: elementary-data pulls a newer dbt-core and would replace the dbt 1.8 floor above.
         # requirements-elementary.txt applies constraints-elementary.txt (dbt-core, sqlglot, pytest).
@@ -105,20 +105,20 @@ jobs:
 
   # The release check: the whole sandbox suite on dbt 1.8 and on the latest dbt, only for a release (a pull request into
   # main) or on dispatch with `release` ticked. It spends warehouse credits, so it never runs on other pull requests or
-  # on a schedule. One leg at a time (the sandbox is shared); a leg took about 2 h 12 min on a runner (run 41308369096).
+  # on a schedule. Most of a test's time is spent waiting for the event table, so the tests run side by side: 4 runners
+  # per version, 12 tests at a time on each (one test after another, the suite took 2 h 12 min, run 41308369096).
+  # Every test names its objects with its own run_id; tests sharing a module-scoped setup stay on one worker.
+  # The Gate 1 spikes (tests/spikes/) measure Snowflake, not icecore: the manual `sandbox` dispatch runs them, a release does not.
   release-sandbox:
-    name: sandbox (release, ${{ matrix.requirements }})
+    name: sandbox (release, ${{ matrix.requirements }}, part ${{ matrix.part }}/4)
     if: (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
     runs-on: ubuntu-latest
-    timeout-minutes: 200
-    concurrency:
-      group: icecore-sandbox
-      cancel-in-progress: false
+    timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         requirements: [floor, latest]
+        part: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: integration_tests
@@ -127,6 +127,7 @@ jobs:
       SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
       SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      ICECORE_TEST_SHARD: ${{ matrix.part }}/4
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -144,4 +145,4 @@ jobs:
           key_path="$RUNNER_TEMP/snowflake_key.p8"
           printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
           echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
-      - run: pytest -m sandbox
+      - run: pytest -m sandbox -n 12 --dist loadgroup --ignore=tests/spikes

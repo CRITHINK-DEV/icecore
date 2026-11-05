@@ -2,7 +2,9 @@
 import datetime as dt
 import json
 import os
+import re
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -71,3 +73,13 @@ def test_placeholder_env_restores_after_an_error_and_keeps_empty_values(monkeypa
             raise RuntimeError("boom")
     assert "SNOWFLAKE_ACCOUNT" not in os.environ
     assert os.environ["SNOWFLAKE_ROLE"] == ""
+
+
+def test_no_test_runs_dbt_deps_on_the_test_project_itself():
+    # Under pytest-xdist, `dbt deps` re-creates dbt_packages/icecore while other workers parse through it, so a test
+    # gets it from helpers.macros.install_deps(), which runs it once before the workers start.
+    tests = Path(__file__).resolve().parent
+    calls = re.compile(r"""\w+\(\s*\[\s*["']deps["']""")  # a call on this project; dbt(path, [...]) on another project is fine
+    offenders = [f"{p.name}:{n}" for p in sorted(tests.glob("test_*.py"))
+                 for n, line in enumerate(p.read_text().splitlines(), 1) if calls.search(line)]
+    assert offenders == []

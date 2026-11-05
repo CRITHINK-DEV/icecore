@@ -16,7 +16,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, install_deps, invoke, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -34,7 +34,7 @@ def results_by_name(res) -> dict:
 # --- offline: parse only, no connection -----------------------------------------------------------
 
 def test_project_with_the_generic_tests_parses_and_registers_them():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -54,13 +54,13 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
     ("min_rows", {"it_min_rows": -1}),
 ])
 def test_invalid_thresholds_fail_at_parse(name, var_args):
-    assert invoke(["deps"]).success
+    install_deps()
     assert not invoke(["parse", "--vars", json.dumps(var_args)]).success
 
 
 @pytest.mark.parametrize("value", ["30s", "2h", "1d", "1.5h", " 45 m ", 90])
 def test_valid_max_lag_forms_parse(value):
-    assert invoke(["deps"]).success
+    install_deps()
     assert invoke(["parse", "--vars", json.dumps({"it_max_lag": value})]).success
 
 

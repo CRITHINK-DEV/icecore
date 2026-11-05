@@ -6,9 +6,23 @@ import pytest
 import snowflake.connector
 
 from helpers.env import require_env as _require_env
-from helpers.macros import invoke
+from helpers.macros import DEPS_DONE, install_deps, invoke
 
 IT_DIR = Path(__file__).resolve().parents[1]
+
+# pytest-xdist (`pytest -n auto`): each worker gets its own dbt target and log folders, so partial parsing and
+# manifest.json are never shared, and `dbt deps` runs once before the workers start, so no worker rewrites
+# dbt_packages/ while another reads it.
+WORKER = os.environ.get("PYTEST_XDIST_WORKER")
+if WORKER:
+    os.environ["DBT_TARGET_PATH"] = str(IT_DIR / "target" / WORKER)
+    os.environ["DBT_LOG_PATH"] = str(IT_DIR / "logs" / WORKER)
+
+
+def pytest_configure(config):
+    if not WORKER and getattr(config.option, "numprocesses", None):
+        install_deps()
+        os.environ[DEPS_DONE] = "1"
 
 
 @pytest.fixture(scope="session")
@@ -31,7 +45,7 @@ def sf():
 @pytest.fixture(scope="session")
 def dbt():
     _require_env()
-    assert invoke(["deps"]).success
+    install_deps()
     return invoke
 
 

@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from helpers.macros import IT_DIR, call_macro, invoke, run_macro, run_macro_with_logs
+from helpers.macros import call_macro, invoke, run_macro, run_macro_with_logs, target_dir
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 NODE_TYPES = {"model", "seed", "snapshot", "test"}
@@ -104,7 +104,7 @@ def test_large_runs_need_more_emit_run_calls():
 
 def test_nodes_default_to_the_graph():
     assert invoke(["parse"]).success
-    manifest = json.loads((IT_DIR / "target" / "manifest.json").read_text())
+    manifest = json.loads((target_dir() / "manifest.json").read_text())
     expected = sum(1 for n in manifest["nodes"].values() if n["resource_type"] in NODE_TYPES)
     out, _ = estimate(runs_per_day=1)
     assert out["nodes"] == expected > 0

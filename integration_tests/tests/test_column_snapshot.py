@@ -13,7 +13,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import invoke, run_macro
+from helpers.macros import install_deps, invoke, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -34,7 +34,7 @@ def wide_name(i: int) -> str:
 # --- offline ----------------------------------------------------------------------------------------
 
 def test_fixtures_parse_and_register_the_snapshot_tests():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     names = {n.name for n in res.result.nodes.values() if n.resource_type.value == "test"}

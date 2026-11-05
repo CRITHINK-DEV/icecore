@@ -11,7 +11,7 @@ import os
 import pytest
 import yaml
 
-from helpers.macros import IT_DIR, RESULT_PREFIX, install_deps, invoke, run_macro
+from helpers.macros import IT_DIR, RESULT_PREFIX, install_deps, invoke, run_macro, target_dir
 
 REPO = IT_DIR.parent
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX")
@@ -191,7 +191,7 @@ def test_numeric_strings_become_numbers_and_missing_values_are_left_out():
 def manifest_nodes() -> dict:
     install_deps()
     assert invoke(["parse"]).success
-    return json.load(open(IT_DIR / "target" / "manifest.json"))["nodes"]
+    return json.load(open(target_dir() / "manifest.json"))["nodes"]
 
 
 # --- sandbox --------------------------------------------------------------------------------------

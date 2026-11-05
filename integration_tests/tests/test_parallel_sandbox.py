@@ -66,3 +66,11 @@ def test_the_four_parts_hold_every_sandbox_test_once_and_never_split_a_group(tmp
                 part_of[group].add(i)
     assert part_of and all(len(found) == 1 for found in part_of.values())
     assert all(len(part) > len(whole) / 8 for part in parts), [len(part) for part in parts]  # no part is nearly empty
+
+
+def test_test_scale_is_timed(tmp_path):
+    env = {k: v for k, v in os.environ.items() if k not in ("ICECORE_TEST_SHARD", "PYTEST_XDIST_WORKER")}
+    out = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-m", "sandbox and timed",
+                          "-p", "no:cacheprovider"], cwd=IT_DIR, env=env, capture_output=True, text=True).stdout
+    timed = {line.split("::")[0] for line in out.splitlines() if "::" in line}
+    assert timed == {"tests/test_scale.py"}, out[-1500:]

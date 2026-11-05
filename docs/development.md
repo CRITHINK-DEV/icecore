@@ -137,16 +137,15 @@ The test builds a small probe project (`integration_tests/elementary_probe/`) in
 
 ## CI
 
-GitHub Actions is currently off, so the workflow below does not run. Until it is back, the check is local: run the offline suite on both environments, each from a clean `target/`, `dbt_packages/` and `package-lock.yml`, and paste both results in the pull request (see [CONTRIBUTING](../CONTRIBUTING.md)).
-
-Workflow `.github/workflows/ci.yml`, kept for when Actions is back.
+Workflow `.github/workflows/ci.yml`.
 
 | Trigger | Job | What runs |
 |---|---|---|
-| every pull request, and every push to `main` or `develop` | `offline` (two runs: `floor` and `latest`) | `pip install -r requirements-<floor or latest>.txt`, then `pytest -m "not sandbox"` on Python 3.12 |
-| manual dispatch only (Actions tab, workflow `ci`, "Run workflow"; or `gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch>`) | `sandbox` | the whole `pytest -m sandbox` suite on the floor environment, then spike S4 in its own Elementary environment |
+| every pull request, and every push to `main` or `develop` | `offline-part` (2 parts on `floor`, 3 on `latest`, each on its own runner), then `offline` (`floor` and `latest`) | each part: `pip install -r requirements-<floor or latest>.txt`, then `pytest -m "not sandbox" -n auto` on Python 3.12 with `ICECORE_TEST_SHARD=i/n`. The two `offline` jobs are the checks the branch rules require; each is green only when all its parts are. About 7 minutes in all |
+| manual dispatch without `release` (Actions tab, workflow `ci`, "Run workflow"; or `gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch>`) | `sandbox` | the whole `pytest -m sandbox` suite on the floor environment, then spike S4 in its own Elementary environment |
+| every pull request into `main` (a release), or manual dispatch with `release` ticked (`gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch> -f release=true`) | `release-sandbox` (two runs, `floor` and `latest`, one after the other) | the whole `pytest -m sandbox` suite on each environment, about 2 h each. `sandbox` and `release-sandbox` share the concurrency group `icecore-sandbox`, so two sandbox runs never overlap |
 
-The sandbox job never runs on a pull request: it spends warehouse credits and needs repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when both local offline runs are green and their results are in the description; say in the pull request which sandbox tests you ran locally and paste their summary.
+The sandbox jobs never run on a pull request into `develop`, nor on a schedule: they spend warehouse credits and need repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when `gh pr checks <number>` shows `offline (floor)` and `offline (latest)` green; say in the pull request which sandbox tests you ran locally and paste their summary.
 
 ## Branches and pull requests
 

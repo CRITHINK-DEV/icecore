@@ -44,6 +44,17 @@ def test_a_test_with_no_shared_setup_is_placed_on_its_own(tmp_path):
     assert alone and set(alone) == {"-"}
 
 
+def test_xdist_runs_a_group_on_one_worker():
+    # The marks alone prove nothing: pytest 9.2 builds a test's id from Node._id, so pytest-xdist 3.8's loadgroup suffix
+    # (written to Node._nodeid) was lost and a file's tests were spread over every worker, each building the file's setup
+    # again (trial run 42051341276). test_console_strip.py shares a module-scoped fixture and needs no Snowflake.
+    env = {k: v for k, v in os.environ.items() if k not in ("ICECORE_TEST_SHARD", "PYTEST_XDIST_WORKER")}
+    out = subprocess.run([sys.executable, "-m", "pytest", "tests/test_console_strip.py", "-n", "4", "--dist", "loadgroup",
+                          "-v", "-p", "no:cacheprovider"], cwd=IT_DIR, env=env, capture_output=True, text=True).stdout
+    workers = {line.split("]")[0] + "]" for line in out.splitlines() if line.startswith("[gw") and "PASSED" in line}
+    assert len(workers) == 1, out[-2000:]
+
+
 def test_the_four_parts_hold_every_sandbox_test_once_and_never_split_a_group(tmp_path):
     whole = collect(tmp_path)
     parts = [collect(tmp_path, f"{i}/4") for i in range(1, 5)]

@@ -137,16 +137,15 @@ The test builds a small probe project (`integration_tests/elementary_probe/`) in
 
 ## CI
 
-GitHub Actions is currently off, so the workflow below does not run. Until it is back, the check is local: run the offline suite on both environments, each from a clean `target/`, `dbt_packages/` and `package-lock.yml`, and paste both results in the pull request (see [CONTRIBUTING](../CONTRIBUTING.md)).
-
-Workflow `.github/workflows/ci.yml`, kept for when Actions is back.
+Workflow `.github/workflows/ci.yml`.
 
 | Trigger | Job | What runs |
 |---|---|---|
-| every pull request, and every push to `main` or `develop` | `offline` (two runs: `floor` and `latest`) | `pip install -r requirements-<floor or latest>.txt`, then `pytest -m "not sandbox"` on Python 3.12 |
-| manual dispatch only (Actions tab, workflow `ci`, "Run workflow"; or `gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch>`) | `sandbox` | the whole `pytest -m sandbox` suite on the floor environment, then spike S4 in its own Elementary environment |
+| every pull request, and every push to `main` or `develop` | `offline-part` (2 parts on `floor`, 3 on `latest`, each on its own runner), then `offline` (`floor` and `latest`) | each part: `pip install -r requirements-<floor or latest>.txt`, then `pytest -m "not sandbox" -n auto` on Python 3.12 with `ICECORE_TEST_SHARD=i/n`. The two `offline` jobs are the checks the branch rules require; each is green only when all its parts are. About 7 minutes in all |
+| manual dispatch without `release` (Actions tab, workflow `ci`, "Run workflow"; or `gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch>`) | `sandbox` | the whole sandbox suite on the floor environment, 12 tests at a time (`pytest -m "sandbox and not timed" -n 12 --dist loadgroup`), then the `timed` tests alone, then spike S4 in its own Elementary environment |
+| every pull request into `main` (a release), or manual dispatch with `release` ticked (`gh workflow run ci -R CRITHINK-DEV/icecore --ref <branch> -f release=true`) | `release-sandbox` (8 runners at once: 4 parts on `floor`, 4 on `latest`) | the sandbox suite on each environment except the Gate 1 spikes (`--ignore=tests/spikes`: they measure Snowflake, not icecore, and the manual `sandbox` dispatch still runs them), split with `ICECORE_TEST_SHARD=i/4`, 12 tests at a time on each runner. Most of a sandbox test's time is spent waiting for Snowflake to write its event-table rows, so the tests wait side by side. Tests that share a module- or class-scoped fixture form one xdist group (`--dist loadgroup`) and stay on one worker and one part, so that setup runs once. Then `release-sandbox-timed` runs the `timed` tests (`test_scale`, which asserts how long Snowflake takes) alone, once every part is done, `floor` then `latest`: with ~90 tests sharing the X-Small warehouse they would measure its queue. About 20 minutes in all |
 
-The sandbox job never runs on a pull request: it spends warehouse credits and needs repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when both local offline runs are green and their results are in the description; say in the pull request which sandbox tests you ran locally and paste their summary.
+The sandbox jobs never run on a pull request into `develop`, nor on a schedule: they spend warehouse credits and need repository secrets (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`). A pull request is ready for review when `gh pr checks <number>` shows `offline (floor)` and `offline (latest)` green; say in the pull request which sandbox tests you ran locally and paste their summary.
 
 ## Branches and pull requests
 
@@ -156,3 +155,7 @@ The sandbox job never runs on a pull request: it spends warehouse credits and ne
 - Pull requests are merged by a person, after review. Agents never merge, never push to `develop` or `main`, and never force-push a branch that is not theirs.
 - Keep Jinja (`{{` and `{%`) out of yml `description` fields: dbt renders them.
 - Never commit credentials, keys or env files; never change `.github/` or the bootstrap script in a feature pull request.
+
+## Reference docs
+
+`docs/reference/macros.md` and `docs/reference/tests.md` are generated from the `.yml` files next to the macros (a generic test's is `macros/tests/<name>.yml`, under the name `test_<name>`, because dbt 1.8 reads a generic test's docs only from macro paths). Edit the `.yml`, then run `python integration_tests/tests/helpers/reference_docs.py` from the repository root. `test_macro_reference_docs.py` fails for a public macro or a generic test argument without a description, and when the pages are stale.

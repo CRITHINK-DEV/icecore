@@ -210,8 +210,10 @@ def test_setup_twice_changes_nothing(sf, fresh_schema):
     assert before["schema_created_on"] and ("USAGE", "ROLE", "PUBLIC") in before["ICECORE_EMIT_grants"]
     assert ("SELECT", "ROLE", "PUBLIC") in before["METRICS_grants"]
     assert {"METRICS_ddl", "SCHEMA_CHANGES_ddl"} <= set(before)  # the views exist, with their DDL compared too
-    # dbt's query comment (it names the connection) must not end up in the stored view text
-    assert not any(next(iter(v.values())).lstrip().startswith("/*") for k, v in before.items() if k.endswith("_ddl") and k.startswith(("METRICS", "SCHEMA_CHANGES"))), before["METRICS_ddl"]
+    # dbt's query comment (it names the connection) must not end up in the stored view text: dbt 1.8 puts it first,
+    # dbt-snowflake 1.12 appends it, and views are created through EXECUTE IMMEDIATE so it stays out either way
+    views = {k: next(iter(v.values())) for k, v in before.items() if k.endswith("_ddl") and not k.startswith("ICECORE_")}
+    assert views and not any(t.lstrip().startswith("/*") or '"app": "dbt"' in t for t in views.values()), views
 
     first, _ = call("setup", {"schema": schema})
     second, _ = call("setup", {"schema": schema})

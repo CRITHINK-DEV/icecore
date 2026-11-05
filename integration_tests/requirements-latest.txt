@@ -1,5 +1,6 @@
 dbt-core
 dbt-snowflake
 snowflake-connector-python
-pytest
+pytest<9.2  # 9.2 drops pytest-xdist 3.8's --dist loadgroup groups (test_parallel_sandbox.py)
+pytest-xdist
 pyyaml

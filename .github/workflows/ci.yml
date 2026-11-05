@@ -5,9 +5,18 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Run the release check: the sandbox suite on dbt 1.8 and on the latest dbt (job release-sandbox)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+# dbt's anonymous usage events cost about 0.45 s per dbt call, and the offline suite makes over a thousand.
+env:
+  DO_NOT_TRACK: "1"
 
 # One run per pull request (or branch): a new push cancels the run of the previous one, which is out of date.
 concurrency:
@@ -15,25 +24,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  offline:
+  # The offline suite in parts, each on its own runner (the latest dbt parses more slowly, so it gets more parts).
+  offline-part:
+    name: offline (${{ matrix.requirements }}, part ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        requirements: [floor, latest]
+        include:
+          - {requirements: floor, shard: 1/2}
+          - {requirements: floor, shard: 2/2}
+          - {requirements: latest, shard: 1/3}
+          - {requirements: latest, shard: 2/3}
+          - {requirements: latest, shard: 3/3}
+    env:
+      ICECORE_TEST_SHARD: ${{ matrix.shard }}
     defaults:
       run:
         working-directory: integration_tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: integration_tests/requirements-${{ matrix.requirements }}.txt
       - run: pip install -r requirements-${{ matrix.requirements }}.txt
-      - run: pytest -m "not sandbox"
+      # One worker per core (4 on GitHub's runners); conftest gives each its own dbt target folder.
+      - run: pytest -m "not sandbox" -n auto
+
+  # The checks the branch rules require ("offline (floor)", "offline (latest)"): green only when every part is.
+  offline:
+    name: offline (${{ matrix.requirements }})
+    needs: offline-part
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        requirements: [floor, latest]
+    steps:
+      - run: test "${{ needs.offline-part.result }}" = success
 
   sandbox:
-    if: github.event_name == 'workflow_dispatch'
+    # A dispatch with `release` ticked runs release-sandbox instead, so the two never run together.
+    if: github.event_name == 'workflow_dispatch' && !inputs.release
+    concurrency:
+      group: icecore-sandbox
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,7 +81,7 @@ jobs:
       SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -57,7 +94,8 @@ jobs:
           key_path="$RUNNER_TEMP/snowflake_key.p8"
           printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
           echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
-      - run: pytest -m sandbox
+      - run: pytest -m "sandbox and not timed" -n 12 --dist loadgroup
+      - run: pytest -m "sandbox and timed"
       - name: Spike S4 with the pinned Elementary (macros/compat/ELEMENTARY_VERSION)
         # Separate venv: elementary-data pulls a newer dbt-core and would replace the dbt 1.8 floor above.
         # requirements-elementary.txt applies constraints-elementary.txt (dbt-core, sqlglot, pytest).
@@ -65,3 +103,86 @@ jobs:
           python -m venv elementary_probe/.venv
           elementary_probe/.venv/bin/pip install -r requirements-elementary.txt pytest
           elementary_probe/.venv/bin/pytest -m sandbox tests/spikes/test_s4_edr_contract.py
+
+  # The release check: the whole sandbox suite on dbt 1.8 and on the latest dbt, only for a release (a pull request into
+  # main) or on dispatch with `release` ticked. It spends warehouse credits, so it never runs on other pull requests or
+  # on a schedule. Most of a test's time is spent waiting for the event table, so the tests run side by side: 4 runners
+  # per version, 12 tests at a time on each (one test after another, the suite took 2 h 12 min, run 41308369096).
+  # Every test names its objects with its own run_id; tests sharing a module-scoped setup stay on one worker.
+  # The Gate 1 spikes (tests/spikes/) measure Snowflake, not icecore: the manual `sandbox` dispatch runs them, a release does not.
+  release-sandbox:
+    name: sandbox (release, ${{ matrix.requirements }}, part ${{ matrix.part }}/4)
+    if: (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        requirements: [floor, latest]
+        part: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: integration_tests
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      ICECORE_TEST_SHARD: ${{ matrix.part }}/4
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: integration_tests/requirements-${{ matrix.requirements }}.txt
+      - run: pip install -r requirements-${{ matrix.requirements }}.txt
+      - run: dbt --version
+      - name: Write private key
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          umask 077
+          key_path="$RUNNER_TEMP/snowflake_key.p8"
+          printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
+          echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - run: pytest -m "sandbox and not timed" -n 12 --dist loadgroup --ignore=tests/spikes
+
+  # The timed tests (test_scale) assert how long Snowflake takes: run alone once every part is done, one version at a time.
+  release-sandbox-timed:
+    name: sandbox (release, timed, ${{ matrix.requirements }})
+    needs: release-sandbox
+    if: "!cancelled() && ((github.event_name == 'pull_request' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && inputs.release))"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        requirements: [floor, latest]
+    defaults:
+      run:
+        working-directory: integration_tests
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: integration_tests/requirements-${{ matrix.requirements }}.txt
+      - run: pip install -r requirements-${{ matrix.requirements }}.txt
+      - run: dbt --version
+      - name: Write private key
+        env:
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          umask 077
+          key_path="$RUNNER_TEMP/snowflake_key.p8"
+          printf '%s' "$SNOWFLAKE_PRIVATE_KEY" > "$key_path"
+          echo "SNOWFLAKE_PRIVATE_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - run: pytest -m "sandbox and timed"

@@ -35,6 +35,9 @@ from snowflake.connector import DictCursor
 from helpers.macros import run_macro_with_logs
 from helpers.run_hooks import DATABASE, icecore_vars, invocation_records, obs_schema, snowflake_since
 
+# Run alone (CI: after the parallel sandbox tests): on a shared X-Small warehouse ~90 parallel tests queue its queries.
+pytestmark = pytest.mark.timed
+
 SIZES = [50, 300]
 EDGES = 2500              # at about 190 bytes each: several 64 KB lineage records
 NEAR_CAP_KB = 28          # a node result carries its message twice (attribute and log message): just under 64 KB

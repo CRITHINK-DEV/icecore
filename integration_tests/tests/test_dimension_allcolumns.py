@@ -17,7 +17,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, install_deps, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -27,10 +27,6 @@ EVENTS = ("resource_attributes:\"snow.database.name\"::string = %(db)s"
 COLUMNS = {"ID", "COUNTRY", "AMOUNT", "NOTE", "LOADED_AT"}
 
 
-def results_by_name(res) -> dict:
-    return {r.node.name: r.status.value for r in res.result.results}
-
-
 def quoted(table: str) -> str:
     return f'"{DATABASE}"."{SCHEMA}"."{table}"'
 
@@ -38,7 +34,7 @@ def quoted(table: str) -> str:
 # --- offline: parse only, no connection -----------------------------------------------------------
 
 def test_project_with_the_generic_tests_parses_and_registers_them():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -50,7 +46,7 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
 
 @pytest.mark.parametrize("bounds", [{"avg": 1}, {"max": 1, "mean": 2}, {}, "min>1"])
 def test_invalid_dimension_bounds_fail_at_parse(bounds):
-    assert invoke(["deps"]).success
+    install_deps()
     assert not invoke(["parse", "--vars", json.dumps({"it_bad_dim_bounds": bounds})]).success
 
 
@@ -79,7 +75,7 @@ def monitored(dbt, sf):
         log_since = cur.execute("select dateadd(minute, -3, sysdate())").fetchone()[0]
         variables = {**obs, "it_since": since, "it_uc2_dim_table": tables["dim"], "it_uc2_cap_table": tables["cap"],
                      "it_uc2_all_table": tables["all"], "it_uc2_excl_table": tables["excl"]}
-        statuses = results_by_name(invoke(["test", "--select", "source:it_uc2_dimensions", "--exclude",
+        statuses = node_statuses(invoke(["test", "--select", "source:it_uc2_dimensions", "--exclude",
                                            "it_dimension_bad_bounds", "--vars", json.dumps(variables)]))
         # dim: 3, cap: 2, all: 10, excl: 6
         raw = wait_for_events(sf, EVENTS, {"db": DATABASE, "schema": schema}, min_rows=21, since=log_since, settle_s=10)

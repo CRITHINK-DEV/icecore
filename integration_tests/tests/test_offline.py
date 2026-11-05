@@ -4,14 +4,14 @@ import os
 import pytest
 import yaml
 
-from helpers.macros import IT_DIR, invoke as run_dbt
+from helpers.macros import IT_DIR, install_deps, invoke as run_dbt
 
 REPO = IT_DIR.parent
 
 
 def test_dbt_parse_succeeds_without_a_connection():
     # run_dbt fills missing SNOWFLAKE_* with placeholders for each call only (helpers.env.placeholder_env)
-    assert run_dbt(["deps"]).success
+    install_deps()
     assert run_dbt(["parse"]).success
 
 

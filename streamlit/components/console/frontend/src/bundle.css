@@ -7,3 +7,8 @@
 .kpi.has-help:hover,.kpi.has-help:focus-visible{border-color:var(--accent)}
 .kpi.has-help:hover .hpop,.kpi.has-help:focus-within .hpop,.kpi.has-help:focus .hpop{display:block}
 .kpis>.kpi.has-help:last-child .hpop{left:auto;right:0}
+/* 4 or more model layers: the strip wraps three cards per row (lib/strip.js), each card keeps its 1-3-layer width. */
+.health.many{row-gap:14px}
+/* Layer design line under the layer cards (story cfc1e7fc): the issue list opens in the .hpop popover. */
+.lcheck{position:relative;cursor:help}
+.lcheck:hover .hpop,.lcheck:focus-within .hpop,.lcheck:focus .hpop{display:block}

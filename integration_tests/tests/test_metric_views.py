@@ -9,7 +9,9 @@ schema at the end.
 """
 import json
 import os
+import re
 import uuid
+from pathlib import Path
 
 import pytest
 from snowflake.connector import DictCursor
@@ -63,6 +65,22 @@ def test_schema_changes_reads_the_spec_keys():
 def test_view_ddl_keeps_grants_and_qualifies_the_name():
     ddl = run_macro("it_view_ddl", {"view": "METRICS", "sql": "select 1", "schema": "my_obs"})
     assert ddl.startswith('CREATE OR REPLACE VIEW "') and '"MY_OBS"."METRICS" COPY GRANTS AS' in ddl
+
+
+def test_a_view_is_created_through_execute_immediate_so_no_query_comment_enters_its_text():
+    # dbt-snowflake 1.12 appends its query comment to every statement before the last ';'; inside CREATE VIEW it would
+    # stay in the view's text. Sent as one escaped literal, the comment lands on the EXECUTE IMMEDIATE instead.
+    ddl = "CREATE OR REPLACE VIEW X COPY GRANTS AS\nselect 'it''s' as a"
+    expected = "execute immediate 'CREATE OR REPLACE VIEW X COPY GRANTS AS\\nselect \\'it\\'\\'s\\' as a'"  # icecore._sql
+    assert call_macro("_icecore_view_statement", ddl=ddl) == expected
+
+
+def test_no_macro_runs_a_view_ddl_without_execute_immediate():
+    macros = Path(__file__).resolve().parents[2] / "macros"
+    direct = [f"{p.relative_to(macros)}:{n}" for p in sorted(macros.rglob("*.sql"))
+              for n, line in enumerate(p.read_text().splitlines(), 1)
+              if re.search(r"run_query\(\s*icecore\._icecore\w*view_ddl", line)]
+    assert direct == []
 
 
 def test_setup_marks_create_views_ready():

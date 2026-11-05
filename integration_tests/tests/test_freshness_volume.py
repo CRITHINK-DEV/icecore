@@ -16,7 +16,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, install_deps, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -27,14 +27,10 @@ ALL_TESTS = ("it_freshness_bare", "it_freshness_pass", "it_freshness_fail", "it_
              "it_volume_unmeasured_bare", "it_volume_unmeasured_min_rows", "it_volume_unmeasured_warn")
 
 
-def results_by_name(res) -> dict:
-    return {r.node.name: r.status.value for r in res.result.results}
-
-
 # --- offline: parse only, no connection -----------------------------------------------------------
 
 def test_project_with_the_generic_tests_parses_and_registers_them():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -54,13 +50,13 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
     ("min_rows", {"it_min_rows": -1}),
 ])
 def test_invalid_thresholds_fail_at_parse(name, var_args):
-    assert invoke(["deps"]).success
+    install_deps()
     assert not invoke(["parse", "--vars", json.dumps(var_args)]).success
 
 
 @pytest.mark.parametrize("value", ["30s", "2h", "1d", "1.5h", " 45 m ", 90])
 def test_valid_max_lag_forms_parse(value):
-    assert invoke(["deps"]).success
+    install_deps()
     assert invoke(["parse", "--vars", json.dumps({"it_max_lag": value})]).success
 
 
@@ -89,7 +85,7 @@ def monitored(dbt, sf):
         obs_vars = {"icecore": {"obs_schema": schema}, **names}
         res = invoke(["test", "--select", "source:it_uc2_monitors", "--exclude", "it_volume_no_procedures",
                       "--vars", json.dumps(obs_vars)])
-        statuses = results_by_name(res)
+        statuses = node_statuses(res)
         # same tests with no procedures in the obs schema: the telemetry CALL fails, the verdict must not change
         missing = {"icecore": {"obs_schema": f"{schema}_MISSING"}, **names}
         res_missing = invoke(["test", "--select", "it_volume_no_procedures", "--vars", json.dumps(missing)])
@@ -106,7 +102,7 @@ def monitored(dbt, sf):
             "query_history_by_user(user_name => current_user(), end_time_range_start => %(t)s::timestamp_ltz, "
             "result_limit => 10000))", {"t": started}).fetchall()
         yield {"run_id": run_id, "fresh": fresh, "vol": vol, "statuses": statuses, "raw": raw, "history": history,
-               "missing": results_by_name(res_missing), "missing_ok": res_missing.success,
+               "missing": node_statuses(res_missing), "missing_ok": res_missing.success,
                "rows": [{k.lower(): v for k, v in r.items()} for r in rows]}
     finally:
         cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')

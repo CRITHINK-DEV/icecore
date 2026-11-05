@@ -54,7 +54,7 @@ Add icecore to `packages.yml`, pinned to a release tag:
 ```yaml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.1.0
+    revision: v0.1.1
 ```
 
 To use a clone of the repository instead, point at it:
@@ -72,7 +72,7 @@ dbt deps
 
 ```text
 Installing https://github.com/CRITHINK-DEV/icecore.git
-Installed from revision v0.1.0
+Installed from revision v0.1.1
 ```
 
 ## 3. Add the two hooks
@@ -220,5 +220,5 @@ Run `dbt run-operation icecore.doctor` first. A failed check names the missing p
 ## Next
 
 - [Configuration](configuration.md): every var, argument and view, including how much of dbt's result message is stored.
-- To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests).
+- To watch a table, add `icecore.freshness` or `icecore.volume` to its `data_tests`. Both read Snowflake metadata and scan no data, and write the `METRICS` view. Their arguments are in [Configuration](configuration.md#generic-tests) and the [generic test reference](reference/tests.md).
 - The other monitor tests (`icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly`, `icecore.dimension_anomaly`) are in [Configuration](configuration.md#monitor-and-anomaly-settings). The app is in [The app](app.md).

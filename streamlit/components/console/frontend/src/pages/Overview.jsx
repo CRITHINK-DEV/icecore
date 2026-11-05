@@ -1,14 +1,15 @@
 import React, { useState, useMemo, Fragment } from 'react';
 import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median } from '../lib/format.js';
-import { D, RUNS, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, MODEL_KEYS, KIND_LABEL, incNode, incAsset, incTarget } from '../lib/model.js';
+import { D, RUNS, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, MODEL_KEYS, KIND_LABEL, incNode, incAsset, incTarget, CAP, HAS_MODEL_LAYERS, LAYER_ISSUES, LAYER_ISSUE_LABEL } from '../lib/model.js';
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
+import { stripClass, stripJoin } from '../lib/strip.js';
 import { Ic, ICON, Pill, StatusPill, SevPill, Layer, Kpi, Seg, Card, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Overview ---------------- */
 export function HealthStrip({ health }) {
   const p = pal();
-  return <div className="health">{health.map((h, i) => <Fragment key={h.layer}>
-    {i > 0 && <div className="hjoin"><Ic d={ICON.chev} s={18} /></div>}
+  return <div className={stripClass(health.length)}>{health.map((h, i) => <Fragment key={h.layer}>
+    {stripJoin(i, health.length) && <div className="hjoin"><Ic d={ICON.chev} s={18} /></div>}
     <div className="htile" tabIndex={0} style={{ '--lc': `var(--${h.layer})` }} aria-label={`${LAYER_LABEL[h.layer]} health ${h.score == null ? 'not available' : Math.round(h.score)} out of 100`}>
       <div className="htop"><div className="hname">{LAYER_LABEL[h.layer]}<small>{h.models} models, {h.tests} tests</small></div>
         <div className={'hscore ' + (h.score == null ? '' : h.score >= 95 ? 't-ok' : h.score >= 80 ? 't-warn' : 't-fail')}>{h.score == null ? 'n/a' : Math.round(h.score)}<span>/100</span></div></div>
@@ -20,6 +21,25 @@ export function HealthStrip({ health }) {
         <table><tbody>{h.comps.map(c => <tr key={c.key}><td><b>{c.label}</b> <span className="muted">({Math.round(c.w * 100)}%)</span><div className={c.v == null ? 'drop' : ''}>{c.detail}{c.v == null ? '; weight dropped' : ''}</div></td><td className="n">{c.v == null ? 'n/a' : c.v.toFixed(1)}</td></tr>)}</tbody></table>
       </div>
     </div></Fragment>)}</div>;
+}
+
+/* Layer design, one line under the layer cards (placement A of story cfc1e7fc), only when there are issues: the issues
+   of lib/model.js layerIssues, listed in the .hpop popover on hover or focus. Informative only: not counted in any score. */
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+export function LayerCheck() {
+  if (!HAS_MODEL_LAYERS || !LAYER_ISSUES.length) return null;   // no issue: nothing, the Overview looks as before
+  const k = kind => LAYER_ISSUES.filter(i => i.kind === kind).length;
+  const counts = [[k('backward'), 'backward dependency', 'backward dependencies'], [k('nolayer'), 'model with no layer', 'models with no layer'], [k('standard'), 'outside the standard', 'outside the standard']]
+    .filter(([n]) => n).map(([n, one, many]) => plural(n, one, many)).join(', ');
+  const std = CAP.layer_standard;
+  return <div className="note hstack lcheck" tabIndex={0} aria-label={`Layer design: ${plural(LAYER_ISSUES.length, 'layering issue', 'layering issues')}`}>
+    <span>Layer design</span><Pill tone="warn">{plural(LAYER_ISSUES.length, 'layering issue', 'layering issues')}</Pill><span>{counts}. Not counted in the scores above.</span>
+    <div className="hpop" role="tooltip">
+      <h4>Layer design: {plural(LAYER_ISSUES.length, 'issue', 'issues')} in {D.project}</h4>
+      Checked inside this project: a model must not read from a layer further downstream, {std ? <>every model sits in a layer folder, and layers follow layer_standard ({std.join(', ')})</> : 'and every model sits in a layer folder'}. These flags inform only; they never change a layer score.
+      <table><tbody>{LAYER_ISSUES.map(i => <tr key={i.unique_id + i.kind}><td><b>{i.name}</b><div>{i.reason}</div></td><td className="n">{LAYER_ISSUE_LABEL[i.kind]}</td></tr>)}</tbody></table>
+    </div>
+  </div>;
 }
 
 export function Overview() {
@@ -65,6 +85,7 @@ export function Overview() {
         calc={[[`Runs, ${winLabel}`, wr.length], ['With credits', attributed.length], ['Not yet attributed', pending], ['Credits', sum(credits).toFixed(4)], ['Average per attributed run', attributed.length ? (sum(attributed.map(r => r.credits)) / attributed.length).toFixed(4) : '—']]} />
     </div>
     <HealthStrip health={health} />
+    <LayerCheck />
     <div className="fbar">
       <Seg label="Window" options={WINDOWS} value={win} onChange={setWin} />
       <Seg label="Layer" options={[['all', 'All'], ...MODEL_KEYS.map(k => [k, LAYER_LABEL[k]])]} value={layer} onChange={setLayer} />

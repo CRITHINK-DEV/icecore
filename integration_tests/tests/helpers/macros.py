@@ -11,6 +11,7 @@ calls render the profile without a connection (dbt-snowflake connects lazily) an
 later tests; real values always win, so sandbox calls are unaffected.
 """
 import json
+import os
 from pathlib import Path
 
 from dbt.cli.main import dbtRunner, dbtRunnerResult
@@ -19,6 +20,8 @@ from helpers.env import placeholder_env
 
 IT_DIR = Path(__file__).resolve().parents[2]
 RESULT_PREFIX = "icecore_it_result:"
+# Set by conftest once `dbt deps` ran before the pytest-xdist workers started; workers then skip it.
+DEPS_DONE = "ICECORE_IT_DEPS_DONE"
 
 _deps_done = False
 
@@ -34,12 +37,23 @@ def invoke(args: list[str], callbacks=None) -> dbtRunnerResult:
         )
 
 
+def node_statuses(res: dbtRunnerResult) -> dict:
+    """{node name: status} of a dbt command. dbt 1.12 also lists the on-run-start/end hooks among the results; they are
+    left out, so dbt 1.8 and the latest give the same dict."""
+    return {r.node.name: r.status.value for r in res.result.results if not r.node.unique_id.startswith("operation.")}
+
+
 def install_deps() -> None:
-    """dbt deps, once per test session."""
+    """dbt deps, once per test session (under pytest-xdist, once before the workers start)."""
     global _deps_done
-    if not _deps_done:
+    if not _deps_done and not os.environ.get(DEPS_DONE):
         assert invoke(["deps"]).success
         _deps_done = True
+
+
+def target_dir() -> Path:
+    """Where dbt writes manifest.json: this worker's own folder under pytest-xdist (DBT_TARGET_PATH), else target/."""
+    return Path(os.environ.get("DBT_TARGET_PATH") or IT_DIR / "target")
 
 
 def run_macro_with_logs(macro: str, args: dict, extra: list[str] | None = None):

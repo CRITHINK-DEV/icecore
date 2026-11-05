@@ -16,16 +16,12 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import call_macro, invoke, run_macro
+from helpers.macros import call_macro, install_deps, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
 EVENTS = ("resource_attributes:\"snow.database.name\"::string = %(db)s"
           " and resource_attributes:\"snow.schema.name\"::string = %(schema)s and record_type = 'SPAN_EVENT'")
-
-
-def results_by_name(res) -> dict:
-    return {r.node.name: r.status.value for r in res.result.results}
 
 
 def quoted(table: str) -> str:
@@ -35,7 +31,7 @@ def quoted(table: str) -> str:
 # --- offline: parse only, no connection -----------------------------------------------------------
 
 def test_project_with_the_generic_tests_parses_and_registers_them():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     nodes = {n.name: n for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -57,7 +53,7 @@ def test_project_with_the_generic_tests_parses_and_registers_them():
     {"it_bad_bounds": {"avg": {"min": True}}},         # nor a boolean
 ])
 def test_invalid_bounds_fail_at_parse(var_args):
-    assert invoke(["deps"]).success
+    install_deps()
     assert not invoke(["parse", "--vars", json.dumps(var_args)]).success
 
 
@@ -102,7 +98,7 @@ def drift(dbt, sf):
             cur.execute(f'create table {quoted(table)} (id number, note varchar(20), gone date)')
         since = cur.execute("select dateadd(minute, -2, sysdate())").fetchone()[0]
         select = ["--select", "it_schema_changes_fail", "it_schema_changes_warn", "it_schema_changes_stale"]
-        first = results_by_name(invoke(["test", *select, "--vars", json.dumps(obs)]))
+        first = node_statuses(invoke(["test", *select, "--vars", json.dumps(obs)]))
         # the baselines are in the event table before the schema moves
         wait_for_events(sf, EVENTS + " and record:name::string = 'icecore.schema_signature'",
                         {"db": DATABASE, "schema": schema}, min_rows=3, since=since)
@@ -110,11 +106,11 @@ def drift(dbt, sf):
         cur.execute(f'alter table {quoted(fail)} add column extra boolean')
         cur.execute(f'alter table {quoted(fail)} alter column note set data type varchar(50)')
         cur.execute(f'alter table {quoted(warn)} drop column gone')
-        second = results_by_name(invoke(["test", *select, "--vars", json.dumps(obs)]))
+        second = node_statuses(invoke(["test", *select, "--vars", json.dumps(obs)]))
         # the baseline of `stale` is now older than a 2 second look back: that run counts as the first
         cur.execute(f'alter table {quoted(stale)} drop column gone')
         short = {**obs, "icecore": {"obs_schema": schema, "baseline_lookback_days": 0.00002}}
-        third = results_by_name(invoke(["test", "--select", "it_schema_changes_stale", "--vars", json.dumps(short)]))
+        third = node_statuses(invoke(["test", "--select", "it_schema_changes_stale", "--vars", json.dumps(short)]))
         raw = wait_for_events(sf, EVENTS, {"db": DATABASE, "schema": schema}, min_rows=9, since=since, settle_s=10)
         view = f'"{DATABASE}"."{schema}"."BASE_EVENTS"'
         cur.execute(f"create view {view} as {call_macro('base_events', obs_schema=schema)}")
@@ -196,13 +192,13 @@ def columns(dbt, sf):
                     f'from table(generator(rowcount => {N_ROWS}))')
         log_since = cur.execute("select dateadd(minute, -3, sysdate())").fetchone()[0]
         variables = {**obs, "it_uc2_column_table": table, "it_since": since}
-        first = results_by_name(invoke(["test", "--select", "it_column_three_metrics", "it_column_bounds_ok",
+        first = node_statuses(invoke(["test", "--select", "it_column_three_metrics", "it_column_bounds_ok",
                                         "it_column_bounds_breached", "--vars", json.dumps(variables)]))
         wait_for_events(sf, EVENTS + " and record:name::string = 'icecore.metric'", {"db": DATABASE, "schema": schema},
                         min_rows=6, since=log_since)
         cur.execute(f'insert into {quoted(table)} select 1000 + seq4(), seq4() from table(generator(rowcount => 10))')
         # no `since`: the window starts at the previous observation of the column
-        second = results_by_name(invoke(["test", "--select", "it_column_from_history", "--vars",
+        second = node_statuses(invoke(["test", "--select", "it_column_from_history", "--vars",
                                          json.dumps({**obs, "it_uc2_column_table": table})]))
         raw = wait_for_events(sf, EVENTS + " and record:name::string = 'icecore.metric'",
                               {"db": DATABASE, "schema": schema}, min_rows=7, since=log_since, settle_s=10)
@@ -306,7 +302,7 @@ def test_two_column_tests_on_one_column_with_distinct_window_tags_keep_separate_
     ids = {"db": DATABASE, "schema": schema}
 
     def run(test, extra=None):
-        out = results_by_name(invoke(["test", "--select", test, "--vars",
+        out = node_statuses(invoke(["test", "--select", test, "--vars",
                                       json.dumps({**obs, "it_uc2_column_table": table, **(extra or {})})]))
         assert out[test] == "pass"
 

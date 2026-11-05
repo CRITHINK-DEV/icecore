@@ -31,7 +31,7 @@
       {% do log('icecore: warning: ' ~ statement ~ ' failed (' ~ status ~ '); the role needs CREATE SCHEMA on ' ~ target.database ~ ', or an admin must create the compat schema', info=True) %}
     {%- endif -%}
     {%- for view in icecore._icecore_compat_views(schema) -%}
-      {%- do run_query(icecore._icecore_compat_view_ddl(view['name'], view['sql'], schema, compat_schema)) -%}
+      {%- do run_query(icecore._icecore_view_statement(icecore._icecore_compat_view_ddl(view['name'], view['sql'], schema, compat_schema))) -%}
       {%- do created.append(target_schema ~ '.' ~ icecore._sql(view['name'], 'ident')) -%}
     {%- endfor -%}
     {%- do log('icecore: created ' ~ (created | join(', ')), info=True) -%}

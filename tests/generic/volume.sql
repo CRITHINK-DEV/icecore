@@ -1,4 +1,4 @@
-{#- icecore.volume: zero-scan volume test (UC2). Documented in volume.yml.
+{#- icecore.volume: zero-scan volume test (UC2). Documented in macros/tests/volume.yml (on dbt 1.8, a generic test's docs are read only from macro-paths).
     Reads the total row count with icecore.get_row_count_metadata (INFORMATION_SCHEMA.TABLES, no data scan),
     scores it against the metric's own history (icecore.score_monitor_metrics: one query), emits it as the metric
     row_count with the scored result, then fails when it is outside min_rows / max_rows OR the engine says anomaly.

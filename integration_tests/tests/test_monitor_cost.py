@@ -23,7 +23,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
-from helpers.macros import invoke, run_macro
+from helpers.macros import invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -31,6 +31,7 @@ BATCHES, BATCH_ROWS, CHANGED_ROWS = 20, 5000, 50
 METADATA_VIEW_BYTES = 1_000_000  # the INFORMATION_SCHEMA.TABLES read: a metadata view, not the table
 INCREMENTAL_MAX_SHARE = 0.25     # change window bytes over full scan bytes
 EVENT_READ_MAX_BYTES = 5_000_000  # a tripwire for the bounded history read: measured 20 KB (baseline) and 218 KB (previous observation)
+EVENT_READ_MAX_SHARE = 0.10      # or the read is pruned to under this share of the event table's partitions
 
 
 def quoted(table: str) -> str:
@@ -82,6 +83,16 @@ def scans(sf, query_id: str) -> list[dict]:
     return out
 
 
+def event_reads_are_bounded(reads: list) -> bool:
+    """Under the byte tripwire, or pruned to a small share of the event table's partitions. The look-back window of a
+    shared event table holds everyone's recent records, so bytes alone measure how busy it was: on 5 Nov, after a day of
+    test runs, the reads were 6.8 to 7.8 MB but scanned 53 to 71 of about 4,600 partitions."""
+    if sum(r["BYTES_SCANNED"] or 0 for r in reads) < EVENT_READ_MAX_BYTES:
+        return True
+    found = [s for r in reads for s in r["SCANS"] if s["total"]]
+    return bool(found) and all(s["scanned"] / s["total"] < EVENT_READ_MAX_SHARE for s in found)
+
+
 def partitions(sf, sql: str) -> int:
     plan = json.loads(sf.cursor().execute("explain using json " + sql).fetchone()[0])
     return int(plan["GlobalStats"]["partitionsTotal"])
@@ -123,7 +134,7 @@ def cost(dbt, sf):
                      "it_cost_column_history"):
             t0 = cur.execute("select dateadd(second, -2, current_timestamp())").fetchone()[0]
             res = invoke(["test", "--select", name, "--vars", json.dumps(variables)])
-            assert res.success and res.result.results[0].status.value == "pass", name
+            assert res.success and list(node_statuses(res).values()) == ["pass"], name
             time.sleep(3)  # query history is near real time
             got = history(sf, t0)
             measured[name] = {"table": touching(got, table), "events": event_reads(got, table)}
@@ -191,6 +202,14 @@ def test_column_anomaly_scans_only_the_change_window(cost):
         assert 0 < x["scanned"] < cost["partitions"], (x, cost["partitions"])
 
 
+def test_a_big_history_read_is_bounded_when_it_scans_a_small_share_of_the_event_table():
+    pruned = [{"BYTES_SCANNED": 7_793_664, "SCANS": [{"table": "T.EVENTS", "scanned": 71, "total": 4652}]}]
+    full = [{"BYTES_SCANNED": 7_793_664, "SCANS": [{"table": "T.EVENTS", "scanned": 4652, "total": 4652}]}]
+    small = [{"BYTES_SCANNED": 20_000, "SCANS": [{"table": "T.EVENTS", "scanned": 3, "total": 3}]}]
+    assert event_reads_are_bounded(pruned) and event_reads_are_bounded(small)
+    assert not event_reads_are_bounded(full) and not event_reads_are_bounded([{"BYTES_SCANNED": 7_793_664, "SCANS": []}])
+
+
 @pytest.mark.sandbox
 @pytest.mark.parametrize("name", ["it_cost_schema_changes", "it_cost_column_history"])
 def test_the_bounded_history_reads_of_the_event_table_stay_small(cost, name):
@@ -198,4 +217,4 @@ def test_the_bounded_history_reads_of_the_event_table_stay_small(cost, name):
     assert reads, f"{name} did not read the event table (the baseline / previous observation read)"
     total = sum(r["BYTES_SCANNED"] or 0 for r in reads)
     print(f"\nICECORE_MONITOR_COST {name} event-table reads: {total} bytes in {len(reads)} queries")
-    assert total < EVENT_READ_MAX_BYTES, (name, total)
+    assert event_reads_are_bounded(reads), (name, total, [r["SCANS"] for r in reads])

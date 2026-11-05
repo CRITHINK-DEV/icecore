@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from helpers.macros import IT_DIR, install_deps, invoke, run_macro, run_macro_with_logs
+from helpers.macros import install_deps, invoke, run_macro, run_macro_with_logs, target_dir
 from helpers.run_hooks import (
     DATABASE, SCHEMA, icecore_vars, invocation_records, obs_schema, run_with_hooks, snowflake_since,
 )
@@ -33,7 +33,7 @@ RCE_A = f"model.{P}.rce_a"
 def test_id() -> str:
     install_deps()
     assert invoke(["parse"]).success
-    manifest = json.load(open(IT_DIR / "target" / "manifest.json"))
+    manifest = json.load(open(target_dir() / "manifest.json"))
     ids = [uid for uid, n in manifest["nodes"].items() if n["resource_type"] == "test" and n.get("attached_node") == C]
     assert len(ids) == 1, ids
     return ids[0]

@@ -13,7 +13,7 @@ import pytest
 from snowflake.connector import DictCursor
 
 from helpers.events import wait_for_events
-from helpers.macros import invoke, run_macro
+from helpers.macros import install_deps, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
 SCHEMA = "SPIKES"
@@ -34,7 +34,7 @@ def wide_name(i: int) -> str:
 # --- offline ----------------------------------------------------------------------------------------
 
 def test_fixtures_parse_and_register_the_snapshot_tests():
-    assert invoke(["deps"]).success
+    install_deps()
     res = invoke(["parse"])
     assert res.success
     names = {n.name for n in res.result.nodes.values() if n.resource_type.value == "test"}
@@ -74,7 +74,7 @@ def snap(dbt, sf):
         rows = sf.cursor(DictCursor).execute(f"select * from {view}").fetchall()
         yield {"small": small, "wide": wide, "rows": [{k.lower(): v for k, v in r.items()} for r in rows],
                "view": view, "schema": schema, "since": since,
-               "statuses": [{r.node.name: r.status.value for r in run.result.results} for run in runs]}
+               "statuses": [node_statuses(run) for run in runs]}
     finally:
         cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
         for table in (small, wide):

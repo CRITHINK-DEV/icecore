@@ -11,10 +11,12 @@ top-level `errors` list, which the UI shows. build() never raises on a failed re
 Mapping gaps (None because no view carries the value): nodes.materialization/layer of nodes that never ran,
 incidents.channel except for silence incidents (SLA_DECLARED.channel), incidents.node_unique_id when the series'
 relation cannot be matched to a node, schema_changes.type of a type change (it has from and to instead),
-capabilities.dbt_versions without invocations in the window. Stale incidents (open for over 7 days) read as open.
+capabilities.dbt_versions without invocations in the window, capabilities.layer_standard when the newest run
+did not record var icecore.layer_standard (or the INVOCATIONS view predates the column). Stale incidents (open for over 7 days) read as open.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -26,7 +28,7 @@ FRESHNESS_OUT = "freshness_lag_minutes"
 _NODE_TYPES = ("model", "source", "seed", "snapshot", "test", "analysis", "exposure", "metric", "operation")
 _AS_OF_KEYS = (*_incidents._AS_OF_KEYS, "ended_at", "completed_at")
 EMPTY_CAPABILITIES = {"edition": None, "event_table": None, "cortex": None, "icecore_version": None,
-                      "dbt_versions": None}
+                      "dbt_versions": None, "layer_standard": None}
 
 
 # --- value helpers ----------------------------------------------------------------------------------------------
@@ -118,6 +120,18 @@ class _Reader:
         except Exception as exc:  # one failing view must not take the console down
             self.errors.append({"view": view, "error": f"{type(exc).__name__}: {exc}"[:500]})
             return []
+
+
+def _str_list(value: Any) -> list[str] | None:
+    """A list of non-empty strings from a list or its JSON text (a VARIANT read through Snowpark); else None."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    if not isinstance(value, list):
+        return None
+    return [str(v).strip() for v in value if v is not None and str(v).strip() != ""]
 
 
 # --- builders ---------------------------------------------------------------------------------------------------
@@ -390,11 +404,15 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
     cap = caps[0] if caps else {}
     versions = list(dict.fromkeys(str(r["dbt_version"]) for r in reversed(_by_time(inv, "started_at"))
                                   if r.get("dbt_version")))
+    newest = _by_time(inv, "started_at")[-1:]
     capabilities = {
         "edition": cap.get("edition"), "event_table": cap.get("event_table"),
         "cortex": _bool(cap.get("cortex_available")), "icecore_version": cap.get("icecore_version"),
         "dbt_versions": versions or None,
     } if caps or versions else dict(EMPTY_CAPABILITIES)
+    # var icecore.layer_standard as the newest run recorded it (macros/telemetry/start_run.sql): the frontend's
+    # layer design checks compare each model's layer with it. None when not declared.
+    capabilities["layer_standard"] = _str_list(newest[0].get("layer_standard")) if newest else None
 
     projects = [r.get("project") for rows in (_by_time(inv, "started_at")[::-1], lineage, tests) for r in rows
                 if r.get("project")]

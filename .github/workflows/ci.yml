@@ -19,12 +19,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  offline:
+  # The offline suite in parts, each on its own runner (the latest dbt parses more slowly, so it gets more parts).
+  offline-part:
+    name: offline (${{ matrix.requirements }}, part ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        requirements: [floor, latest]
+        include:
+          - {requirements: floor, shard: 1/2}
+          - {requirements: floor, shard: 2/2}
+          - {requirements: latest, shard: 1/3}
+          - {requirements: latest, shard: 2/3}
+          - {requirements: latest, shard: 3/3}
+    env:
+      ICECORE_TEST_SHARD: ${{ matrix.shard }}
     defaults:
       run:
         working-directory: integration_tests
@@ -38,6 +47,18 @@ jobs:
       - run: pip install -r requirements-${{ matrix.requirements }}.txt
       # One worker per core (4 on GitHub's runners); conftest gives each its own dbt target folder.
       - run: pytest -m "not sandbox" -n auto
+
+  # The checks the branch rules require ("offline (floor)", "offline (latest)"): green only when every part is.
+  offline:
+    name: offline (${{ matrix.requirements }})
+    needs: offline-part
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        requirements: [floor, latest]
+    steps:
+      - run: test "${{ needs.offline-part.result }}" = success
 
   sandbox:
     if: github.event_name == 'workflow_dispatch'

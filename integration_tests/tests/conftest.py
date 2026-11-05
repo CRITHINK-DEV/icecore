@@ -1,5 +1,6 @@
 import os
 import uuid
+import zlib
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,18 @@ def pytest_configure(config):
     if not WORKER and getattr(config.option, "numprocesses", None):
         install_deps()
         os.environ[DEPS_DONE] = "1"
+
+
+def pytest_collection_modifyitems(config, items):
+    """ICECORE_TEST_SHARD=i/n (CI): keep the i-th of n parts of the tests, picked by a stable hash of each test id."""
+    shard = os.environ.get("ICECORE_TEST_SHARD")
+    if not shard:
+        return
+    index, total = (int(x) for x in shard.split("/"))
+    keep = [item for item in items if zlib.crc32(item.nodeid.encode()) % total == index - 1]
+    if len(keep) < len(items):
+        config.hook.pytest_deselected(items=[item for item in items if item not in keep])
+        items[:] = keep
 
 
 @pytest.fixture(scope="session")

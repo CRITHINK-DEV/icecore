@@ -9,7 +9,7 @@ macros:
       (nanoseconds since the epoch); a log is `{type: log, level, message, attrs}`. Every record and every span
       event gets `base_attributes()` (so `dbt.invocation_id` is on each), then its own attributes, capped at
       `payload_cap_kb` as `emit` caps them; a log message counts towards its record's cap and, when cut, is
-      flagged as `icecore.message` in `icecore.truncated_keys`. Records go in as many CALLs of at most 512 KB
+      flagged as `icecore.message` in `icecore.truncated_keys`. Records go in as many CALLs of at most 768 KB
       of JSON as needed, with no count limit (S2), each inside the guard block, so a missing procedure or grant
       only logs a warning, one per call to `emit_run` (with the number of failing CALLs). Mapping and list attribute values are kept native on LOG records but written as JSON text on spans and span events, which Snowflake drops them from silently otherwise. Items that are not a mapping, and spans without a numeric `start_ns`, are skipped instead of failing the whole CALL. Each CALL is its own trace. A no-op at parse time. Returns `{records, calls,
       statuses}` (one status per CALL, `ok spans=<n> logs=<n>` or `icecore-error ...`).

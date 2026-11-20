@@ -6,7 +6,7 @@ macros:
       The on-run-end hook of run telemetry. Add it to dbt_project.yml as the on-run-end hook calling
       icecore.end_run with dbt's `results` (README, "Try it in 60 seconds"). One orchestrator: it builds the
       run's batch and sends it with `icecore.emit_run` to ICECORE_EMIT_RUN, in as many guarded CALLs of at most
-      512 KB as needed. The batch holds, in order, the invocation span `icecore.invocation` (from
+      768 KB as needed. The batch holds, in order, the invocation span `icecore.invocation` (from
       `run_started_at` to the hook, with `dbt.invocation.started_at`, `dbt.invocation.completed_at` and
       `dbt.invocation.duration_s`); one span `icecore.node` per node that has timing, with the node's keys and
       its start and end taken from dbt's `result.timing` (first start, last end), also written as

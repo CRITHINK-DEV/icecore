@@ -9,7 +9,7 @@ write path and the views, not dbt's own build.
 Measured per size (printed with -s, and asserted against LIMITS):
   rows     records written: 1 invocation span, n node spans, n node results, n query events, the lineage
            records (the project's own edges plus EDGES synthetic ones, split under the cap) and 1 end LOG;
-  CALLs    ICECORE_EMIT_RUN CALLs of at most 512 KB each;
+  CALLs    ICECORE_EMIT_RUN CALLs of at most 768 KB each;
   build_s  dbt-side time to build the batch; send_s the time of the guarded CALLs; together the wall time of
            end_run's work on the dbt host;
   views    seconds for INVOCATIONS, NODE_EXECUTIONS and LINEAGE_LATEST filtered to the run.
@@ -48,7 +48,7 @@ KB = 1024
 
 # --- offline --------------------------------------------------------------------------------------
 
-def test_a_300_node_batch_is_rendered_and_chunked_under_512_kb():
+def test_a_300_node_batch_is_rendered_and_chunked_under_768_kb():
     from helpers.macros import run_macro
     results = [{"unique_id": f"model.p.m{i}", "status": "success", "execution_time": 0.5,
                 "timing": [{"name": "execute", "started_at": "2026-11-01T10:00:00.000000Z",
@@ -59,7 +59,7 @@ def test_a_300_node_batch_is_rendered_and_chunked_under_512_kb():
     out = run_macro("it_end_run_render", {"results": results})
     kinds = [r.get("name") or r["attrs"].get("icecore.kind") for r in out["records"]]
     assert kinds.count("icecore.node") == 300 and kinds.count("node_result") == 300 and kinds.count("run_end") == 1
-    assert sum(out["chunk_sizes"]) == len(out["records"]) and all(b <= 512 * KB for b in out["chunk_bytes"])  # tojson of a chunk is at most the escaped literal the chunker counts
+    assert sum(out["chunk_sizes"]) == len(out["records"]) and all(b <= 768 * KB for b in out["chunk_bytes"])  # tojson of a chunk is at most the escaped literal the chunker counts
 
 
 def test_a_chunk_literal_as_sent_never_exceeds_max_bytes():
@@ -145,7 +145,7 @@ def test_payloads_near_and_over_the_cap(scaled):
 
 
 @pytest.mark.sandbox
-def test_calls_stay_within_512_kb_and_every_one_succeeds(scaled):
+def test_calls_stay_within_768_kb_and_every_one_succeeds(scaled):
     out = scaled["out"]
     assert out["calls"] >= 1 and all(s.startswith("ok") for s in out["statuses"])
     # the batch is at most (records x cap) and at least its small records: it takes few CALLs, not one per record

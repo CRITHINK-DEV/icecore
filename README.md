@@ -30,7 +30,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 ![The Console overview](docs/assets/app/v2-overview.png)
 
 > [!NOTE]
-> **This is an early public release (`v0.1.1`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
+> **This is an early public release (`v0.1.2`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Add icecore to `packages.yml`, pinned to the release tag, then install:
 # packages.yml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.1.1
+    revision: v0.1.2
 ```
 
 ```bash
@@ -204,7 +204,7 @@ flowchart LR
     views --> alerts["Snowflake Alerts and tasks<br/>email, Slack, Teams"]
 ```
 
-- **Write path.** Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 512 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks land nothing in the database's event table (for LOG records, the only ones checked, the record goes to the account table and only when the session sets `LOG_LEVEL`; SPAN and SPAN_EVENT routing there is unmeasured), while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
+- **Write path.** Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 768 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks land nothing in the database's event table (for LOG records, the only ones checked, the record goes to the account table and only when the session sets `LOG_LEVEL`; SPAN and SPAN_EVENT routing there is unmeasured), while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
 - **Read path.** `icecore.setup` creates views over the event table (and the two emitter procedures; no tables). Views are the only public interface: the app and your BI tools read views, never the raw table.
 - **Control path.** Snowflake Alerts run against the views and notify through a notification integration. A Snowflake task detects runs that never happened.
 

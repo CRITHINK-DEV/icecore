@@ -2,7 +2,7 @@
   UC1 on-run-end hook: `on-run-end: "{{ icecore.end_run(results) }}"`.
 
   One orchestrator. It builds one batch for the run and sends it with icecore.emit_run to ICECORE_EMIT_RUN, in
-  as many guarded CALLs of at most 512 KB as needed (spikes/GATE1.md, "Consequences for the build"). In order:
+  as many guarded CALLs of at most 768 KB as needed (spikes/GATE1.md, "Consequences for the build"). In order:
     1. the invocation span and one span per node, with dbt's own timings (spans.sql);
     2. each emitter of _icecore_end_run_emitters() whose var is on adds its items to the batch;
     3. the invocation-end LOG: dbt.invocation.status (success, warn or error), the node counts and the

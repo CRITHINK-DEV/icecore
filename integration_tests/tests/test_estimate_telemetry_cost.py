@@ -97,9 +97,9 @@ def test_samples_and_query_events_follow_their_arguments():
 
 def test_large_runs_need_more_emit_run_calls():
     out, _ = estimate(nodes=1000, runs_per_day=1)
-    # 1 + 1 + 1000 + 1000 + 1000 + 1 lineage = 3003 end-run records at 1500 bytes = about 4.5 MB: 9 CALLs of 512 KB
-    assert out["emit_run_calls"] == 9
-    assert out["records_per_run"]["call_overhead"] == 1 + 9 * 4
+    # 1 + 1 + 1000 + 1000 + 1000 + 1 lineage = 3003 end-run records at 1500 bytes = about 4.5 MB: 6 CALLs of 768 KB
+    assert out["emit_run_calls"] == 6
+    assert out["records_per_run"]["call_overhead"] == 1 + 6 * 4
 
 
 def test_nodes_default_to_the_graph():

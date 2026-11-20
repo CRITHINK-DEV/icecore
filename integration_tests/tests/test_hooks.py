@@ -14,7 +14,7 @@ import json
 import pytest
 import yaml
 
-from helpers.macros import IT_DIR, run_macro
+from helpers.macros import IT_DIR, install_deps, invoke, run_macro
 from helpers.run_hooks import (
     assert_no_invocation_records, drop_fixture_views, invocation_records, node_results, obs_schema, run_end_logs,
     run_start_events, run_with_hooks, snowflake_since,
@@ -81,6 +81,15 @@ def test_hooks_are_noops_when_telemetry_is_false(off):
     # Offline, any query would fail to connect: success proves neither hook ran one.
     out = run_macro("it_hooks_render", {"results": MIXED}, with_vars({"telemetry": off}))
     assert out == {"start_run": "", "end_run": "", "telemetry": False}
+
+
+def test_telemetry_is_off_for_dbt_compile():
+    # snow dbt deploy runs `dbt compile`, which fires the hooks on Snowflake's dbt: it must record no invocation.
+    install_deps()
+    lines = []
+    res = invoke(["compile", "--inline", "select '{{ icecore._icecore_telemetry_enabled() }}' as telemetry", "--no-populate-cache"],
+                 [lambda event: lines.append(getattr(event.info, "msg", "") or "")])
+    assert res.success and any("select 'False' as telemetry" in line for line in lines), lines[-5:]
 
 
 def test_run_end_log_has_status_and_node_counts():

@@ -211,7 +211,7 @@ dbt build --vars '{icecore: {telemetry: false}}'
 
 ## dbt Projects on Snowflake
 
-icecore runs inside `EXECUTE DBT PROJECT` (measured once, see `spikes/S13-dbt-projects.md`). A `DBT PROJECT` object has no network access by default, so Hub packages in `packages.yml` need an external access integration, or you vendor them as local packages. Each `snow dbt deploy` also runs a compile that fires the hooks once, so every deploy writes a `compile` invocation; skipping it is a follow-up story.
+icecore runs inside `EXECUTE DBT PROJECT` (measured once, see `spikes/S13-dbt-projects.md`). A `DBT PROJECT` object has no network access by default, so Hub packages in `packages.yml` need an external access integration, or you vendor them as local packages. To vendor icecore, copy its `dbt_project.yml`, `macros/` and `tests/` (the generic tests live in `tests/generic/`; without it `icecore.freshness` and the other monitors are not found), for example `git archive <tag> dbt_project.yml macros tests LICENSE`. Deploy without a `package-lock.yml` written by a newer local dbt: Snowflake runs its own dbt version and cannot read it, so delete it before `snow dbt deploy`. Each `snow dbt deploy` runs a `dbt compile`, which fires the hooks; icecore records nothing for `compile`.
 
 ## If no records appear
 

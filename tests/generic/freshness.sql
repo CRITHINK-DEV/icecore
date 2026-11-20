@@ -39,6 +39,12 @@
       {%- set lag_seconds = ((ms | float) / 1000) | round(3) -%}
       {%- set breach = max_lag_seconds is not none and lag_seconds > max_lag_seconds -%}
       {%- set verdict = icecore.score_monitor_metrics(model, [{'metric': 'freshness_lag_seconds', 'value': lag_seconds}], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine)[0] -%}
+      {#- only a lag above the band is stale (a fresher table never is), and the band reaches at least 60 s above the usual lag,
+          so seconds of jitter between builds never alert (Gate 2 pilot: bands 1 s wide flagged lags of 4-11 s) -#}
+      {%- if verdict is not none and verdict.get('expected') is not none and verdict.get('upper') is not none -%}
+        {%- do verdict.update({'upper': [verdict['upper'], verdict['expected'] + 60] | max}) -%}
+        {%- if lag_seconds <= verdict['upper'] -%}{%- do verdict.update({'is_anomaly': false, 'score': 0.0}) -%}{%- endif -%}
+      {%- endif -%}
       {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict), threshold=max_lag_seconds) -%}
     {%- endif -%}
   {%- endif -%}

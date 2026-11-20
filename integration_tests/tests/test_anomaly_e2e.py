@@ -6,11 +6,12 @@ the emitter), so the obs schema ICECORE_OBS_<run_id> gets the real views and the
 UNION ALL a SEEDED view of 30 daily points per series. A series belongs to ONE test (node_unique_id): the tests read
 only their own points. The verdicts are real event-table records read back through the view.
 Cases (fixtures in models/monitors/_anomaly_e2e.yml): spike (100 rows of history, 1000 now; avg(amount) 10 -> 500; freshness
-lag 1 h -> seconds), calm (in the band), young (3 history points). Severity: an anomaly alone is one failing row and WARNS by default (error_if >=2); a hard threshold is 2 rows and fails; var anomaly_severity error makes error_if >=1.
+lag 1 s -> the table's age; a fresher table, lag 1 h -> seconds, is no anomaly), calm (in the band), young (3 history points). Severity: an anomaly alone is one failing row and WARNS by default (error_if >=2); a hard threshold is 2 rows and fails; var anomaly_severity error makes error_if >=1.
 The schema is dropped at the end. Offline tests: test_score_monitor.py.
 """
 import json
 import os
+import time
 import uuid
 
 import pytest
@@ -44,6 +45,7 @@ def e2e(dbt, sf):
         cur.execute(f'create table {quoted(spike)} (id number, amount number, country varchar, loaded_at timestamp_ntz)')
         cur.execute(f"insert into {quoted(spike)} select seq4(), 500, iff(mod(seq4(), 2) = 0, 'FR', 'DE'), sysdate() "
                     f"from table(generator(rowcount => 1000))")  # 10x the 100 rows of its history
+        spike_written = time.monotonic()
         for table in (calm, young):
             cur.execute(f'create table {quoted(table)} (id number)')
             cur.execute(f"insert into {quoted(table)} select seq4() from table(generator(rowcount => 100))")
@@ -52,7 +54,8 @@ def e2e(dbt, sf):
         # it_anom_volume_threshold has none on purpose: it shares the relation and metric of the others, and must not read theirs.
         series = [(t, spike, "row_count", None, 100, 30) for t in ("it_anom_volume_spike", "it_anom_volume_warn", "it_anom_volume_error",
                                                                    "it_anom_volume_override")]
-        series += [("it_anom_column_spike", spike, "avg", "amount", 10, 30), ("it_anom_freshness_spike", spike, "freshness_lag_seconds", None, 3600, 30),
+        series += [("it_anom_column_spike", spike, "avg", "amount", 10, 30), ("it_anom_freshness_spike", spike, "freshness_lag_seconds", None, 1, 30),
+                   ("it_anom_freshness_fresher", spike, "freshness_lag_seconds", None, 3600, 30),
                    ("it_anom_volume_calm", calm, "row_count", None, 100, 30), ("it_anom_volume_young", young, "row_count", None, 100, 3)]
         series += [("it_anom_all_columns_spike", spike, m, c, 100, 30) for c in ("ID", "AMOUNT", "COUNTRY", "LOADED_AT") for m in ("window_rows", "null_rate")]
         lit = lambda v: "null::varchar" if v is None else "'" + str(v).replace("'", "''") + "'"
@@ -85,9 +88,12 @@ def e2e(dbt, sf):
             res = invoke(["build", "--select", " ".join(select), "--vars", json.dumps({"icecore": icecore, **names})], [collect])
             return node_statuses(res), lines
 
+        # freshness flags a lag at least 60 s above the usual one: the spike table must be older than its 1 s history + 60 s
+        time.sleep(max(0, 75 - (time.monotonic() - spike_written)))
         # run 1: defaults (anomaly_severity warn, engine auto: no Cortex model, so native)
         first, first_lines = build(["it_anom_volume_spike", "it_anom_volume_error", "it_anom_volume_threshold", "it_anom_volume_threshold_warn", "it_anom_volume_warn",
-                                    "it_anom_volume_calm", "it_anom_volume_young", "it_anom_column_spike", "it_anom_freshness_spike"])
+                                    "it_anom_volume_calm", "it_anom_volume_young", "it_anom_column_spike", "it_anom_freshness_spike",
+                                    "it_anom_freshness_fresher"])
         # run 2: the var says cortex; the test volume_override scores with native outright
         _, second_lines = build(["it_anom_volume_spike", "it_anom_volume_override"], {"anomaly_engine": "cortex"})
         # run 3: anomaly_severity error
@@ -186,7 +192,17 @@ def test_column_and_freshness_anomalies_are_scored(e2e):
     avg = rows(e2e, "spike", "avg", "it_anom_column_spike", column="amount")
     assert avg and avg[0]["anomaly_is_anomaly"] is True and avg[0]["value"] == 500
     lag = rows(e2e, "spike", "freshness_lag_seconds", "it_anom_freshness_spike")
-    assert lag and lag[0]["anomaly_is_anomaly"] is True and lag[0]["value"] < 3000
+    assert lag and lag[0]["anomaly_is_anomaly"] is True and lag[0]["value"] > lag[0]["anomaly_upper"]
+    assert lag[0]["anomaly_upper"] >= lag[0]["anomaly_expected"] + 60  # the 60 s floor, not the 1 s band of the history
+
+
+@pytest.mark.sandbox
+def test_a_fresher_table_than_usual_is_no_freshness_anomaly(e2e):
+    # a lag below the band (seconds against a 1 h history) is scored, but freshness flags only lags above it
+    assert e2e["first"]["it_anom_freshness_fresher"] == "pass"
+    lag = rows(e2e, "spike", "freshness_lag_seconds", "it_anom_freshness_fresher")
+    assert lag and lag[0]["anomaly_engine"] == "native" and lag[0]["anomaly_is_anomaly"] is False
+    assert lag[0]["value"] < lag[0]["anomaly_lower"]
 
 
 @pytest.mark.sandbox

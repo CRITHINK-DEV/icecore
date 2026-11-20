@@ -143,7 +143,7 @@ export function NodePanel({ id, mode, setMode, onClose }) {
     <dl>
       <dt>Type</dt><dd>{n.type}{n.materialization && n.materialization !== n.type ? `, ${n.materialization}` : ''}</dd>
       <dt>Latest build</dt><dd>{ex ? `${fmtSec(ex.execution_time_s)}, ${ex.status}` : n.type === 'source' ? 'Not built (source)' : 'Not run'}</dd>
-      <dt>Credits, latest</dt><dd>{ex ? (ex.credits == null ? 'Not yet attributed' : fmtCr(ex.credits)) : '—'}</dd>
+      <dt>Credits, latest</dt><dd>{ex ? (ex.credits == null ? 'Not yet attributed' : fmtCr(ex.credits) + (ex.credits_estimated ? ' (estimate)' : '')) : '—'}</dd>
       <dt>Tests</dt><dd>{tids.length ? `${tids.length - failing.length} of ${tids.length} passing` : 'None'}</dd>
       {FRESH[id] && <><dt>Source data age</dt><dd>{fmtSpan(FRESH[id].freshness_lag_min * MS.m)}{FRESH[id].max_lag_min != null ? ` (limit ${FRESH[id].max_lag_min} min)` : ''}</dd></>}
       {SLA_BY[id] && <><dt>Schedule</dt><dd>every {SLA_BY[id].expected_every}, {SLA_BY[id].late ? 'late' : 'on time'}</dd></>}

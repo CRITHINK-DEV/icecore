@@ -45,15 +45,20 @@ every run recorded, monitors that score sensibly, alerts worth reading, and noth
    default then). Turned on afterwards for one build, the backfill gave 500 earlier nodes their attributed cost on
    `EXECUTE DBT PROJECT` (500 is the per-run cap), so cost works natively. Follow-up: cost on by default, with a real-time
    estimate replaced by Snowflake's attribution, and a plain warning when the backfill falls behind.
-6. **icecore costs more than the project it watches.** Attributed credits of the queries under the builds: icecore's
-   emit calls about 0.19 and its reads about 0.16, against about 0.03 for the project's own models and tests (27 builds;
-   this split covers 0.38 of the 0.84 credits attributed under those builds). The project is small, so the ratio is
-   extreme, but the overhead is what a user will check first. Follow-up: measure it per statement and cut the largest part.
+6. **icecore costs more than the project it watches.** Snowflake attributed 0.381 credits to the queries under the 27
+   builds, and about 97 % of it was icecore's own statements (0.0138 credits per build): the end-of-run `ICECORE_EMIT_RUN`
+   calls 27 %, the monitor scoring reads 25 %, the per-test `ICECORE_EMIT` calls 23 %, and the monitors' metadata reads the
+   rest. The project's models took 0.009. Cost follows fixed latency per statement (a trivial CALL takes about 0.8 s), not
+   data. The warehouse metered 1.434 credits in those hours: attribution covered 0.967 (with other queries), and about
+   0.47 was idle time, which attribution never counts. The project is small, so the ratio is extreme, but the overhead is
+   what a user will check first. First cut for 0.2.0: larger end-of-run chunks, one CALL fewer per build (about 9 %).
+   Two design changes would take about 20 % each: emit monitor records once at run end, and read all metric history in
+   one query per run.
 7. **A persistent failure opens one incident per day.** This is the documented 24 h alert window
    (`alert_window_hours`), which doubles as a daily reminder. Kept as designed.
 
 ## Open items
 
-- Findings 5 and 6 are being built for 0.2.0.
+- Findings 5 and 6 are being built for 0.2.0; the two design changes of finding 6 wait for the owner's decision.
 - Not covered by this pilot: a schema change, a missed run (silence), Cortex scoring (no model was trained), the alert
   objects (alerts were off), dbt Core runs outside Snowflake on a schedule, and Standard edition accounts.

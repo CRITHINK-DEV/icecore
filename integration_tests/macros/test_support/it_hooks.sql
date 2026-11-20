@@ -26,7 +26,7 @@
 {% endmacro %}
 
 {#- end_run's batch for these results, as ICECORE_EMIT_RUN receives it, and how it chunks. -#}
-{% macro it_end_run_render(results, max_bytes=524288) %}
+{% macro it_end_run_render(results, max_bytes=786432) %}
   {% set records = icecore._icecore_emit_run_records(icecore._icecore_end_run_items(results)) %}
   {% set chunks = icecore._icecore_emit_run_chunks(records, max_bytes) %}
   {% set sizes, bytes = [], [] %}
@@ -42,7 +42,7 @@
 {% endmacro %}
 
 {#- emit_run's records and chunks for arbitrary items. -#}
-{% macro it_emit_run_render(items, max_bytes=524288) %}
+{% macro it_emit_run_render(items, max_bytes=786432) %}
   {% set records = icecore._icecore_emit_run_records(items) %}
   {% set sizes, bytes = [], [] %}
   {% for chunk in icecore._icecore_emit_run_chunks(records, max_bytes) %}

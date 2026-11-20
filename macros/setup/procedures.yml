@@ -16,7 +16,7 @@ macros:
       `snowflake-telemetry-python` must not be added, S1.md). Each element is a span `{name, start_ns, end_ns,
       attrs, events: [{name, ts_ns, attrs}]}`, written with its explicit times, or a log `{type: 'log', level,
       message, attrs}` (levels `debug`, `info`, `warn`, `error`), written as a LOG record with attributes.
-      `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 512 KB.
+      `SCOPE` is `icecore`. Returns `ok spans=<n> logs=<n>`. Callers keep each CALL under 768 KB.
       `ICECORE_ACK(incident_key STRING)`: LANGUAGE SQL, the only writer of `icecore.ack`. Refuses a key that is not a
       current unacknowledged incident of the `ALERTS_FEED` view (returns `icecore-error not_an_open_incident: ...`),
       else writes one span event `icecore.ack` with `icecore.ack.incident_key` and `icecore.ack.by`, the caller's

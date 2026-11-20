@@ -152,7 +152,7 @@ on-run-end: "{{ icecore.end_run(results) }}"
 | Hook | What it writes | When it writes nothing |
 | --- | --- | --- |
 | `icecore.start_run()` | One `icecore.run_start` span event through `ICECORE_EMIT`, with the run's attributes, `dbt.version`, `icecore.anomaly_engine` and `icecore.shadow_engine`. | `telemetry: false`, or at parse time. |
-| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 512 KB as needed. | `telemetry: false`, or at parse time. |
+| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 768 KB as needed. | `telemetry: false`, or at parse time. |
 
 Every record carries `dbt.invocation_id`, which groups a run. A telemetry failure never fails your dbt run: if a procedure or a grant is missing, icecore logs one warning per hook and dbt carries on. If one end-of-run emitter reports an error, `end_run` skips it, warns, and sends the others. One failure cannot be caught: if the query that makes the `CALL` itself cannot run (no warehouse, a closed connection), dbt raises it.
 
@@ -245,7 +245,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | Object | Kind | What it is |
 | --- | --- | --- |
 | `ICECORE_EMIT` | SQL procedure | Writes span events. At most 100 events and 512 KB per `CALL`. |
-| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
+| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 768 KB per `CALL`. |
 | `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |

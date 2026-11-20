@@ -4,6 +4,9 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Changed
+- `end_run` sends its batch to `ICECORE_EMIT_RUN` in `CALL`s of at most 768 KB instead of 512 KB. Each Python `CALL` pays about 2.5 s of start whatever its size, and a 178-node project spilled 18 KB into a second `CALL` that cost 2.3 s of warehouse time on every build. Records, views and columns are unchanged.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added

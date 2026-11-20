@@ -19,7 +19,7 @@ export const base = (p, o) => Object.assign({
   legend: { top: 0, right: 0, textStyle: { color: p.ink2, fontSize: 11 }, itemWidth: 12, itemHeight: 8, icon: 'roundRect' },
 }, o);
 export const ax = (p, name, extra) => Object.assign({
-  name, nameLocation: 'middle', nameGap: 32, nameTextStyle: { color: p.ink3, fontSize: 11 },
+  name, nameLocation: 'middle', nameGap: 32, nameMoveOverlap: false, nameTextStyle: { color: p.ink3, fontSize: 11 },
   axisLine: { lineStyle: { color: p.line } }, axisTick: { show: false }, axisLabel: { color: p.ink3, fontSize: 10.5 },
   splitLine: { lineStyle: { color: p.line2 } },
 }, extra || {});
@@ -28,11 +28,12 @@ export function EChart({ option, height = 260, onClick }) {
   const ref = useRef(null), inst = useRef(null), cb = useRef(onClick);
   cb.current = onClick;
   useEffect(() => {
-    const c = echarts.init(ref.current, null, { renderer: 'canvas' }); inst.current = c;
+    const c = echarts.init(ref.current, 'v5', { renderer: 'canvas' }); inst.current = c;
     c.on('click', e => cb.current && cb.current(e));
     const ro = new ResizeObserver(() => c.resize()); ro.observe(ref.current);
     return () => { ro.disconnect(); c.dispose(); inst.current = null; };
   }, []);
-  useEffect(() => { if (inst.current) inst.current.setOption(option, true); }, [option]);
+  // outerBoundsMode none: v6 would shift the plot area to avoid overflow, v5 did not.
+  useEffect(() => { if (inst.current) inst.current.setOption({ ...option, grid: { ...option.grid, outerBoundsMode: 'none' } }, true); }, [option]);
   return <div ref={ref} style={{ height, width: '100%', cursor: onClick ? 'pointer' : 'default' }} />;
 }

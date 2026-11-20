@@ -7,6 +7,15 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 ### Changed
 - `end_run` sends its batch to `ICECORE_EMIT_RUN` in `CALL`s of at most 768 KB instead of 512 KB. Each Python `CALL` pays about 2.5 s of start whatever its size, and a 178-node project spilled 18 KB into a second `CALL` that cost 2.3 s of warehouse time on every build. Records, views and columns are unchanged.
 
+## [0.1.2] - 2026-11-20
+
+### Fixed
+- `icecore.freshness`: only a lag above the expected band is an anomaly (a table fresher than usual never is), and the band reaches at least 60 s above the usual lag, so seconds of jitter between builds no longer alert. In a week of scheduled runs on a real project, all 12 freshness anomalies were one of these two cases.
+- `dbt compile` writes no telemetry. `snow dbt deploy` runs a compile that fires the hooks, so every deploy wrote an empty `compile` invocation.
+
+### Changed
+- Quickstart, dbt Projects on Snowflake: a vendored icecore needs its `tests/` folder (the generic tests), and a `package-lock.yml` written by a newer local dbt must be deleted before `snow dbt deploy`.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added

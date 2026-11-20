@@ -7,6 +7,15 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 ### Security
 - Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
 
+## [0.1.2] - 2026-11-20
+
+### Fixed
+- `icecore.freshness`: only a lag above the expected band is an anomaly (a table fresher than usual never is), and the band reaches at least 60 s above the usual lag, so seconds of jitter between builds no longer alert. In a week of scheduled runs on a real project, all 12 freshness anomalies were one of these two cases.
+- `dbt compile` writes no telemetry. `snow dbt deploy` runs a compile that fires the hooks, so every deploy wrote an empty `compile` invocation.
+
+### Changed
+- Quickstart, dbt Projects on Snowflake: a vendored icecore needs its `tests/` folder (the generic tests), and a `package-lock.yml` written by a newer local dbt must be deleted before `snow dbt deploy`.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added

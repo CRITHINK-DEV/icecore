@@ -19,7 +19,8 @@
 {% endmacro %}
 
 
-{#- var('icecore').telemetry, default true: the hooks write nothing when it is false. -#}
+{#- var('icecore').telemetry, default true: the hooks write nothing when it is false, nor for `dbt compile` (it runs no node;
+    `snow dbt deploy` runs one on every deploy). -#}
 {% macro _icecore_telemetry_enabled() %}
-  {{ return(icecore._icecore_flag('telemetry', true)) }}
+  {{ return(flags.WHICH != 'compile' and icecore._icecore_flag('telemetry', true)) }}
 {% endmacro %}

@@ -72,10 +72,10 @@ def built(sf):
     try:
         with obs_schema(sf) as schema:
             since = snowflake_since(sf)
-            ok, ok_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, schema)
+            ok, ok_results = run_with_hooks(["build", "--select", "hooks_a+"], run_id, schema, cost=False)
             assert ok.success, ok.exception
             bad, bad_results = run_with_hooks(["build", "--select", "hooks_a", "hooks_fail"], run_id, schema,
-                                              extra_vars={"hooks_fail": True})
+                                              extra_vars={"hooks_fail": True}, cost=False)
             assert not bad.success
             ids = {"ok": ok_results["metadata"]["invocation_id"], "bad": bad_results["metadata"]["invocation_id"],
                    "open": f"it-open-{run_id}"}
@@ -151,8 +151,11 @@ def _node_item(inv: str, uid: str) -> list:
              "attrs": {**base, "icecore.kind": "node_result", "dbt.result.status": "success"}}]
 
 
-def _cost_item(inv: str, uid: str, credits: float, settled: str | None = None, backfill: bool = False) -> dict:
+def _cost_item(inv: str, uid: str, credits: float, settled: str | None = None, backfill: bool = False,
+               estimated: bool = False) -> dict:
     attrs = {"icecore.kind": "cost", "dbt.invocation_id": inv, "dbt.node.unique_id": uid, "dbt.cost.credits": credits}
+    if estimated:
+        attrs["dbt.cost.estimated"] = True
     if settled:
         attrs["dbt.cost.settled"] = settled
     if backfill:
@@ -165,7 +168,7 @@ def costed(sf):
     """One invocation with four nodes: live cost, backfilled cost, settled (0), and settled first then really costed."""
     run_id = uuid.uuid4().hex
     inv = f"it-cost-{run_id}"
-    nodes = {k: f"model.it.{k}_{run_id}" for k in ("live", "back", "settled", "upgraded", "none")}
+    nodes = {k: f"model.it.{k}_{run_id}" for k in ("live", "back", "settled", "upgraded", "none", "est", "swap")}
     with obs_schema(sf) as schema:
         obs_vars = ["--vars", json.dumps(icecore_vars(schema))]
         since = snowflake_since(sf)
@@ -175,15 +178,18 @@ def costed(sf):
                                 "dbt.invocation.status": "success"}})
         run_macro("it_emit_run_items", {"items": items + [_cost_item(inv, nodes["live"], 0.5),
                                                           _cost_item(inv, nodes["settled"], 0.0, "no_attribution"),
-                                                          _cost_item(inv, nodes["upgraded"], 0.0, "no_attribution")]}, obs_vars)
+                                                          _cost_item(inv, nodes["upgraded"], 0.0, "no_attribution"),
+                                                          _cost_item(inv, nodes["est"], 0.9, estimated=True),
+                                                          _cost_item(inv, nodes["swap"], 0.8, estimated=True)]}, obs_vars)
         time.sleep(3)
         # later runs: the backfill (keyed to the original invocation) and a real cost after a settle
         run_macro("it_emit_run_items", {"items": [_cost_item(inv, nodes["back"], 0.25, backfill=True),
-                                                  _cost_item(inv, nodes["upgraded"], 0.125, backfill=True)]}, obs_vars)
+                                                  _cost_item(inv, nodes["upgraded"], 0.125, backfill=True),
+                                                  _cost_item(inv, nodes["swap"], 0.1, backfill=True)]}, obs_vars)
         wait_for_events(sf, "resource_attributes:\"snow.database.name\"::string = %(db)s"
                             " and resource_attributes:\"snow.schema.name\"::string = %(schema)s and record_type = 'LOG'"
                             " and record_attributes:\"dbt.invocation_id\"::string = %(i)s",
-                        {"db": DATABASE, "schema": schema, "i": inv}, min_rows=len(nodes) + 6, since=since, settle_s=8)
+                        {"db": DATABASE, "schema": schema, "i": inv}, min_rows=len(nodes) + 9, since=since, settle_s=8)
         run_macro("it_create_views", {"schema": schema}, obs_vars)
         yield {"schema": schema, "inv": inv, "nodes": nodes}
 
@@ -197,9 +203,14 @@ def test_node_executions_credits_come_from_the_latest_cost_record_per_node(sf, c
     assert (rows[n["settled"]]["credits"], rows[n["settled"]]["credits_settled"]) == (0.0, "no_attribution")
     assert (rows[n["upgraded"]]["credits"], rows[n["upgraded"]]["credits_settled"]) == (0.125, None)  # latest wins
     assert (rows[n["none"]]["credits"], rows[n["none"]]["credits_settled"]) == (None, None)
+    # an estimate shows until the attributed record lands, then the attributed value alone (never the two added)
+    assert (rows[n["est"]]["credits"], rows[n["est"]]["credits_estimated"]) == (0.9, True)
+    assert (rows[n["swap"]]["credits"], rows[n["swap"]]["credits_estimated"]) == (0.1, False)
+    assert not any(rows[n[k]]["credits_estimated"] for k in ("live", "back", "settled", "upgraded", "none"))
 
 
 @pytest.mark.sandbox
 def test_invocations_credits_is_the_sum_of_the_node_credits(sf, costed):
     (row,) = _rows(sf, costed, "INVOCATIONS", costed["inv"])
-    assert row["credits"] == pytest.approx(0.5 + 0.25 + 0.0 + 0.125)
+    assert row["credits"] == pytest.approx(0.5 + 0.25 + 0.0 + 0.125 + 0.9 + 0.1)
+    assert row["credits_estimated"] is True  # includes the estimate of one node

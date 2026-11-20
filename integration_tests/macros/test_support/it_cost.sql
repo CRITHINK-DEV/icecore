@@ -112,3 +112,44 @@
   {% set batch = {'items': []} %}
   {% do _it_result({'scored': icecore._icecore_score_costs(points, batch, _it_score_runner, cfg), 'left': batch.get('cost_score_left')}) %}
 {% endmacro %}
+
+{% macro it_warehouse_rate(sizes) %}
+  {%- set out = {} -%}
+  {%- for size in sizes -%}{%- do out.update({size: icecore._icecore_warehouse_rate(size)}) -%}{%- endfor -%}
+  {% do _it_result(out) %}
+{% endmacro %}
+
+{% macro it_estimate_node_costs(ids_by_node, costs, rows) %}
+  {% do _it_result(icecore._icecore_estimate_node_costs(ids_by_node, costs, rows)) %}
+{% endmacro %}
+
+{% macro it_estimate_lookup_sql(query_ids, seconds) %}
+  {% do _it_result(icecore._icecore_estimate_lookup_sql(query_ids, seconds)) %}
+{% endmacro %}
+
+{#- Offline stand-in for the guarded query history read: a query id `q-<size>-<ms>` (such as q-x-small-3600000) is one
+    row of that warehouse size and execution time in ms; an id containing FAIL fails the read. -#}
+{% macro _it_estimate_runner(sql) %}
+  {%- if 'FAIL' in sql -%}{{ return({'error': 'forced read failure'}) }}{%- endif -%}
+  {%- set rows = [] -%}
+  {%- for query_id in modules.re.findall("'(q-[^']*)'", sql) -%}
+    {%- set parts = query_id.split('-') -%}
+    {%- do rows.append({'query_id': query_id, 'execution_time': parts[-1] | int, 'warehouse_size': parts[1:-1] | join('-'), 'warehouse': 'WH_' ~ parts[1]}) -%}
+  {%- endfor -%}
+  {{ return({'value': rows}) }}
+{% endmacro %}
+
+{% macro it_estimate_costs_stubbed(ids_by_node, costs) %}
+  {% do _it_result(icecore._icecore_estimate_costs(ids_by_node, costs, _it_estimate_runner)) %}
+{% endmacro %}
+
+{#- The backlog note: the batch after it, as the run-end LOG would carry it. -#}
+{% macro it_note_backlog(total, filled, waiting) %}
+  {%- set batch = {'cost_waiting': waiting} -%}
+  {% do icecore._icecore_note_backlog(batch, total, filled) %}
+  {% do _it_result({'cost_pending_nodes': batch.get('cost_pending_nodes')}) %}
+{% endmacro %}
+
+{% macro it_run_end_log_attrs(batch) %}
+  {% do _it_result(icecore._icecore_run_end_log([], none, batch)['attrs']) %}
+{% endmacro %}

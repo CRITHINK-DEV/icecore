@@ -20,7 +20,7 @@ macros:
       `executable_name`, `emit_query_id` (the emitting CALL's query id), one typed column per attribute of spec
       section 4 (strings; `result_rows_affected`, `test_failures`, `icecore_schema_version` as NUMBER;
       `result_execution_time_s`, `metric_value`, `anomaly_expected`, `anomaly_lower`, `anomaly_upper`,
-      `anomaly_score`, `cost_credits` as FLOAT; `anomaly_is_anomaly` as BOOLEAN), `value` and `attributes` (raw
+      `anomaly_score`, `cost_credits` as FLOAT; `anomaly_is_anomaly`, `cost_estimated` as BOOLEAN; `cost_pending_nodes` as NUMBER), `value` and `attributes` (raw
       RECORD_ATTRIBUTES). Typed columns use TRY_TO_*, so a malformed value reads as null and never fails a view.
       Spans are written after the fact with dbt's times, so do not window incremental reads on `event_at` alone.
     arguments:

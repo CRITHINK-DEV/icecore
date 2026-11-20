@@ -1,4 +1,4 @@
-"""UC4 attach_cost, the end-of-run emitter `cost` (macros/cost/attach_cost.sql, var icecore.cost, default false).
+"""UC4 attach_cost, the end-of-run emitter `cost` (macros/cost/attach_cost.sql, var icecore.cost, default true).
 
 Offline: the emitter entry, the cost LOG and metric shapes, the all-or-nothing sum per node, the lookup SQL, and
 that var cost false adds no cost record to end_run's batch. Sandbox: the lookup against
@@ -23,16 +23,16 @@ NODE = {"dbt.node.unique_id": "model.p.a", "dbt.node.type": "model", "dbt.node.n
 
 # --- offline ---------------------------------------------------------------------------------------
 
-def test_cost_is_one_emitter_behind_var_cost_default_false():
+def test_cost_is_one_emitter_behind_var_cost_default_true():
     emitters = run_macro("it_end_run_emitters", {})
-    assert [e for e in emitters if e["name"] == "cost"] == [{"name": "cost", "var": "cost", "default": False}]
-    assert yaml.safe_load(open(IT_DIR.parent / "dbt_project.yml"))["vars"]["icecore"]["cost"] is False
+    assert [e for e in emitters if e["name"] == "cost"] == [{"name": "cost", "var": "cost", "default": True}]
+    assert yaml.safe_load(open(IT_DIR.parent / "dbt_project.yml"))["vars"]["icecore"]["cost"] is True
 
 
 def test_var_cost_false_adds_no_cost_record():
     result = {"unique_id": "model.p.a", "status": "success", "timing": [], "adapter_response": {"query_id": "01q-a"},
               "node": {"unique_id": "model.p.a", "name": "a", "resource_type": "model", "config": {}}}
-    records = run_macro("it_end_run_render", {"results": [result]})["records"]
+    records = run_macro("it_end_run_render", {"results": [result]}, _vars(cost=False))["records"]
     assert not [r for r in records if r.get("attrs", {}).get("icecore.kind") == "cost"
                 or any(k.startswith("dbt.cost.") for k in r.get("attrs", {}))]
 
@@ -222,6 +222,89 @@ def test_backfilled_regression_is_an_anomaly_span_event_on_the_original_invocati
     assert anomaly["icecore.level"] == "warn" and "credits" in anomaly["icecore.message"]
 
 
+# --- estimates (offline) ----------------------------------------------------------------------------
+
+def test_warehouse_size_maps_to_the_credits_per_hour_of_a_standard_warehouse():
+    sizes = ["X-Small", "Small", "Medium", "Large", "X-Large", "2X-Large", "3X-Large", "4X-Large", "5X-Large",
+             "6X-Large"]
+    out = run_macro("it_warehouse_rate", {"sizes": sizes + ["XSMALL", "x-small", "Gigantic", ""]})
+    assert [out[s] for s in sizes] == [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+    assert out["XSMALL"] == 1 and out["x-small"] == 1 and out["Gigantic"] is None and out[""] is None
+
+
+def test_estimate_is_execution_time_over_an_hour_times_the_rate_and_skips_unknown_sizes():
+    rows = [{"query_id": "q1", "execution_time": 1800000, "warehouse_size": "Medium", "warehouse": "WH_B"},
+            {"query_id": "q2", "execution_time": 3600000, "warehouse_size": "X-Small", "warehouse": "WH_A"},
+            {"query_id": "q3", "execution_time": 3600000, "warehouse_size": "Mystery", "warehouse": "WH_C"},
+            {"query_id": "q4", "execution_time": None, "warehouse_size": "Large", "warehouse": "WH_D"}]
+    ids = {"n.one": ["q1", "q2"], "n.unknown": ["q3", "q4"], "n.done": ["q2"], "n.missing": ["q9"]}
+    out = run_macro("it_estimate_node_costs", {"ids_by_node": ids, "costs": {"n.done": {"credits": 1.0}}, "rows": rows})
+    assert out == {"n.one": {"credits": 3.0, "warehouse": "WH_A,WH_B", "estimated": True}}
+
+
+def test_estimate_lookup_is_one_query_on_the_current_users_history_and_escapes_the_ids():
+    sql = run_macro("it_estimate_lookup_sql", {"query_ids": ["01a", "x'y"], "seconds": 125.7})
+    assert "information_schema.query_history_by_user(" in sql and "user_name => current_user()" in sql
+    assert "dateadd(second, -125, current_timestamp())" in sql and "result_limit => 10000" in sql
+    assert "query_id in ('01a', 'x\\'y')" in sql
+    assert "execution_time" in sql and "warehouse_size" in sql and "warehouse_name" in sql
+
+
+def test_estimates_cover_only_nodes_without_an_attributed_cost_and_a_failed_read_gives_none():
+    ids = {"n.est": ["q-x-small-3600000", "q-medium-1800000"], "n.done": ["q-large-3600000"]}
+    out = run_macro("it_estimate_costs_stubbed", {"ids_by_node": ids, "costs": {"n.done": {"credits": 1.0}}})
+    assert out == {"n.est": {"credits": 3.0, "warehouse": "WH_medium,WH_x", "estimated": True}}
+    out, logs = run_macro_with_logs("it_estimate_costs_stubbed", {"ids_by_node": {"n.f": ["q-FAIL-1"]}, "costs": {}})
+    assert out == {} and any("cost: the estimate could not be read" in line for line in logs)
+
+
+def test_estimate_log_says_estimate_and_has_no_metric():
+    cost = {"credits": 0.03, "warehouse": "WH", "estimated": True}
+    out = run_macro("it_cost_items", {"node_attrs": NODE, "cost": cost})
+    log = out["log"]
+    assert log["attrs"]["icecore.kind"] == "cost" and log["attrs"]["dbt.cost.estimated"] is True
+    assert log["attrs"]["dbt.cost.credits"] == 0.03 and "(estimate)" in log["message"]
+    assert out["metric"] == []  # no `credits` metric: cost-regression history holds attributed numbers only
+    attributed = run_macro("it_cost_items", {"node_attrs": NODE, "cost": {"credits": 0.03, "warehouse": "WH"}})
+    assert "dbt.cost.estimated" not in attributed["log"]["attrs"] and attributed["metric"]
+
+
+def test_an_estimate_only_node_stays_pending_and_the_total_is_not_limited():
+    sql = run_macro("it_pending_cost_sql", {"events_sql": "select 1 as x", "days": 7, "limit": 50,
+                                            "current_invocation_id": "inv-now"})
+    assert "cost_credits is not null and coalesce(cost_estimated, false) = false" in sql
+    assert "'total', (select count(*) from pending_all)" in sql and "limit 50" in sql  # the total is not limited
+
+
+def test_pending_nodes_counts_the_backlog_after_this_run_and_a_big_one_warns_in_plain_words():
+    out, logs = run_macro_with_logs("it_note_backlog", {"total": 1700, "filled": 500, "waiting": 40})
+    assert out == {"cost_pending_nodes": 1240}
+    assert any("icecore: warning: cost: 1,240 nodes are still waiting for Snowflake's attribution, more than the 500 a run fills"
+               " (cost_backfill_limit); their credits are estimates, and nodes older than cost_lookback_days (7) keep their estimate"
+               in line for line in logs), logs
+    out, logs = run_macro_with_logs("it_note_backlog", {"total": 400, "filled": 100, "waiting": 10})
+    assert out == {"cost_pending_nodes": 310} and not any("still waiting" in line for line in logs)
+    out, logs = run_macro_with_logs("it_note_backlog", {"total": None, "filled": 0, "waiting": 10})
+    assert out == {"cost_pending_nodes": None}  # unknown (the event table could not be read): not stated
+
+
+def test_run_end_log_carries_the_pending_nodes_only_when_known():
+    assert run_macro("it_run_end_log_attrs", {"batch": {"cost_pending_nodes": 12}})["icecore.cost.pending_nodes"] == 12
+    assert "icecore.cost.pending_nodes" not in run_macro("it_run_end_log_attrs", {"batch": {}})
+    assert run_macro("it_run_end_log_attrs", {"batch": {"cost_pending_nodes": 0}})["icecore.cost.pending_nodes"] == 0
+
+
+def test_views_prefer_the_attributed_cost_and_expose_credits_estimated():
+    views = {v["name"]: v["sql"] for v in run_macro("it_views_render", {"schema": None})}
+    order = "order by coalesce(cost_estimated, false), event_at desc"
+    for name in ("NODE_EXECUTIONS", "INVOCATIONS"):
+        sql = views[name]
+        assert order in sql.split("cost_latest as (", 1)[1].split("\n),", 1)[0], name
+        assert " as credits_estimated" in sql
+    assert "boolor_agg(coalesce(cost_estimated, false))" in views["INVOCATIONS"]
+    assert "icecore.cost.pending_nodes" in views["INVOCATIONS"] and " as cost_pending_nodes" in views["INVOCATIONS"]
+
+
 # --- sandbox --------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -318,6 +401,21 @@ def test_var_cost_true_never_fails_the_run_when_attribution_lags(builds):
     for r in builds[True]:
         if r["record_type"] == "LOG" and r["record_attributes"].get("icecore.kind") == "cost":
             assert r["record_attributes"]["dbt.cost.credits"] >= 0
+
+
+@pytest.mark.sandbox
+def test_a_real_run_writes_an_estimate_at_run_end_and_says_how_many_nodes_wait(builds):
+    rows = builds[True]
+    logs = [r["record_attributes"] for r in rows
+            if r["record_type"] == "LOG" and r["record_attributes"].get("icecore.kind") == "cost"]
+    estimates = [a for a in logs if a.get("dbt.cost.estimated") is True]
+    assert estimates, "a fresh run is not attributed yet: its nodes get an estimate"
+    assert all(a["dbt.cost.credits"] >= 0 and a.get("dbt.node.unique_id") for a in estimates)
+    # no metric for an estimate: the history only holds attributed numbers
+    assert not [r for r in rows if r["record_attributes"].get("dbt.metric.name") == "credits"
+                and r["record_attributes"].get("dbt.node.unique_id") in {a["dbt.node.unique_id"] for a in estimates}]
+    end, = [r["record_attributes"] for r in rows if r["record_attributes"].get("icecore.kind") == "run_end"]
+    assert end["icecore.cost.pending_nodes"] >= len(estimates)
 
 
 # --- backfill (sandbox) ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ version: 2
 macros:
   - name: attach_cost
     description: >
-      The end-of-run emitter `cost` of end_run (var `icecore.cost`, default false; one entry in
+      The end-of-run emitter `cost` of end_run (var `icecore.cost`, default true; one entry in
       `_icecore_end_run_emitters()`), called as `attach_cost(results, batch)`. It joins the run's `snow.query.id`
       values (the ones the query events carry) to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and, for each
       node whose queries are all attributed, adds to the batch a LOG `icecore.kind = cost` with the node keys,
@@ -12,11 +12,17 @@ macros:
       (`icecore.metric` span events keyed by `dbt.node.relation`, or the unique id for a node without relation,
       with `dbt.node.unique_id`; built by the builder of `emit_metric`, all in one guarded CALL of ICECORE_EMIT).
       QUERY_ATTRIBUTION_HISTORY lags by hours, so at on-run-end the usual outcome is not available yet: the run
-      logs one `icecore: warning: cost: ...` line and writes nothing for those nodes, and `backfill_cost` fills
-      them on a later run. The attribution query runs inside a Snowflake Scripting block that catches every error,
+      logs one `icecore: warning: cost: ...` line (with the grant to make, or `cost: false`, when the read failed), and
+      those nodes get an ESTIMATE: one guarded query on `INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER` of the current
+      user (real time, no grant) gives each query's `execution_time`, warehouse size and name, and the credits are
+      execution time / 3,600,000 times the credits per hour of a standard warehouse of that size. The cost LOG then
+      carries `dbt.cost.estimated = true`; an estimate has no `credits` metric and is never scored. Summed time
+      overstates the bill when threads share a warehouse. `backfill_cost` replaces the estimates with the attributed
+      credits on a later run, and the run-end LOG carries `icecore.cost.pending_nodes`, the nodes still waiting; above
+      `cost_backfill_limit` the run warns that credits are estimates. The attribution query runs inside a Snowflake Scripting block that catches every error,
       so a missing privilege (grant `SNOWFLAKE.USAGE_VIEWER` to the role, or IMPORTED PRIVILEGES on the SNOWFLAKE
       database) or an empty result is a warning, never a failed run. With var `cost` false nothing is read or
-      written. Settling: Snowflake never writes attribution rows for many statements (views, plain table creation, about half of short SELECTs, measured in the sandbox), so after var `cost_settle_hours` (default 24) a node whose queries have no attribution row is closed at the credits that were attributed (0 when none) with `dbt.cost.settled = no_attribution`, and gets no metric. A node always gets its cost record once its queries are attributed or settled. Cost regressions: before a node's `credits` point is written it is scored with `icecore.score` against the node's earlier `credits` points (the metrics view of the obs schema, with `get_metric_history`'s window and delay); the metric then carries the `dbt.anomaly.*` keys and, when `is_anomaly`, an `icecore.anomaly` warn event follows it (the record alerts_feed reads). One query counts the history points of all the run's nodes and only nodes with at least 7 points are scored; at most var `cost_score_max_nodes` (default 50) nodes are scored per run, newest first, the backfill sharing that budget. A history that cannot be read scores nothing (a warning); var `cost_score` (default true) turns scoring off. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
+      written (it is on by default). Settling: Snowflake never writes attribution rows for many statements (views, plain table creation, about half of short SELECTs, measured in the sandbox), so after var `cost_settle_hours` (default 24) a node whose queries have no attribution row is closed at the credits that were attributed (0 when none) with `dbt.cost.settled = no_attribution`, and gets no metric. A node always gets its cost record once its queries are attributed or settled. Cost regressions: before a node's `credits` point is written it is scored with `icecore.score` against the node's earlier `credits` points (the metrics view of the obs schema, with `get_metric_history`'s window and delay); the metric then carries the `dbt.anomaly.*` keys and, when `is_anomaly`, an `icecore.anomaly` warn event follows it (the record alerts_feed reads). One query counts the history points of all the run's nodes and only nodes with at least 7 points are scored; at most var `cost_score_max_nodes` (default 50) nodes are scored per run, newest first, the backfill sharing that budget. A history that cannot be read scores nothing (a warning); var `cost_score` (default true) turns scoring off. A no-op at parse time. Var `cost_lookback_days` (default 7) bounds the attribution scan.
     arguments:
       - name: results
         type: list

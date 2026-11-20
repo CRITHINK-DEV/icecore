@@ -21,7 +21,9 @@
     on-run-end; backfill_cost writes one on a later run keyed to the ORIGINAL invocation and node, so the join is on
     those two keys, never on the writing run. dbt.cost.credits is the credits; a settled record (Snowflake never
     attributed the node's queries) has 0 credits and dbt.cost.settled = 'no_attribution', exposed as credits_settled
-    (null for a real cost). Both are null until a cost record exists. root_cause_unique_id (dbt.root_cause.unique_id)
+    (null for a real cost). Both are null until a cost record exists. A node waiting for Snowflake's attribution has an
+    ESTIMATE record (`dbt.cost.estimated = true`): the latest record is the attributed or settled one when there is one,
+    else the estimate, and credits_estimated says which (false when there is no cost record). root_cause_unique_id (dbt.root_cause.unique_id)
     is read from the node-result LOG and is null until root cause (UC4) writes it; root_cause_kind (dbt.root_cause.kind)
     comes from the same record. -#}
 
@@ -56,7 +58,7 @@ cost_latest as (
     select * from events
     where record_type = 'LOG' and attributes:"icecore.kind"::string = 'cost'
       and invocation_id is not null and node_unique_id is not null
-    qualify row_number() over (partition by invocation_id, node_unique_id order by event_at desc) = 1
+    qualify row_number() over (partition by invocation_id, node_unique_id order by coalesce(cost_estimated, false), event_at desc) = 1
 ),
 keys as (
     select invocation_id, node_unique_id from node_span
@@ -86,6 +88,7 @@ select
     node_queries.query_ids as query_ids,
     coalesce(cost_latest.cost_credits, node_result.cost_credits) as credits,
     cost_latest.attributes:"dbt.cost.settled"::string as credits_settled,
+    coalesce(cost_latest.cost_estimated, false) as credits_estimated,
     node_result.root_cause_unique_id as root_cause_unique_id,
     node_result.event_at as recorded_at,
     coalesce(node_span.node_layer, node_result.node_layer) as layer,

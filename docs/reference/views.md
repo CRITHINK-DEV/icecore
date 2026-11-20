@@ -48,7 +48,9 @@ One row per dbt invocation. It joins three records on `dbt.invocation_id`: the `
 | `duration_s` | float | Seconds | `dbt.invocation.duration_s` |
 | `status` | text | `success`, `warn`, `error`, `unknown`, `running` or `unfinished` | `dbt.invocation.status`, else derived |
 | `nodes_total`, `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped` | number | Node counts. Null if unfinished | `dbt.invocation.nodes_total`, `.nodes_success`, `.nodes_failed`, `.nodes_warned`, `.nodes_skipped` |
-| `credits` | float | Sum of the run's node credits: for each node, its latest `cost` record. Null when no node has a cost record (the `cost` var is off, or attribution has not landed yet) | `dbt.cost.credits` of the `cost` records |
+| `credits` | float | Sum of the run's node credits: for each node, its attributed or settled `cost` record, else its estimate, never both. Null when no node has a cost record (the `cost` var is off, or no node has run) | `dbt.cost.credits` of the `cost` records |
+| `credits_estimated` | boolean | True when `credits` includes an estimate | `dbt.cost.estimated` |
+| `cost_pending_nodes` | number | Nodes still waiting for Snowflake's attribution after this run. Null with `cost` off | `icecore.cost.pending_nodes` of the run-end log |
 | `layer_standard` | array | Var `icecore.layer_standard` as the run declared it (a list of layer names). Null when not declared | `icecore.layer_standard` of `icecore.run_start` (JSON text) |
 
 ## `NODE_EXECUTIONS`
@@ -70,7 +72,8 @@ One row per node per invocation. It joins the `icecore.node` span, the `node_res
 | `started_at`, `completed_at` | time | The node's times, dbt's clock | `dbt.node.started_at`, `dbt.node.completed_at` |
 | `query_id` | text | The node's Snowflake query: the result's, else the first query event's | `snow.query.id` |
 | `query_ids` | array | Every query id of the node | `snow.query.id` of the `icecore.query` events |
-| `credits` | float | The node's credits from its latest `cost` record for this run, so a backfill later replaces an earlier value. Falls back to the result record's credits. Null while attribution has not landed | `dbt.cost.credits` |
+| `credits` | float | The node's credits from its `cost` record for this run: the attributed or settled one when there is one, else the estimate, so a backfill later replaces an estimate. Falls back to the result record's credits. Null when the node has no cost record | `dbt.cost.credits` |
+| `credits_estimated` | boolean | True when `credits` is an estimate (Snowflake's attribution has not landed yet), false otherwise, including when there is no cost record | `dbt.cost.estimated` |
 | `credits_settled` | text | `no_attribution` when the latest `cost` record closed the node with what was attributed (0 when Snowflake never wrote an attribution row). Null otherwise: the credits are attributed, or may still change | `dbt.cost.settled` |
 | `root_cause_unique_id` | text | The upstream node that explains a failed test. Set on the test's row only, and only when the `root_cause` var is on and a cause was found | `dbt.root_cause.unique_id` |
 | `recorded_at` | time | When the node's result record was written, Snowflake's clock. Null for a node with a span and no result. The silence task compares it with Snowflake's now | event `TIMESTAMP` of the `node_result` log |

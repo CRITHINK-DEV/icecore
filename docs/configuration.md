@@ -107,7 +107,7 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
+| `cost` | `true` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a node not attributed yet gets an **estimate** at once (`dbt.cost.estimated = true`, from the query history: execution time times the credits per hour of a standard warehouse of that size; no metric, no scoring), and a later run with `cost` on replaces it with Snowflake's number, at most `cost_backfill_limit` nodes per run. The run-end LOG carries `icecore.cost.pending_nodes`, and a run warns when more nodes wait than a run fills. `cost: false` turns all of it off. | Reads `ACCOUNT_USAGE`: attribution needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`); without it the run warns once and estimates still work, never a failed run. Estimates read `INFORMATION_SCHEMA` query history of the current user: no grant. |
 
 ### Declared, not read
 

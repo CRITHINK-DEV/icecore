@@ -4,11 +4,18 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
-### Security
-- Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
+### Added
+- Cost estimates: a node whose Snowflake attribution has not landed at run end now gets a cost record at once, an estimate (`dbt.cost.estimated = true`). It comes from one guarded read of the current user's query history (no grant needed): execution time times the credits per hour of a standard warehouse of that size. An estimate writes no `credits` metric and is never scored. The backfill replaces it with Snowflake's attributed number (or its settled record) on a later run.
+- `NODE_EXECUTIONS.credits_estimated` and `INVOCATIONS.credits_estimated` (true when the credits are, or include, an estimate; an attributed value always wins over the estimate of the same node), `INVOCATIONS.cost_pending_nodes` and the run-end LOG key `icecore.cost.pending_nodes` (nodes still waiting for attribution after the run). The console data passes them through without changing what is shown.
+- A run warns in plain words when more nodes wait for attribution than `cost_backfill_limit` fills a run, saying their credits are estimates.
 
 ### Changed
+- Cost per node is now ON by default (`cost: true`). Turn it off with `vars: icecore: cost: false`. A role without `SNOWFLAKE.USAGE_VIEWER` still gets estimates; the attribution read keeps its single warning, which now names the grant (`GRANT DATABASE ROLE SNOWFLAKE.USAGE_VIEWER TO ROLE <dbt_role>`) and `cost: false`.
+- The backfill treats a node whose only cost record is an estimate as still pending.
 - `end_run` sends its batch to `ICECORE_EMIT_RUN` in `CALL`s of at most 768 KB instead of 512 KB. Each Python `CALL` pays about 2.5 s of start whatever its size, and a 178-node project spilled 18 KB into a second `CALL` that cost 2.3 s of warehouse time on every build. Records, views and columns are unchanged.
+
+### Security
+- Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
 
 ## [0.1.2] - 2026-11-20
 

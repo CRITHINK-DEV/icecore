@@ -238,4 +238,4 @@ def test_nothing_else_landed(build):
     assert kinds == {("SPAN_EVENT", "icecore.run_start", None), ("SPAN", "icecore.invocation", None),
                      ("SPAN", "icecore.node", None), ("SPAN_EVENT", "icecore.query", None),
                      ("LOG", None, "node_result"), ("LOG", None, "lineage"), ("LOG", None, "sample"),
-                     ("LOG", None, "run_end")}
+                     ("LOG", None, "run_end"), ("LOG", None, "cost")}  # cost is on by default

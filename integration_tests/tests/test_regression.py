@@ -159,7 +159,7 @@ def test_failing_model_still_lands_every_record_kind(sf, obs, run):
     assert kinds(rows) == {("SPAN_EVENT", "icecore.run_start", None), ("SPAN", "icecore.invocation", None),
                            ("SPAN", "icecore.node", None), ("SPAN_EVENT", "icecore.query", None),
                            ("LOG", None, "node_result"), ("LOG", None, "lineage"), ("LOG", None, "sample"),
-                           ("LOG", None, "run_end")}
+                           ("LOG", None, "run_end"), ("LOG", None, "cost")}  # cost is on by default
     end, = run_end_logs(rows)
     assert end["record_attributes"]["dbt.invocation.status"] == "error"
     assert end["record_attributes"]["dbt.invocation.nodes_total"] == len(nodes)

@@ -61,7 +61,7 @@ export function NodePage({ id }) {
       <Kpi label="Model" value={target ? NODE[target].name : '—'} sub={target ? STATUS_LABEL[s.status] : ''} />
     </div> : <div className="kpis">
       <Kpi label="Latest build" value={lastEx ? fmtSec(lastEx.execution_time_s) : n.type === 'source' ? 'Source' : 'Not run'} tone={lastEx && lastEx.status !== 'success' ? 'fail' : undefined} spark={ex.map(x => (x ? x.execution_time_s : null))} sparkTone="muted" sub={lastEx ? `median ${fmtSec(median(ex.map(x => (x ? x.execution_time_s : null))))}` : FRESH[id] ? `data ${FRESH[id].freshness_lag_min} min old` : ''} />
-      <Kpi label="Credits per run" value={lastEx ? (lastEx.credits == null ? 'Pending' : fmtCr(lastEx.credits)) : '—'} spark={ex.map(x => (x ? x.credits : null))} sub={ex.length ? `${sum(ex.map(x => (x ? x.credits : 0))).toFixed(4)} over 30 runs` : ''} />
+      <Kpi label="Credits per run" value={lastEx ? (lastEx.credits == null ? 'Pending' : fmtCr(lastEx.credits)) : '—'} spark={ex.map(x => (x ? x.credits : null))} sub={ex.length ? `${sum(ex.map(x => (x ? x.credits : 0))).toFixed(4)} over 30 runs${lastEx && lastEx.credits_estimated ? ', latest is an estimate' : ''}` : ''} />
       <Kpi label="Tests passing" value={tids.length ? `${tids.length - failing.length} of ${tids.length}` : 'None'} tone={failing.length ? 'fail' : tids.length ? 'ok' : undefined} />
       <Kpi label="Open incidents" value={incs.length} tone={incs.length ? 'warn' : 'ok'} sub={incs.map(i => KIND_LABEL[i.kind]).join(', ')} />
       {SLA_BY[id] && <Kpi label="Schedule" value={SLA_BY[id].late ? 'Late' : 'On time'} tone={SLA_BY[id].late ? 'stale' : 'ok'} sub={`every ${SLA_BY[id].expected_every}, last ${fmtTs(SLA_BY[id].last)}`} />}

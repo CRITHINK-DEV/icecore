@@ -14,7 +14,7 @@ macros:
       than `min_points` history points is not scored (an info line says so). The previous observation is the newest column metric record of the
       relation, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago, and `since`
       overrides both. When no window or no column list can be read the readers log why, no metric is written and the
-      test passes. A failed telemetry CALL is a logged warning and never changes the verdict. Example,
+      test passes. A failed telemetry write is a logged warning and never changes the verdict. Its records go out with the run's end-of-run batch when on-run-end calls icecore.end_run(results), else at once (docs/configuration.md). Example,
       `data_tests: [icecore.all_columns_anomaly: {exclude_columns: [loaded_at]}]`.
     arguments:
       - name: model

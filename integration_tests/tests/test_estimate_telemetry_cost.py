@@ -177,9 +177,11 @@ def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
     base, base_logs = estimate(runs_per_day=24)
     out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}})
     mon = out["records_per_run"]["monitors"]
-    # the fixtures hold monitor tests: their records are their own entry, and so are their procedure spans
+    # the fixtures hold monitor tests: their records are their own entry. This project's on-run-end calls
+    # icecore.end_run(results), so they ride the end-of-run batch: no CALL and no procedure span of their own
     assert mon > 0 and out["rows_per_run"] > base["rows_per_run"]
-    assert out["records_per_run"]["call_overhead"] > base["records_per_run"]["call_overhead"]
+    assert out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"] == \
+        4 * (out["emit_run_calls"] - base["emit_run_calls"])
     assert out["rows_per_run"] == base["rows_per_run"] + mon + (out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"])
     text = message(logs)
     assert f"{mon:,} are icecore monitor records" in text
@@ -188,6 +190,14 @@ def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
     assert {k: v for k, v in out["records_per_run"].items() if k not in ("monitors", "call_overhead")} == \
            {k: v for k, v in base["records_per_run"].items() if k != "call_overhead"}
     assert "credits per month" in text and "monitor records" not in message(base_logs)
+
+
+def test_without_the_end_run_hook_writing_the_monitor_records_cost_one_call_per_test():
+    off = ["--vars", json.dumps({"icecore": {"telemetry": False}})]
+    live, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}}, off)
+    at_end, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}})
+    assert live["records_per_run"]["call_overhead"] > at_end["records_per_run"]["call_overhead"]
+    assert "procedure spans over" in message(logs)
 
 
 # --- sandbox --------------------------------------------------------------------------------------

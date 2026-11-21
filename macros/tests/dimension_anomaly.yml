@@ -14,7 +14,7 @@ macros:
       fewer than `min_points` history points is not scored (an info line says so). The previous observation is the newest dimension metric
       record of the column, read through `icecore.base_events()`; with none the window starts `lookback_hours` ago,
       and `since` overrides both. When no window can be read the readers log why, no metric is written and the test
-      passes. A failed telemetry CALL is a logged warning and never changes the verdict. CHANGES is cheap for
+      passes. A failed telemetry write is a logged warning and never changes the verdict. Its records go out with the run's end-of-run batch when on-run-end calls icecore.end_run(results), else at once (docs/configuration.md). CHANGES is cheap for
       insert-only windows and can cost more than a full scan after deletes, updates or merges (spike S5). Example,
       `columns: [{name: country, data_tests: [icecore.dimension_anomaly: {bounds: {min: 1}}]}]`.
     arguments:

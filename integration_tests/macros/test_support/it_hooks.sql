@@ -73,3 +73,36 @@
   {% endfor %}
   {% do _it_result(out) %}
 {% endmacro %}
+
+
+{#- Monitor records at run end (macros/telemetry/test_records.sql): the comment a test renders for `events`, put in the
+    compiled code of a fake test result (unique_id, or `foreign` records of another invocation id), then end_run's batch
+    for those results with `span` false dropping the test's timing so it has no node span. -#}
+{% macro it_test_records(events, span=true, foreign=false, offset_ns=none) %}
+  {% if offset_ns is not none %}
+    {% do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': {}, 'lookback_days': 30, 'series': {}, 'clock_offset_ns': offset_ns}}) %}
+  {% endif %}
+  {% set before_ns = icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) %}
+  {% set comment = icecore._icecore_records_comment(events) %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% if foreign %}{% set comment = comment | replace(invocation_id, 'another-invocation') %}{% endif %}
+  {% set timing = [{'name': 'compile', 'started_at': '2026-11-20T10:00:00.000000Z', 'completed_at': '2026-11-20T10:00:01.000000Z'}] if span else [] %}
+  {% set results = [{'unique_id': 'test.p.mon', 'status': 'pass', 'timing': timing, 'execution_time': 1, 'adapter_response': {}, 'message': none, 'failures': 0,
+                     'node': {'unique_id': 'test.p.mon', 'name': 'mon', 'resource_type': 'test', 'config': {}, 'compiled_code': '  ' ~ comment ~ '\n  select 1 where false'}}] %}
+  {% set items = icecore._icecore_end_run_items(results) %}
+  {% do _it_result({'comment': comment, 'items': items, 'collects': icecore._icecore_end_run_collects(), 'before_ns': before_ns}) %}
+{% endmacro %}
+
+
+{#- One history read per run (macros/engines/get_metric_history.sql): seed the run's copy as on-run-start leaves it,
+    then the source a test gets, and whether end_run forgets it. -#}
+{% macro it_history_source(test_id, relation, metric, column=none, dimension=none, lookback_days=30, seed=true, points=none) %}
+  {% if seed %}
+    {% do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': {'test.p.mon': true}, 'lookback_days': 30,
+        'series': {tojson(['test.p.mon', relation, metric, column, dimension]): points or []}}}) %}
+  {% endif %}
+  {% set source = icecore._icecore_history_source(test_id, relation, metric, column, dimension, lookback_days) %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% do _it_result({'source': source, 'sql': none if source is none else icecore.get_metric_history_sql(relation, metric, column, dimension, lookback_days, 1, source, none, test_id),
+                    'forgotten': invocation_id not in ((graph.get('icecore') or {}).get('history') or {})}) %}
+{% endmacro %}

@@ -240,7 +240,11 @@ def test_every_metric_records_the_window_end_and_the_next_window_starts_there(co
 @pytest.mark.sandbox
 def test_each_test_writes_its_metrics_in_one_call_and_tags_its_monitor(columns):
     rows = metric_rows(columns)
-    assert len({r["emit_query_id"] for r in rows}) == 4  # four test runs, seven metrics
+    calls = {}
+    for r in rows:
+        calls.setdefault(r["node_unique_id"], set()).add(r["emit_query_id"])
+    # four tests, seven metrics: each test's metrics come in one CALL (the end-of-run batch of its dbt run)
+    assert len(calls) == 4 and all(len(ids) == 1 for ids in calls.values())
     assert {json.loads(r["attributes"])["dbt.window.monitor"] for r in rows} == {"column_anomaly"}
 
 

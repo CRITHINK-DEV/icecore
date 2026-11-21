@@ -4,6 +4,10 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Changed
+- Fewer icecore statements per run (Gate 2, finding 6: on a 178-node project, icecore's own statements were about 97 % of the credits attributed under a build). With `on-run-end: "{{ icecore.end_run(results) }}"`, the monitor tests no longer `CALL` `ICECORE_EMIT` each: they leave their records in their compiled SQL and `end_run` sends them with the run's batch, as span events stamped with the time the test made them on Snowflake's clock, so `METRICS.observed_at` and the views are unchanged. With `start_run`, on-run-start reads the metric history of the run's monitor tests in one query and each test scores against that copy instead of reading `METRICS`. On the shop example with 6 monitor tests: 7 `ICECORE_EMIT` CALLs per build became 1 (the run start), and the monitor reads went from 4.5 s to 3.3 s of Snowflake compile and execution time.
+- Monitor records now land when the run ends. **A run killed before on-run-end loses the records of its monitor tests**; their verdicts never depended on them. Without the `end_run(results)` hook, with `telemetry: false`, or for a test whose records pass 256 KB, a test still sends them at once.
+
 ## [0.1.2] - 2026-11-20
 
 ### Fixed

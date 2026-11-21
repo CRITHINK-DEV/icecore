@@ -17,6 +17,7 @@
       {%- do log('icecore: warning: ' ~ layers_problem, info=True) -%}
     {%- endif -%}
     {%- do icecore.emit_run(icecore._icecore_end_run_items(results)) -%}
+    {%- do icecore._icecore_forget_metric_history() -%}
   {%- endif -%}
   {{ return('') }}
 {% endmacro %}
@@ -57,6 +58,7 @@
       {%- do batch['node_spans'].update({span['attrs'].get('dbt.node.unique_id'): span}) -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- do icecore._icecore_attach_test_records(results, batch) -%}
   {%- set skipped = [] -%}
   {%- for emitter in icecore._icecore_end_run_emitters() + (extra_emitters or []) -%}
     {%- if emitter is not mapping or emitter.get('macro') is not callable -%}

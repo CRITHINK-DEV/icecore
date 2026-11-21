@@ -15,7 +15,7 @@ macros:
       starts `lookback_hours` ago, and `since` overrides both. A value that is null (an empty window, or no
       non-null values) is not written and not checked. When no window can be read (no change tracking and no usable
       timestamp column, a missing column) the readers log why, no metric is written and the test passes. A failed
-      telemetry CALL is a logged warning and never changes the verdict. CHANGES is cheap for insert-only windows and
+      telemetry write is a logged warning and never changes the verdict. Its records go out with the run's end-of-run batch when on-run-end calls icecore.end_run(results), else at once (docs/configuration.md). CHANGES is cheap for insert-only windows and
       can cost more than a full scan after deletes, updates or merges (spike S5). Example, `columns: [{name: amount,
       data_tests: [icecore.column_anomaly: {metrics: [null_rate, avg, max], bounds: {null_rate: {max: 0.05}}}]}]`.
     arguments:

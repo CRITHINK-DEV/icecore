@@ -4,9 +4,21 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+- Cost estimates: a node whose Snowflake attribution has not landed at run end now gets a cost record at once, an estimate (`dbt.cost.estimated = true`). It comes from one guarded read of the current user's query history (no grant needed): execution time times the credits per hour of a standard warehouse of that size. An estimate writes no `credits` metric and is never scored. The backfill replaces it with Snowflake's attributed number (or its settled record) on a later run.
+- `NODE_EXECUTIONS.credits_estimated` and `INVOCATIONS.credits_estimated` (true when the credits are, or include, an estimate; an attributed value always wins over the estimate of the same node), `INVOCATIONS.cost_pending_nodes` and the run-end LOG key `icecore.cost.pending_nodes` (nodes still waiting for attribution after the run). The console data passes them through without changing what is shown.
+- A run warns in plain words when more nodes wait for attribution than `cost_backfill_limit` fills a run, saying their credits are estimates.
+- Console: estimated credits are labelled. The Runs table shows an `estimate` pill, the Cost chart draws estimated runs as faded bars, the node page and lineage panel say when the latest credits are an estimate, and the Cost page counts the nodes still waiting for Snowflake. Averages, the half-on-half trend and per-model changes use attributed credits only.
+
 ### Changed
+- Cost per node is now ON by default (`cost: true`). Turn it off with `vars: icecore: cost: false`. A role without `SNOWFLAKE.USAGE_VIEWER` still gets estimates; the attribution read keeps its single warning, which now names the grant (`GRANT DATABASE ROLE SNOWFLAKE.USAGE_VIEWER TO ROLE <dbt_role>`) and `cost: false`.
+- The backfill treats a node whose only cost record is an estimate as still pending.
+- `end_run` sends its batch to `ICECORE_EMIT_RUN` in `CALL`s of at most 768 KB instead of 512 KB. Each Python `CALL` pays about 2.5 s of start whatever its size, and a 178-node project spilled 18 KB into a second `CALL` that cost 2.3 s of warehouse time on every build. Records, views and columns are unchanged.
 - Fewer icecore statements per run (Gate 2, finding 6: on a 178-node project, icecore's own statements were about 97 % of the credits attributed under a build). With `on-run-end: "{{ icecore.end_run(results) }}"`, the monitor tests no longer `CALL` `ICECORE_EMIT` each: they leave their records in their compiled SQL and `end_run` sends them with the run's batch, as span events stamped with the time the test made them on Snowflake's clock, so `METRICS.observed_at` and the views are unchanged. With `start_run`, on-run-start reads the metric history of the run's monitor tests in one query and each test scores against that copy instead of reading `METRICS`. On the shop example with 6 monitor tests: 7 `ICECORE_EMIT` CALLs per build became 1 (the run start), and the monitor reads went from 4.5 s to 3.3 s of Snowflake compile and execution time.
 - Monitor records now land when the run ends. **A run killed before on-run-end loses the records of its monitor tests**; their verdicts never depended on them. Without the `end_run(results)` hook, with `telemetry: false`, or for a test whose records pass 256 KB, a test still sends them at once.
+
+### Security
+- Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
 
 ## [0.1.2] - 2026-11-20
 

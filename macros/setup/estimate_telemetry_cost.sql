@@ -12,8 +12,8 @@
       - samples (var samples, off by default): one LOG per failing test with store_failures (failing_tests_per_run);
         lineage and samples counts also come from _icecore_end_run_row_counts and follow their vars;
       - measured rows per CALL: one procedure SPAN per CALL (spikes/S3.md, finding 4) and about 3 untagged Snowpark
-        LOG rows per ICECORE_EMIT_RUN CALL (spikes/S1.md, "Python noise"). ICECORE_EMIT_RUN takes at most 512 KB per
-        CALL (GATE1.md), so its CALLs are the end-run bytes over 512 KB.
+        LOG rows per ICECORE_EMIT_RUN CALL (spikes/S1.md, "Python noise"). ICECORE_EMIT_RUN takes at most 768 KB per
+        CALL (GATE1.md), so its CALLs are the end-run bytes over 768 KB.
     S3 measured ingestion lag, not volume: no count here comes from it.
 
     Monitors (own entry `monitors` and own line in the message): the records the icecore generic tests write while the
@@ -73,7 +73,7 @@
   {%- set mon_calls = 0 if at_end else mon['calls'] -%}
   {%- set end_run_records = r['end'] + r['invocation_span'] + r['node_spans'] + r['node_results'] + r['query_events']
       + r['lineage'] + r['samples'] + (extra_emitters.values() | sum) + (mon_rows if at_end else 0) -%}
-  {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 524288) | round(0, 'ceil') | int)] | max -%}
+  {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 786432) | round(0, 'ceil') | int)] | max -%}
   {#- cost sends its metric events live through ICECORE_EMIT, 100 events per CALL, one procedure span per CALL -#}
   {%- set live_calls = ((n / 100) | round(0, 'ceil') | int) if extra_emitters.get('cost') else 0 -%}
   {%- if mon['tests'] -%}{%- do r.update({'monitors': mon_rows}) -%}{%- endif -%}

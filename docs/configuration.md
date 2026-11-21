@@ -111,7 +111,7 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
+| `cost` | `true` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a node not attributed yet gets an **estimate** at once (`dbt.cost.estimated = true`, from the query history: execution time times the credits per hour of a standard warehouse of that size; no metric, no scoring), and a later run with `cost` on replaces it with Snowflake's number, at most `cost_backfill_limit` nodes per run. The run-end LOG carries `icecore.cost.pending_nodes`, and a run warns when more nodes wait than a run fills. `cost: false` turns all of it off. | Reads `ACCOUNT_USAGE`: attribution needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`); without it the run warns once and estimates still work, never a failed run. Estimates read `INFORMATION_SCHEMA` query history of the current user: no grant. |
 
 ### Declared, not read
 
@@ -156,7 +156,7 @@ on-run-end: "{{ icecore.end_run(results) }}"
 | Hook | What it writes | When it writes nothing |
 | --- | --- | --- |
 | `icecore.start_run()` | One `icecore.run_start` span event through `ICECORE_EMIT`, with the run's attributes, `dbt.version`, `icecore.anomaly_engine` and `icecore.shadow_engine`. Then one read of the metric history of the run's monitor tests (see "One history read per run"). | `telemetry: false`, or at parse time. |
-| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the records the monitor tests left in their compiled SQL (on the test's node span, 100 at most, then on `icecore.monitor` spans), the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 512 KB as needed. | `telemetry: false`, or at parse time. |
+| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the records the monitor tests left in their compiled SQL (on the test's node span, 100 at most, then on `icecore.monitor` spans), the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 768 KB as needed. | `telemetry: false`, or at parse time. |
 
 Every record carries `dbt.invocation_id`, which groups a run. A telemetry failure never fails your dbt run: if a procedure or a grant is missing, icecore logs one warning per hook and dbt carries on. If one end-of-run emitter reports an error, `end_run` skips it, warns, and sends the others. One failure cannot be caught: if the query that makes the `CALL` itself cannot run (no warehouse, a closed connection), dbt raises it.
 
@@ -249,7 +249,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | Object | Kind | What it is |
 | --- | --- | --- |
 | `ICECORE_EMIT` | SQL procedure | Writes span events. At most 100 events and 512 KB per `CALL`. |
-| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
+| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 768 KB per `CALL`. |
 | `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |

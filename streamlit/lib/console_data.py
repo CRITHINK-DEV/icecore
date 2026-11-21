@@ -325,6 +325,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
     runs = [{
         "invocation_id": r.get("invocation_id"), "command": r.get("command"), "started_at": _iso(r.get("started_at")),
         "duration_s": _num(r.get("duration_s")), "status": r.get("status"), "credits": _num(r.get("credits")),
+        "credits_estimated": bool(r.get("credits_estimated")), "cost_pending_nodes": _int(r.get("cost_pending_nodes")),
         "nodes_total": _int(r.get("nodes_total")), "nodes_failed": _int(r.get("nodes_failed")),
         "target": r.get("target"),
     } for r in _by_time(inv, "started_at")]
@@ -332,7 +333,7 @@ def build(days: int = 30, layer: Any = None, now: datetime | None = None) -> dic
     node_execs = [{
         "invocation_id": r.get("invocation_id"), "unique_id": r.get("unique_id"), "status": r.get("status"),
         "started_at": _iso(r.get("started_at")), "execution_time_s": _num(r.get("execution_time_s")),
-        "credits": _num(r.get("credits")),
+        "credits": _num(r.get("credits")), "credits_estimated": bool(r.get("credits_estimated")),
     } for r in _by_time(execs, "started_at")]
 
     test_out = [{

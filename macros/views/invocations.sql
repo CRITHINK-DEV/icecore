@@ -16,7 +16,9 @@
     each other. The 24 hour rule compares two Snowflake times (the start record's TIMESTAMP and now).
 
     credits is the sum of the nodes' credits (the latest cost record per invocation and node, as node_executions
-    reads them, backfilled ones included), null until a cost record exists. -#}
+    reads them, backfilled ones included), null until a cost record exists. A node's attributed or settled record
+    wins over its estimate, never added to it. credits_estimated is true when the sum includes an estimate.
+    cost_pending_nodes is the run-end LOG's `icecore.cost.pending_nodes`: nodes still waiting for attribution. -#}
 
 
 {#- Public ----------------------------------------------------------------------------------------- -#}
@@ -45,10 +47,11 @@ cost_latest as (
     select * from events
     where record_type = 'LOG' and attributes:"icecore.kind"::string = 'cost'
       and invocation_id is not null and node_unique_id is not null
-    qualify row_number() over (partition by invocation_id, node_unique_id order by event_at desc) = 1
+    qualify row_number() over (partition by invocation_id, node_unique_id order by coalesce(cost_estimated, false), event_at desc) = 1
 ),
 cost_total as (
-    select invocation_id, sum(cost_credits) as credits from cost_latest group by invocation_id
+    select invocation_id, sum(cost_credits) as credits, boolor_agg(coalesce(cost_estimated, false)) as credits_estimated
+    from cost_latest group by invocation_id
 ),
 ids as (
     select invocation_id from run_start
@@ -86,6 +89,8 @@ select
     try_to_number(run_end.attributes:"dbt.invocation.nodes_warned"::string) as nodes_warned,
     try_to_number(run_end.attributes:"dbt.invocation.nodes_skipped"::string) as nodes_skipped,
     cost_total.credits as credits,
+    coalesce(cost_total.credits_estimated, false) as credits_estimated,
+    try_to_number(run_end.attributes:"icecore.cost.pending_nodes"::string) as cost_pending_nodes,
     coalesce(as_array(try_parse_json(as_varchar(run_start.attributes:"icecore.layer_standard"))),
              as_array(run_start.attributes:"icecore.layer_standard")) as layer_standard
 from ids

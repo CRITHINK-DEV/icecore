@@ -6,8 +6,9 @@
     logs  {type: 'log', level, message, attrs}.
   Every record and every span event gets base_attributes() (so dbt.invocation_id is on each), then its own
   attributes, capped at payload_cap_kb like icecore.emit (a log's message counts towards its cap, as the key
-  icecore.message). Records are sent in as many CALLs of at most 512 KB of JSON as needed (S2: no count
-  limit applies to an ICECORE_EMIT_RUN CALL; 512 KB keeps dbt time low), each through the guard block.
+  icecore.message). Records are sent in as many CALLs of at most 768 KB of JSON as needed (S2: no count
+  limit applies to an ICECORE_EMIT_RUN CALL; each CALL pays about 2.5 s of Python start, so fewer, larger CALLs cost
+  less warehouse time, and a CALL of 960 KB of logs ran as fast as one of 18 KB), each through the guard block.
   Each CALL is its own trace, so a run is grouped by dbt.invocation_id.
   Inputs are validated, never raised on: an item that is not a mapping, or a span without a numeric start_ns
   (the procedure would fail the whole CALL on it), is skipped. One warning per hook for failing CALLs (emit.sql).
@@ -79,6 +80,6 @@
 
 
 {#- Records -> lists of at most max_bytes of JSON, by size only (the chunker of emit.sql, with no count limit). -#}
-{% macro _icecore_emit_run_chunks(records, max_bytes=524288) %}
+{% macro _icecore_emit_run_chunks(records, max_bytes=786432) %}
   {{ return(icecore._icecore_emit_chunks(records, (records | length) + 1, max_bytes)) }}
 {% endmacro %}

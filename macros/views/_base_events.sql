@@ -139,6 +139,8 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('anomaly_is_anomaly', 'dbt.anomaly.is_anomaly', 'boolean'),
     ('cost_credits', 'dbt.cost.credits', 'float'),
     ('cost_warehouse', 'dbt.cost.warehouse', 'string'),
+    ('cost_estimated', 'dbt.cost.estimated', 'boolean'),
+    ('cost_pending_nodes', 'icecore.cost.pending_nodes', 'integer'),
     ('root_cause_unique_id', 'dbt.root_cause.unique_id', 'string'),
     ('root_cause_kind', 'dbt.root_cause.kind', 'string'),
     ('icecore_version', 'icecore.version', 'string'),

@@ -24,7 +24,8 @@
     assumed); icecore.anomaly warn events only as `anomalies_per_run` (default 0; no test emits them on its own); one
     icecore.schema_signature per schema_changes test (one record, split when its columns exceed the payload cap, counted
     from the declared columns at about 100 bytes each); one procedure SPAN per ICECORE_EMIT CALL (one CALL per test,
-    100 events each). Cost records are in the `cost` entry (var cost). Silence verdicts come from the silence task, not
+    100 events each), or, when the project's on-run-end calls icecore.end_run(results), none: the records go out with
+    the end-of-run batch (on the test's node span, plus one icecore.monitor span per further 100 events). Cost records are in the `cost` entry (var cost). Silence verdicts come from the silence task, not
     from a run: 0 in a healthy project. A project without icecore monitor tests gets no `monitors` entry and the same
     numbers as before.
 
@@ -63,16 +64,20 @@
       {%- if count -%}{%- do extra_text.append(count ~ ' ' ~ name) -%}{%- endif -%}
     {%- endif -%}
   {%- endfor -%}
+  {#- icecore monitor tests: with the end_run(results) hook their records go out with the end-of-run batch (100 per span,
+      a span `icecore.monitor` per further 100), else live through ICECORE_EMIT, one procedure SPAN per CALL -#}
+  {%- set mon = icecore._icecore_monitor_records(graph.nodes.values() if monitors and graph is defined and graph.nodes is defined else [],
+      graph.sources if graph is defined and graph.sources is defined else {}, assumed_columns, anomalies_per_run) -%}
+  {%- set at_end = mon['tests'] > 0 and icecore._icecore_telemetry_enabled() and icecore._icecore_end_run_collects() -%}
+  {%- set mon_rows = mon['records'] + ((mon['calls'] - mon['tests']) if at_end else 0) -%}
+  {%- set mon_calls = 0 if at_end else mon['calls'] -%}
   {%- set end_run_records = r['end'] + r['invocation_span'] + r['node_spans'] + r['node_results'] + r['query_events']
-      + r['lineage'] + r['samples'] + (extra_emitters.values() | sum) -%}
+      + r['lineage'] + r['samples'] + (extra_emitters.values() | sum) + (mon_rows if at_end else 0) -%}
   {%- set emit_run_calls = [1, ((end_run_records * bytes_per_record / 786432) | round(0, 'ceil') | int)] | max -%}
   {#- cost sends its metric events live through ICECORE_EMIT, 100 events per CALL, one procedure span per CALL -#}
   {%- set live_calls = ((n / 100) | round(0, 'ceil') | int) if extra_emitters.get('cost') else 0 -%}
-  {#- icecore monitor tests write live through ICECORE_EMIT while the tests run: their events, and one procedure SPAN per CALL -#}
-  {%- set mon = icecore._icecore_monitor_records(graph.nodes.values() if monitors and graph is defined and graph.nodes is defined else [],
-      graph.sources if graph is defined and graph.sources is defined else {}, assumed_columns, anomalies_per_run) -%}
-  {%- if mon['tests'] -%}{%- do r.update({'monitors': mon['records']}) -%}{%- endif -%}
-  {%- do r.update({'call_overhead': 1 + emit_run_calls * 4 + live_calls + mon['calls']}) -%}
+  {%- if mon['tests'] -%}{%- do r.update({'monitors': mon_rows}) -%}{%- endif -%}
+  {%- do r.update({'call_overhead': 1 + emit_run_calls * 4 + live_calls + mon_calls}) -%}
   {%- set rows_per_run = r.values() | sum -%}
 
   {%- set runs = icecore._icecore_positive_number(runs_per_day) -%}
@@ -83,7 +88,7 @@
       ~ r['invocation_span'] ~ ' invocation span, ' ~ r['end'] ~ ' end, ' ~ r['node_spans'] ~ ' node spans, '
       ~ r['node_results'] ~ ' node results, ' ~ r['query_events'] ~ ' query events, ' ~ r['lineage']
       ~ ' lineage, ' ~ r['samples'] ~ ' samples, ' ~ ((extra_text | join(', ')) ~ ', ' if extra_text else '') ~ r['call_overhead'] ~ ' rows written by the procedures themselves over '
-      ~ (1 + emit_run_calls + live_calls + mon['calls']) ~ ' CALLs)' -%}
+      ~ (1 + emit_run_calls + live_calls + mon_calls) ~ ' CALLs)' -%}
 
   {%- if runs is none -%}
     {%- set lines = [per_run ~ '. Give runs_per_day for the monthly estimate: dbt run-operation icecore.estimate_telemetry_cost --args \'{runs_per_day: <n>}\''] -%}
@@ -104,7 +109,8 @@
     {%- do lines.insert(1, 'of the rows per run, ' ~ '{:,}'.format(mon['records']) ~ ' are icecore monitor records from ' ~ mon['tests'] ~ ' monitor tests: '
         ~ mon['metrics'] ~ ' metric events, ' ~ mon['anomalies'] ~ ' anomaly warn events (only what anomalies_per_run says), '
         ~ mon['schema_signatures'] ~ ' schema signatures, 0 silence verdicts (the silence task writes them, 0 in a healthy project), plus '
-        ~ mon['calls'] ~ ' procedure spans over ' ~ mon['calls'] ~ ' CALLs (' ~ mon['dimension_tests'] ~ ' dimension tests assume ' ~ mon['dimension_values']
+        ~ ((mon_rows - mon['records']) ~ ' icecore.monitor spans, sent with the end-of-run batch (no CALL of their own)' if at_end
+           else mon['calls'] ~ ' procedure spans over ' ~ mon['calls'] ~ ' CALLs') ~ ' (' ~ mon['dimension_tests'] ~ ' dimension tests assume ' ~ mon['dimension_values']
         ~ ' values each at most, ' ~ mon['assumed_column_tests'] ~ " all_columns tests assume " ~ assumed_columns ~ ' columns); cost records are in the cost entry') -%}
   {%- endif -%}
   {%- do lines.append('Sources: rows per run from the write-path design (spec section 4; spikes/GATE1.md, "Consequences for the build"); '

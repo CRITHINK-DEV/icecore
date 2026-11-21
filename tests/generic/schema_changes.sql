@@ -2,11 +2,13 @@
     The current columns come from icecore.get_columns_signature (SHOW COLUMNS, no data scan). The baseline is the
     signature the previous run wrote as an `icecore.schema_signature` record, read back through
     icecore.base_events() for this relation. The diff (icecore.diff_schema) is emitted as one
-    `icecore.schema_change` record per change, plus the new signature, in one CALL. Every failing row is one change.
+    `icecore.schema_change` record per change, plus the new signature, sent with the run's end-of-run batch (or in one CALL at once:
+    macros/telemetry/test_records.sql). Every failing row is one change.
     With no baseline (first run) or no readable history the test passes and only records the signature.
     Pass or fail comes only from the diff: the baseline read and the emit are guarded. -#}
 {% test schema_changes(model) %}
   {%- set changes = [] -%}
+  {%- set records = '' -%}
   {%- if execute -%}
     {%- set name = icecore._icecore_quoted_name(model) -%}
     {%- set current = icecore.get_columns_signature(model) -%}
@@ -46,10 +48,11 @@
                 ~ (' to ' ~ ch['to_type'] if ch['to_type'] is not none else '')}) -%}
       {%- endfor -%}
       {#- UC3 scoring hook: schema changes are not scored; nothing plugs in here. -#}
-      {%- do icecore.emit_events(events) -%}
+      {%- set records = icecore._icecore_emit_from_test(events) -%}
     {%- endif -%}
   {%- endif -%}
 
+  {{ records }}
   {%- if changes -%}
     {%- for ch in changes %}
   select {{ icecore._icecore_sql_literal(ch['kind']) }}::varchar as change_kind,

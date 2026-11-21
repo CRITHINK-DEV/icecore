@@ -59,6 +59,8 @@ every run recorded, monitors that score sensibly, alerts worth reading, and noth
 
 ## Open items
 
-- Findings 5 and 6 are being built for 0.2.0; the two design changes of finding 6 wait for the owner's decision.
+- Findings 5 and 6 are being built for 0.2.0. The owner approved the two design changes of finding 6; they are built in
+  story/overhead-batching: monitor records go out with the end-of-run batch (read back from each test's compiled SQL
+  in `results`), and on-run-start reads the metric history once and keeps it in dbt's `graph` for the tests.
 - Not covered by this pilot: a schema change, a missed run (silence), Cortex scoring (no model was trained), the alert
   objects (alerts were off), dbt Core runs outside Snowflake on a schedule, and Standard edition accounts.

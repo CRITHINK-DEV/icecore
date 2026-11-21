@@ -106,7 +106,7 @@ A missing procedure or grant never fails a run (the guard), but the telemetry is
 
 All package emissions are identified by the procedure that wrote them, the package identity (`SCOPE` or record-name prefix) and one attribute prefix, and they reuse Snowflake's own attribute names wherever Snowflake already defines one. The event table has a fixed schema (`TIMESTAMP`, `START_TIMESTAMP`, `OBSERVED_TIMESTAMP`, `TRACE`, `RESOURCE`, `RESOURCE_ATTRIBUTES`, `SCOPE`, `SCOPE_ATTRIBUTES`, `RECORD_TYPE`, `RECORD`, `RECORD_ATTRIBUTES`, `VALUE`, `EXEMPLARS`), so all package data lives in `RECORD_ATTRIBUTES` and `VALUE` (VARIANT).
 
-**Record types used** (Gate 1, `spikes/GATE1.md`): what `on-run-end` sends goes through `ICECORE_EMIT_RUN`; every other emission (test macros, node hooks, `setup` / `doctor`, the silence task, the app) goes through `ICECORE_EMIT`.
+**Record types used** (Gate 1, `spikes/GATE1.md`): what `on-run-end` sends goes through `ICECORE_EMIT_RUN`; every other emission (test macros, node hooks, `setup` / `doctor`, the silence task, the app) goes through `ICECORE_EMIT`. Exception (`spikes/GATE2.md`, finding 6): when the project's on-run-end calls `icecore.end_run(results)`, the monitor tests leave their records in their compiled SQL and `end_run` sends them through `ICECORE_EMIT_RUN`, as span events on the test's node span stamped with the time the test made them (same names and attributes, `SCOPE` `icecore`); a run killed before on-run-end loses them.
 
 | Record type | Written by | Used for | One row per |
 | --- | --- | --- | --- |
@@ -114,7 +114,7 @@ All package emissions are identified by the procedure that wrote them, the packa
 | `SPAN_EVENT` | `ICECORE_EMIT_RUN` | Query executed by a node, with its `query_id`, as an event on the node's span | Query |
 | `LOG` (INFO / WARN / ERROR) | `ICECORE_EMIT_RUN` | Node result, test result, root-cause attribution, lineage edges | Event |
 | `LOG` (INFO) | `ICECORE_EMIT_RUN` | Failed-row samples (payload capped, see S2), at INFO because the levels are the database's | Test failure |
-| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`) | Metric per table/column per run, or event |
+| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` (monitor test records: `ICECORE_EMIT_RUN` with the `end_run(results)` hook) | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`) | Metric per table/column per run, or event |
 
 There are no `METRIC` records: SQL cannot write them (S1).
 

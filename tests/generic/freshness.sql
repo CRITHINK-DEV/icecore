@@ -2,7 +2,8 @@
     Reads the last change time with icecore.get_last_change_time (SYSTEM$LAST_CHANGE_COMMIT_TIME, no data scan),
     takes the lag against Snowflake's clock, scores it against the metric's own history (icecore.score_monitor_metrics:
     one query), emits it as the metric freshness_lag_seconds with the scored result, then fails when the lag is above
-    max_lag OR the engine says anomaly. Not enough history: not scored. emit_metric guards its own CALL. -#}
+    max_lag OR the engine says anomaly. Not enough history: not scored. The metric goes out with the run's end-of-run batch
+    (macros/telemetry/test_records.sql), or in one guarded CALL at once. -#}
 {% test freshness(model, max_lag=none, engine=none, sensitivity=none, min_consecutive=none, lookback_days=30, min_points=7, shadow_engine=none) %}
   {{ config(severity='error', warn_if='>=1', error_if=icecore._icecore_error_if()) }}
   {%- set max_lag_seconds = none -%}
@@ -24,6 +25,7 @@
   {%- set unmeasured = none -%}
   {%- set lag_seconds = none -%}
   {%- set verdict = none -%}
+  {%- set records = '' -%}
   {%- do icecore.score_monitor_metrics(model, [], engine, sensitivity, min_consecutive, lookback_days, min_points, shadow_engine) -%}
   {%- if execute -%}
     {%- set last_change = icecore.get_last_change_time(model) -%}
@@ -45,13 +47,14 @@
         {%- do verdict.update({'upper': [verdict['upper'], verdict['expected'] + 60] | max}) -%}
         {%- if lag_seconds <= verdict['upper'] -%}{%- do verdict.update({'is_anomaly': false, 'score': 0.0}) -%}{%- endif -%}
       {%- endif -%}
-      {%- do icecore.emit_metric(model, 'freshness_lag_seconds', lag_seconds, anomaly=verdict, attributes=icecore._icecore_metric_attrs(verdict), threshold=max_lag_seconds) -%}
+      {%- set records = icecore._icecore_emit_from_test(icecore._icecore_metric_events(model, 'freshness_lag_seconds', lag_seconds, none, none, verdict, icecore._icecore_metric_attrs(verdict), threshold=max_lag_seconds)) -%}
     {%- endif -%}
   {%- endif -%}
 
   {%- set anomalous = icecore._icecore_anomalous(verdict) -%}
   {#- dbt counts rows: a hard breach (or an unmeasured metric with a threshold) returns 2, an anomaly alone 1 (see _icecore_error_if) -#}
   {%- set failing_rows = 2 if (breach or unmeasured is not none) else (1 if anomalous else 0) -%}
+  {{ records }}
   select {{ 'null' if lag_seconds is none else lag_seconds }}::float as lag_seconds,
          {{ 'null' if max_lag_seconds is none else max_lag_seconds }}::float as max_lag_seconds,
          {{ 'null' if (unmeasured is none and not anomalous) else icecore._icecore_sql_literal(unmeasured if unmeasured is not none else icecore._icecore_anomaly_text(verdict)) }}::varchar as reason

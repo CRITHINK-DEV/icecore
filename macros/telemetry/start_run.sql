@@ -11,6 +11,7 @@
 {% macro start_run() %}
   {%- if execute and icecore._icecore_telemetry_enabled() -%}
     {%- do icecore.emit_events([icecore._icecore_run_start_event()]) -%}
+    {%- do icecore._icecore_load_metric_history() -%}
   {%- endif -%}
   {{ return('') }}
 {% endmacro %}

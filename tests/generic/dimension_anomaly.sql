@@ -12,6 +12,7 @@
 
   {%- set breaches = [] -%}
   {%- set anomalies = [] -%}
+  {%- set records = '' -%}
   {%- if execute -%}
     {%- set name = icecore._icecore_quoted_name(model) -%}
     {#- the window end is taken before the read and recorded on every metric, so the next window starts from it -#}
@@ -41,8 +42,8 @@
           {%- do anomalies.append({'dimension': entry['dimension'], 'value': entry['value'], 'min': result.get('lower'), 'max': result.get('upper'), 'reason': icecore._icecore_anomaly_text(result)}) -%}
         {%- endif -%}
       {%- endfor -%}
-      {#- one CALL for the whole test -#}
-      {%- do icecore.emit_metrics(model, to_emit) -%}
+      {#- sent with the run's end-of-run batch, or in one CALL now (macros/telemetry/test_records.sql) -#}
+      {%- set records = icecore._icecore_emit_from_test(icecore._icecore_metrics_events(model, to_emit)) -%}
     {%- endif -%}
   {%- endif -%}
 
@@ -54,6 +55,7 @@
     {%- do failing.append(anomalies[0]) -%}
   {%- endif -%}
   {%- if breaches and failing | length < 2 -%}{%- do failing.append(breaches[0]) -%}{%- endif -%}
+  {{ records }}
   {%- if failing -%}
     {%- for b in failing %}
   select {{ icecore._icecore_sql_literal(b['dimension']) }}::varchar as dimension, {{ b['value'] }}::number as window_rows,

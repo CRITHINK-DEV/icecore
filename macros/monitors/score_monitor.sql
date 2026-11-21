@@ -44,7 +44,9 @@
     {%- if p['metric'] is not string or (p.get('column') is not none and p.get('column') is not string) or (p.get('dimension') is not none and p.get('dimension') is not string) -%}
       {{ exceptions.raise_compiler_error('icecore: a scored metric, column and dimension must be text, got ' ~ p) }}
     {%- endif -%}
-    {%- do series_sql.append(icecore.get_metric_history_sql(name, p['metric'], p.get('column'), p.get('dimension'), lookback_days, delay, none, schema, test_id)) -%}
+    {#- the run's copy of the history when on-run-start read it (one read per run), else the METRICS view -#}
+    {%- set source = icecore._icecore_history_source(test_id, name, p['metric'], p.get('column'), p.get('dimension'), lookback_days) if schema is none else none -%}
+    {%- do series_sql.append(icecore.get_metric_history_sql(name, p['metric'], p.get('column'), p.get('dimension'), lookback_days, delay, source, schema, test_id)) -%}
     {%- do values.append(icecore._icecore_metric_number(p['value'])) -%}
   {%- endfor -%}
 

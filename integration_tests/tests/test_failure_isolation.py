@@ -165,7 +165,9 @@ def test_build_with_no_emitter_procedures_succeeds_with_one_warning_per_hook(dbt
     # The obs schema does not exist: the same failure as an event table association removed (2141), without
     # touching the shared database.
     try:
-        res, warnings = run_with_warnings(["build", "--select", "hooks_a+"], run_id, f"ICECORE_OBS_MISSING_{run_id}")
+        # cost off: its "attribution not available yet" warning is not an emitter failure
+        res, warnings = run_with_warnings(["build", "--select", "hooks_a+"], run_id, f"ICECORE_OBS_MISSING_{run_id}",
+                                          cost=False)
         assert res.success, res.exception
         assert len(warnings) == 2, warnings
         assert sum("ICECORE_EMIT_RUN" in w for w in warnings) == 1

@@ -23,6 +23,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
+from helpers.events import EVENT_TABLE
 from helpers.macros import invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
@@ -95,9 +96,9 @@ def event_reads_are_bounded(reads: list, window_partitions: int) -> bool:
     return bool(found) and all(s["scanned"] <= window_partitions for s in found)
 
 
-def partitions(sf, sql: str) -> int:
+def partitions(sf, sql: str, stat: str = "partitionsTotal") -> int:
     plan = json.loads(sf.cursor().execute("explain using json " + sql).fetchone()[0])
-    return int(plan["GlobalStats"]["partitionsTotal"])
+    return int(plan["GlobalStats"][stat])
 
 
 @pytest.fixture(scope="module")
@@ -212,3 +213,16 @@ def test_a_big_history_read_is_bounded_when_it_stays_inside_the_look_back_window
     assert event_reads_are_bounded(one(7000, nbytes=20_000), window)  # small: under the byte tripwire
     assert not event_reads_are_bounded(one(7000), window)  # an unbounded read reaches partitions older than the window
     assert not event_reads_are_bounded([{"BYTES_SCANNED": 24_000_000, "SCANS": []}], window)
+
+
+@pytest.mark.sandbox
+@pytest.mark.parametrize("name", ["it_cost_schema_changes", "it_cost_column_history"])
+def test_the_bounded_history_reads_of_the_event_table_stay_small(cost, sf, name):
+    reads = cost["measured"][name]["events"]
+    assert reads, f"{name} did not read the event table (the baseline / previous observation read)"
+    total = sum(r["BYTES_SCANNED"] or 0 for r in reads)
+    # planned after the reads, so the window holds every partition they could see
+    window = partitions(sf, f"select 1 from {EVENT_TABLE} where timestamp >= dateadd(day, -{LOOKBACK_DAYS}, sysdate())",
+                        "partitionsAssigned")
+    print(f"\nICECORE_MONITOR_COST {name} event-table reads: {total} bytes in {len(reads)} queries, window {window} partitions")
+    assert event_reads_are_bounded(reads, window), (name, total, window, [r["SCANS"] for r in reads])

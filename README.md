@@ -116,7 +116,7 @@ models:
 
 The other monitors are `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly`. Each metric is scored against the test's own history (30 days, at least 7 points; until then it only records metrics). An anomaly warns by default; set `vars: icecore: anomaly_severity: error` to make it fail the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test. Arguments: [Configuration](docs/configuration.md#generic-tests) and the [generic test reference](docs/reference/tests.md). To declare a schedule and let icecore detect a missed run, add `meta.sla` to a model.
 
-**Cost per model is on by default** (`vars: icecore: cost: false` turns it off). A node shows an estimate at once, from the query history, and Snowflake's attributed number replaces it hours later. The role that runs dbt needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on the `SNOWFLAKE` database) to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns once and the run carries on with estimates.
+**Cost per model is on by default** (`vars: icecore: cost: false` turns it off). A node shows an estimate at once, from the query history, and Snowflake's attributed number replaces it hours later. The role that runs dbt needs `SNOWFLAKE.USAGE_VIEWER` to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns once and the run carries on with estimates.
 
 Then read the views, not the event table:
 
@@ -185,9 +185,9 @@ vars:
     result_message: redacted # redacted, full or none
 ```
 
-`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
+`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, masks the whole list of a duplicate-row error's `Row Values: [...]` (it holds bare numbers too), then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
 
-Samples are off by default because they copy real row values from your tables into the event table, and anyone who can read the event table can read them, which may be more people than can read the data. To turn them on, set `samples: true`: each failed test that stores its failures (`store_failures`) then writes up to `sample_rows` rows. To keep sensitive values out, list the columns in `sample_exclude_columns` (any case): their names stay in each row and their values become `?`.
+Samples are off by default because they copy real row values from your tables into the event table, and anyone who can read the event table can read them, which may be more people than can read the data. The same values (and the dimension values a `dimension_anomaly` test records) also travel in the text of the `CALL` that writes them, so they appear in Snowflake's query history and in dbt's debug log (`logs/dbt.log`), where the people who can read those may differ again. To turn them on, set `samples: true`: each failed test that stores its failures (`store_failures`) then writes up to `sample_rows` rows. To keep sensitive values out, list the columns in `sample_exclude_columns` (any case): their names stay in each row and their values become `?`.
 
 
 ## How it works

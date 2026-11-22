@@ -41,7 +41,7 @@ def test_create_views_list_is_the_full_current_list():
 def test_view_selects_from_base_events_on_its_schema(name):
     sql = views("my_obs")[name]
     assert "with events as (" in sql and f"from {EVENT_TABLE}" in sql
-    assert "RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')" in sql and "ICECORE_EMIT%" in sql
+    assert "RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')" in sql and "'ICECORE_EMIT(EVENTS ARRAY):VARCHAR'" in sql
     assert """"snow.schema.name"::string = 'MY_OBS'""" in sql
 
 

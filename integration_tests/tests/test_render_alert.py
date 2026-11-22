@@ -126,6 +126,14 @@ def test_slack_text_escapes_ampersand_and_angle_brackets_and_every_webhook_clean
     assert "&amp;" not in email and "cntrl" not in email and "'\\n'" in email
 
 
+def test_webhook_text_neutralizes_markdown_link_and_emphasis_characters():
+    # a column name or dimension value such as `[Reset password](https://evil.example)` must not become a link in chat
+    for webhook in ("slack", "teams"):
+        sql = call("alert_message_sql", {"type": webhook, "source": "pending"})
+        assert sql.count("translate(") == 5 and "'[]()`*', '{}{}''+'" in sql
+    assert "translate(" not in call("alert_message_sql", {"type": "email", "source": "pending"})
+
+
 def test_the_action_reads_the_incidents_of_the_condition_query_and_loops_over_the_first_50():
     sql = render(EMAIL)
     assert "LET rs RESULTSET := (select incident_key from table(result_scan(:qid)) order by first_detected_at, incident_key limit 50);" in sql
@@ -411,6 +419,16 @@ def test_webhook_text_cleaning_and_what_sanitize_webhook_content_does_not_do(sf)
         assert not any(ch in message for ch in ['"', "\\", "\n", "\r", "\t"]), message
     (email,) = sf.cursor().execute(call("alert_message_sql", {"type": "email", "source": source})).fetchone()
     assert raw in email  # plain text is not cleaned
+
+
+@pytest.mark.sandbox
+def test_webhook_text_has_no_markdown_link_or_emphasis_from_a_hostile_value(sf):
+    source = ("(select 'anomaly' as kind, '[Reset password](https://evil.example) `x` *y*' as title, 'n' as node_key,"
+              " null as root_cause_unique_id, null as root_cause_kind, current_timestamp() as first_detected_at, 'k' as incident_key)")
+    for type in ("slack", "teams"):
+        (message,) = sf.cursor().execute(call("alert_message_sql", {"type": type, "source": source})).fetchone()
+        assert "{Reset password}{https://evil.example} 'x' +y+" in message, message
+        assert "](" not in message and "`x`" not in message and "*y*" not in message, message
 
 
 @pytest.mark.sandbox

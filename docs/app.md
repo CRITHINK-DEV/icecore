@@ -33,7 +33,7 @@ Each tile has a help text that says how its number is computed.
 
 **Refresh and cache.** The app reads the last 30 days once and filters the window and layer in the browser. The data is cached for 5 minutes. The refresh button in the top bar clears the cache and reads the views again. The footer of the menu shows when the views were read.
 
-**Acknowledge.** On an open incident, Acknowledge calls `ICECORE_ACK` with the incident key. The procedure refuses a key that is not a current unacknowledged incident and records your own Snowflake user as the acknowledger. The views show it after a few seconds (event-table delay); until then the app shows the incident as acknowledged. Resolve and Reopen are kept in the browser tab only.
+**Acknowledge.** On an open incident, Acknowledge calls `ICECORE_ACK` with the incident key. The procedure refuses a key that is not a current unacknowledged incident and records your own Snowflake user as the acknowledger. The views show it after a few seconds (event-table delay); until then the app shows the incident as acknowledged. Resolve and Reopen are kept in the browser tab only. A deployed app runs with its owner's rights, so anyone who can open it can acknowledge incidents, whatever their own grants on `ICECORE_ACK`; give USAGE on the app only to people you trust to acknowledge.
 
 **Views that cannot be read.** If a view is missing or the role cannot read it, the app still opens. A red bar lists each view and its error, and the sections that depend on it show what is recorded so far.
 

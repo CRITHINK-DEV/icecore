@@ -37,7 +37,7 @@ def test_every_view_selects_from_base_events():
     for name, sql in views().items():
         assert f"from {EVENT_TABLE}" in sql, name  # base_events' own SELECT, on the resolved table
         assert "with events as (" in sql and "RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')" in sql, name
-        assert "ICECORE_EMIT%" in sql, name
+        assert "'ICECORE_EMIT(EVENTS ARRAY):VARCHAR'" in sql, name
 
 
 def test_views_filter_on_the_schema_they_are_created_in():

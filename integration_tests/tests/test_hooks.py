@@ -92,6 +92,7 @@ def test_telemetry_is_off_for_dbt_compile():
     assert res.success and any("select 'False' as telemetry" in line for line in lines), lines[-5:]
 
 
+
 def test_run_end_log_has_status_and_node_counts():
     records = run_macro("it_end_run_render", {"results": SUCCESS})["records"]
     end = records[-1]

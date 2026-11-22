@@ -1,7 +1,7 @@
 {
   "anonymous.e1_sql_event": {
     "call_ok": true,
-    "dbt_wall_s": 1.26,
+    "dbt_wall_s": 1.43,
     "executable_types": [],
     "expected": 100,
     "first_timestamp": null,
@@ -12,17 +12,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "a0009eccb7884b1abef38d3abc6217f6",
+    "run_id": "fe9b1c34afa04bf997780de7bdfe538e",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 295,
+      "emit_ms": 341,
       "statements": [
         {
           "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
-          "ms": 295,
-          "query_id": "01c8189c-0000-b533-0001-19a20118f8f2",
+          "ms": 341,
+          "query_id": "01c894cd-0000-c0b2-0001-19a2017cb27e",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -35,7 +35,7 @@
   "anonymous.e1_sql_event.absent_after_s": 180,
   "anonymous.e1_sql_log": {
     "call_ok": true,
-    "dbt_wall_s": 1.49,
+    "dbt_wall_s": 1.29,
     "executable_types": [],
     "expected": 100,
     "first_timestamp": null,
@@ -46,17 +46,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "e8ea8b678a3e42899e0369ea5aa423c1",
+    "run_id": "d243924987894e3a8c3a92782cdd3247",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 315,
+      "emit_ms": 273,
       "statements": [
         {
           "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
-          "ms": 315,
-          "query_id": "01c81899-0000-b511-0001-19a20118defa",
+          "ms": 273,
+          "query_id": "01c894c9-0000-c0b2-0001-19a2017ca926",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -69,7 +69,7 @@
   "anonymous.e1_sql_log.absent_after_s": 180,
   "anonymous.e1_sql_span_attrs": {
     "call_ok": true,
-    "dbt_wall_s": 1.23,
+    "dbt_wall_s": 1.15,
     "executable_types": [],
     "expected": 1,
     "first_timestamp": null,
@@ -80,17 +80,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "be28d3940f3c402fab400e2247528973",
+    "run_id": "94684f6f3b344c46944893cd4a888c7c",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 205,
+      "emit_ms": 230,
       "statements": [
         {
           "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
-          "ms": 205,
-          "query_id": "01c818a0-0000-b533-0001-19a20118fa16",
+          "ms": 230,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cabe6",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -103,7 +103,7 @@
   "anonymous.e1_sql_span_attrs.absent_after_s": 180,
   "anonymous.e2_python_logs": {
     "call_ok": true,
-    "dbt_wall_s": 70.51,
+    "dbt_wall_s": 3.37,
     "executable_types": [],
     "expected": 100,
     "first_timestamp": null,
@@ -114,17 +114,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "08c0965e3655466d984e8f0148278fb1",
+    "run_id": "4d9e75b18d0b4595adc4f97f58b98ffa",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 69393,
+      "emit_ms": 2515,
       "statements": [
         {
           "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
-          "ms": 69393,
-          "query_id": "01c818a3-0000-b533-0001-19a20118fb6e",
+          "ms": 2515,
+          "query_id": "01c894cd-0000-c0b2-0001-19a2017cb2c2",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -137,7 +137,7 @@
   "anonymous.e2_python_logs.absent_after_s": 180,
   "anonymous.e2_python_span_timings": {
     "call_ok": true,
-    "dbt_wall_s": 3.85,
+    "dbt_wall_s": 3.62,
     "executable_types": [],
     "expected": 6,
     "first_timestamp": null,
@@ -148,17 +148,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "3c80d61bc9c54fb896a40968cf79f16c",
+    "run_id": "e222828f29d44497a548ed1f46fd634f",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 2717,
+      "emit_ms": 2640,
       "statements": [
         {
           "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
-          "ms": 2717,
-          "query_id": "01c818ac-0000-b511-0001-19a201191d0e",
+          "ms": 2640,
+          "query_id": "01c894ce-0000-c0b2-0001-19a2017cb9ae",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -171,7 +171,7 @@
   "anonymous.e2_python_span_timings.absent_after_s": 180,
   "anonymous.e2_python_spans": {
     "call_ok": true,
-    "dbt_wall_s": 3.57,
+    "dbt_wall_s": 6.75,
     "executable_types": [],
     "expected": 20,
     "first_timestamp": null,
@@ -182,17 +182,17 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "774ac1a97c274c498b35efc69cf1733c",
+    "run_id": "7432fd1319d74b48bc69314e66e9e26e",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 2505,
+      "emit_ms": 5741,
       "statements": [
         {
           "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
-          "ms": 2505,
-          "query_id": "01c818a8-0000-b533-0001-19a201193452",
+          "ms": 5741,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cacda",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -217,26 +217,26 @@
       "e2_log_attrs": null,
       "e2_log_message": null
     },
-    "run_id": "6272b580cb294fc39f94bca47bb77364"
+    "run_id": "e73156a184c04df088b894585d611080"
   },
   "anonymous.escaping.absent_after_s": 180,
   "anonymous.levels_off": {
     "calls": {
       "python": {
         "call_ok": true,
-        "dbt_wall_s": 3.44
+        "dbt_wall_s": 3.8
       },
       "sql_event": {
         "call_ok": true,
-        "dbt_wall_s": 1.36
+        "dbt_wall_s": 1.44
       },
       "sql_log": {
         "call_ok": true,
-        "dbt_wall_s": 1.37
+        "dbt_wall_s": 1.35
       },
       "sql_span_attrs": {
         "call_ok": true,
-        "dbt_wall_s": 1.22
+        "dbt_wall_s": 1.35
       }
     },
     "executable_types": [],
@@ -248,7 +248,7 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "5e7c06e057e343f6a91a5007c3010c75",
+    "run_id": "38a9ebf2ab704c9f8c090429e94fbd8b",
     "scope_names": [],
     "sdk_languages": [],
     "snow_query_ids": [],
@@ -258,7 +258,7 @@
   "anonymous.levels_off.absent_after_s": 180,
   "anonymous.rollback": {
     "call_ok": true,
-    "dbt_wall_s": 2.02,
+    "dbt_wall_s": 2.04,
     "executable_types": [],
     "expected": 2,
     "first_timestamp": null,
@@ -269,24 +269,24 @@
     "record_types": {},
     "resource_attribute_keys": [],
     "rows": 0,
-    "run_id": "f15d0f01b8d04c63bfbb97aeedc873c2",
+    "run_id": "bcf6dbe93e5949bd9838bec214d82232",
     "scope_names": [],
     "sdk_languages": [],
     "seconds_to_visible": null,
     "server": {
-      "emit_ms": 584,
+      "emit_ms": 528,
       "statements": [
         {
           "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
-          "ms": 302,
-          "query_id": "01c818b9-0000-b511-0001-19a201194d12",
+          "ms": 286,
+          "query_id": "01c894d1-0000-c0af-0001-19a2017cc302",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
-          "ms": 282,
-          "query_id": "01c818b9-0000-b511-0001-19a201194d16",
+          "ms": 242,
+          "query_id": "01c894d1-0000-c0b2-0001-19a2017cbd6e",
           "status": "SUCCESS",
           "type": "CALL"
         }
@@ -305,7 +305,7 @@
     "errors": [],
     "landed": 0,
     "query_ids": [],
-    "run_id": "1db2440b14104cbcb7253855349fefe4",
+    "run_id": "d697816a346c4ea8b9b227e1f6ac8a5e",
     "shared_trace": false,
     "trace_id_prefix_matches_query_id": [],
     "trace_ids": []
@@ -313,32 +313,32 @@
   "anonymous.trace_grouping.absent_after_s": 180,
   "e3_hybrid_table": {
     "call_ok": true,
-    "dbt_wall_s": 2.85,
+    "dbt_wall_s": 3.22,
     "rows_by_kind": {
       "committed": 100
     },
-    "run_id": "a43d3d6bdca14741b63fdbe0c049899e",
+    "run_id": "0ed612025630412f90c7097209d9c073",
     "server": {
-      "emit_ms": 1284,
+      "emit_ms": 1422,
       "statements": [
         {
           "head": "CREATE HYBRID TABLE ICECORE_SANDBOX.SPIKES.S1_H_",
-          "ms": 735,
-          "query_id": "01c818bd-0000-b511-0001-19a20119541e",
+          "ms": 649,
+          "query_id": "01c894d2-0000-c0b2-0001-19a2017cbe26",
           "status": "SUCCESS",
           "type": "CREATE_TABLE"
         },
         {
-          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_A43D3D6B",
-          "ms": 427,
-          "query_id": "01c818bd-0000-b511-0001-19a201195426",
+          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_0ED61202",
+          "ms": 410,
+          "query_id": "01c894d2-0000-c0b2-0001-19a2017cbe2a",
           "status": "SUCCESS",
           "type": "INSERT"
         },
         {
-          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_A43D3D6B",
-          "ms": 122,
-          "query_id": "01c818bd-0000-b511-0001-19a20119542e",
+          "head": "INSERT INTO ICECORE_SANDBOX.SPIKES.S1_H_0ED61202",
+          "ms": 363,
+          "query_id": "01c894d2-0000-c0af-0001-19a2017cc3ae",
           "status": "SUCCESS",
           "type": "INSERT"
         }
@@ -347,7 +347,7 @@
   },
   "proc.batch": {
     "call_ok": true,
-    "dbt_wall_s": 1.71,
+    "dbt_wall_s": 1.55,
     "exact_attributes": 100,
     "expected": 100,
     "has_snow_query_id": true,
@@ -358,17 +358,17 @@
     "record_types": {
       "SPAN_EVENT": 100
     },
-    "run_id": "5866e4b5290e4bbbbf5fe2e2071a6015",
+    "run_id": "89f6aac5fef447deba67f2b050d21201",
     "scope_names": [
       "global"
     ],
-    "seconds_to_visible": 5.5,
-    "server_ms": 726,
+    "seconds_to_visible": 10.7,
+    "server_ms": 664,
     "snow.database.name": [
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_5866E4B5290E4BBBBF5FE2E2071A6015(EVENTS ARRAY):VARCHAR"
+      "ICECORE_EMIT_89F6AAC5FEF447DEBA67F2B050D21201(EVENTS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -381,7 +381,7 @@
   },
   "proc.batch_unguarded": {
     "call_ok": true,
-    "dbt_wall_s": 1.58,
+    "dbt_wall_s": 1.5,
     "exact_attributes": 100,
     "expected": 100,
     "has_snow_query_id": true,
@@ -392,17 +392,17 @@
     "record_types": {
       "SPAN_EVENT": 100
     },
-    "run_id": "c346f95bf25e44fc8ca36b0f82c74617",
+    "run_id": "9bb365aaf5c6461e9b9292494e94a358",
     "scope_names": [
       "global"
     ],
-    "seconds_to_visible": 5.6,
-    "server_ms": 633,
+    "seconds_to_visible": 10.5,
+    "server_ms": 516,
     "snow.database.name": [
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_C346F95BF25E44FC8CA36B0F82C74617(EVENTS ARRAY):VARCHAR"
+      "ICECORE_EMIT_9BB365AAF5C6461E9B9292494E94A358(EVENTS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -415,7 +415,7 @@
   },
   "proc.emit_run_python": {
     "call_ok": true,
-    "dbt_wall_s": 3.93,
+    "dbt_wall_s": 3.72,
     "exact_attributes": 100,
     "expected": 100,
     "explicit_times_kept": 100,
@@ -427,17 +427,17 @@
     "record_types": {
       "SPAN": 100
     },
-    "run_id": "d1cd8ec4a9ba4ca69a5f7b466ad4170e",
+    "run_id": "3d9989cbe5fe40d28019fd57eca4e2fa",
     "scope_names": [
       "icecore"
     ],
-    "seconds_to_visible": 10.7,
-    "server_ms": 2818,
+    "seconds_to_visible": 5.7,
+    "server_ms": 2698,
     "snow.database.name": [
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_RUN_D1CD8EC4A9BA4CA69A5F7B466AD4170E(SPANS ARRAY):VARCHAR"
+      "ICECORE_EMIT_RUN_3D9989CBE5FE40D28019FD57ECA4E2FA(SPANS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -454,7 +454,7 @@
     "call_ok": true,
     "landed": 1,
     "landed_text": "it's a \\ test\nnew line \u00e9 \u00fc \u6f22",
-    "run_id": "35f21a86d801475089d2cd63c56cee86"
+    "run_id": "d6a9f9a7ad89401e967cb5e59f2d7fba"
   },
   "proc.levels_off": {
     "call_ok": true,
@@ -466,7 +466,7 @@
     "record_types": {
       "SPAN_EVENT": 1
     },
-    "run_id": "d905e7d1b22347629d10f515611c985f",
+    "run_id": "abae37e4560e458da8a0d679f8a4a87b",
     "scope_names": [
       "global"
     ],
@@ -474,7 +474,7 @@
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_D905E7D1B22347629D10F515611C985F(EVENTS ARRAY):VARCHAR"
+      "ICECORE_EMIT_ABAE37E4560E458DA8A0D679F8A4A87B(EVENTS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -483,37 +483,41 @@
   },
   "proc.missing_guarded": {
     "call_ok": true,
-    "dbt_wall_s": 1.18,
+    "dbt_wall_s": 1.19,
     "errors": [],
-    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF",
-    "run_id": "7c3fbeced2c6436a891bd237868564bf",
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_EB467B124F3A4B82903B839F6CE71080",
+    "run_id": "eb467b124f3a4b82903b839f6ce71080",
     "warnings": [
-      "icecore: telemetry not written (ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF): icecore-error 2141: SQL compilation error:\nUnknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_7C3FBECED2C6436A891BD237868564BF."
+      "[\u001b[33mWARNING\u001b[0m]: icecore: telemetry not written (ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_EB467B124F3A4B82903B839F6CE71080): icecore-error 2141: SQL compilation error:\nUnknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_EB467B124F3A4B82903B839F6CE71080."
     ]
   },
   "proc.missing_unguarded": {
     "call_ok": false,
-    "dbt_wall_s": 1.02,
+    "dbt_wall_s": 2.42,
     "errors": [
-      "Encountered an error while running operation: Database Error\n  002141 (42601): SQL compilation error:\n  Unknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_F9FD8104B57C4315A47124CBD4B098E0."
+      "[\u001b[31mERROR\u001b[0m]: Encountered an error while running operation: Database Error\n  002141 (42601): SQL compilation error:\n  Unknown user-defined function ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_D15AB2BD20EE48E7A9514BF825F6C087."
     ],
-    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_F9FD8104B57C4315A47124CBD4B098E0",
-    "run_id": "f9fd8104b57c4315a47124cbd4b098e0",
-    "warnings": []
+    "proc": "ICECORE_SANDBOX.SPIKES.ICECORE_EMIT_MISSING_D15AB2BD20EE48E7A9514BF825F6C087",
+    "run_id": "d15ab2bd20ee48e7a9514bf825f6c087",
+    "warnings": [
+      "[\u001b[33mWARNING\u001b[0m]: Argument columns in the yaml for macro _icecore_signature_chunks has an invalid type.",
+      "[\u001b[33mWARNING\u001b[0m]: Argument relation in the yaml for macro _icecore_previous_signature has an invalid type.",
+      "[\u001b[33mWARNING\u001b[0m]: The number of arguments in the yaml for macro _icecore_window_since does not match the jinja definition."
+    ]
   },
   "proc.no_usage_guarded": {
     "call_ok": true,
-    "dbt_wall_s": 1.45,
+    "dbt_wall_s": 1.63,
     "errors": [],
     "proc": "SNOWFLAKE.TELEMETRY.ICECORE_EMIT",
-    "run_id": "aac58be01bd9464aae4a0b97cd2f5c79",
+    "run_id": "8552ef30cf004b5d9250f4fda9394413",
     "warnings": [
-      "icecore: telemetry not written (SNOWFLAKE.TELEMETRY.ICECORE_EMIT): icecore-error 2141: SQL compilation error:\nUnknown user-defined function SNOWFLAKE.TELEMETRY.ICECORE_EMIT."
+      "[\u001b[33mWARNING\u001b[0m]: icecore: telemetry not written (SNOWFLAKE.TELEMETRY.ICECORE_EMIT): icecore-error 2141: SQL compilation error:\nUnknown user-defined function SNOWFLAKE.TELEMETRY.ICECORE_EMIT."
     ]
   },
   "proc.per_event": {
     "call_ok": true,
-    "dbt_wall_s": 88.19,
+    "dbt_wall_s": 63.67,
     "exact_attributes": 100,
     "expected": 100,
     "has_snow_query_id": true,
@@ -524,17 +528,17 @@
     "record_types": {
       "SPAN_EVENT": 100
     },
-    "run_id": "5d55feb774b5457ab3a9b8c4b3d27c07",
+    "run_id": "a9eebfaac26b4e1d92656d738ae09723",
     "scope_names": [
       "global"
     ],
-    "seconds_to_visible": 5.9,
-    "server_ms": 78317,
+    "seconds_to_visible": 11.1,
+    "server_ms": 57707,
     "snow.database.name": [
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_5D55FEB774B5457AB3A9B8C4B3D27C07(EVENTS ARRAY):VARCHAR"
+      "ICECORE_EMIT_A9EEBFAAC26B4E1D92656D738AE09723(EVENTS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -556,16 +560,16 @@
     "record_types": {
       "SPAN_EVENT": 2
     },
-    "run_id": "2f21fd2249ee4fe789a4411142643ebc",
+    "run_id": "d3df1dc34d5d46daa91dc55ac61d4905",
     "scope_names": [
       "global"
     ],
-    "seconds_to_visible": 5.5,
+    "seconds_to_visible": 10.4,
     "snow.database.name": [
       "ICECORE_SANDBOX"
     ],
     "snow.executable.name": [
-      "ICECORE_EMIT_2F21FD2249EE4FE789A4411142643EBC(EVENTS ARRAY):VARCHAR"
+      "ICECORE_EMIT_D3DF1DC34D5D46DAA91DC55AC61D4905(EVENTS ARRAY):VARCHAR"
     ],
     "snow.executable.type": [
       "PROCEDURE"
@@ -584,7 +588,7 @@
       "anon_calls_qualified_proc": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
-        "dbt_wall_s": 2.77,
+        "dbt_wall_s": 2.87,
         "sandbox_table": {
           "record_types": {
             "LOG": 1,
@@ -599,52 +603,52 @@
           ]
         },
         "server": {
-          "emit_ms": 1461,
+          "emit_ms": 1422,
           "statements": [
             {
               "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-              "ms": 68,
-              "query_id": "01c818bd-0000-b511-0001-19a20119546e",
+              "ms": 63,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbef6",
               "status": "SUCCESS",
               "type": "CREATE"
             },
             {
               "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-              "ms": 70,
-              "query_id": "01c818bd-0000-b511-0001-19a201195472",
+              "ms": 65,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbefa",
               "status": "SUCCESS",
               "type": "CREATE"
             },
             {
               "head": "EXECUTE IMMEDIATE $$ BEGIN CALL ICECORE_SANDBOX.",
-              "ms": 1323,
-              "query_id": "01c818bd-0000-b511-0001-19a201195476",
+              "ms": 1294,
+              "query_id": "01c894d3-0000-c0af-0001-19a2017cc466",
               "status": "SUCCESS",
               "type": "CALL"
             },
             {
               "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-              "ms": 62,
-              "query_id": "01c818bd-0000-b511-0001-19a201195482",
+              "ms": 64,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbefe",
               "status": "SUCCESS",
               "type": "DROP"
             },
             {
               "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-              "ms": 60,
-              "query_id": "01c818bd-0000-b511-0001-19a201195486",
+              "ms": 54,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf02",
               "status": "SUCCESS",
               "type": "DROP"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r2"
+        "tag": "3ee7974b3dda4448bf659481bb963570r2"
       },
       "anon_no_database": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
         "current_database": null,
-        "query_id": "01c818bd-0000-b511-0001-19a2011954ce",
+        "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf2a",
         "sandbox_table": {
           "record_types": {},
           "rows": 0,
@@ -652,23 +656,23 @@
           "snow.executable.type": []
         },
         "server": {
-          "emit_ms": 345,
+          "emit_ms": 329,
           "statements": [
             {
               "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; BEGIN a :",
-              "ms": 345,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954ce",
+              "ms": 329,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf2a",
               "status": "SUCCESS",
               "type": "CALL"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r5"
+        "tag": "3ee7974b3dda4448bf659481bb963570r5"
       },
       "anon_python_min_packages": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
-        "dbt_wall_s": 3.93,
+        "dbt_wall_s": 4.19,
         "sandbox_table": {
           "record_types": {},
           "rows": 0,
@@ -676,23 +680,23 @@
           "snow.executable.type": []
         },
         "server": {
-          "emit_ms": 2759,
+          "emit_ms": 2980,
           "statements": [
             {
               "head": "WITH S1_PY AS PROCEDURE(run_id STRING, n_logs IN",
-              "ms": 2759,
-              "query_id": "01c818bd-0000-b511-0001-19a201195492",
+              "ms": 2980,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf06",
               "status": "SUCCESS",
               "type": "CALL"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r3"
+        "tag": "3ee7974b3dda4448bf659481bb963570r3"
       },
       "anon_session_db": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
-        "dbt_wall_s": 2.57,
+        "dbt_wall_s": 2.71,
         "sandbox_table": {
           "record_types": {},
           "rows": 0,
@@ -700,30 +704,30 @@
           "snow.executable.type": []
         },
         "server": {
-          "emit_ms": 1178,
+          "emit_ms": 1273,
           "statements": [
             {
               "head": "EXECUTE IMMEDIATE $$ DECLARE a_json STRING DEFAU",
-              "ms": 618,
-              "query_id": "01c818bd-0000-b511-0001-19a201195452",
+              "ms": 605,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbeda",
               "status": "SUCCESS",
               "type": "CALL"
             },
             {
               "head": "EXECUTE IMMEDIATE $$ DECLARE msg STRING DEFAULT ",
-              "ms": 560,
-              "query_id": "01c818bd-0000-b511-0001-19a201195456",
+              "ms": 668,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbede",
               "status": "SUCCESS",
               "type": "CALL"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r0"
+        "tag": "3ee7974b3dda4448bf659481bb963570r0"
       },
       "anon_use_db_inside": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
-        "dbt_wall_s": 1.88,
+        "dbt_wall_s": 1.6,
         "sandbox_table": {
           "record_types": {},
           "rows": 0,
@@ -731,23 +735,23 @@
           "snow.executable.type": []
         },
         "server": {
-          "emit_ms": 801,
+          "emit_ms": 444,
           "statements": [
             {
               "head": "EXECUTE IMMEDIATE $$ DECLARE a OBJECT; m STRING ",
-              "ms": 801,
-              "query_id": "01c818bd-0000-b511-0001-19a201195462",
+              "ms": 444,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbee6",
               "status": "SUCCESS",
               "type": "CALL"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r1"
+        "tag": "3ee7974b3dda4448bf659481bb963570r1"
       },
       "temp_proc": {
         "account_table": "not readable by ICECORE_CI",
         "call_ok": true,
-        "dbt_wall_s": 2.44,
+        "dbt_wall_s": 2.43,
         "sandbox_table": {
           "record_types": {
             "LOG": 1,
@@ -762,53 +766,53 @@
           ]
         },
         "server": {
-          "emit_ms": 1067,
+          "emit_ms": 1009,
           "statements": [
             {
               "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-              "ms": 84,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954aa",
+              "ms": 63,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf1a",
               "status": "SUCCESS",
               "type": "CREATE"
             },
             {
-              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_E9A5785AA4C",
-              "ms": 466,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954ae",
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_3EE7974B3DD",
+              "ms": 378,
+              "query_id": "01c894d3-0000-c0af-0001-19a2017cc48e",
               "status": "SUCCESS",
               "type": "CALL"
             },
             {
               "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-              "ms": 79,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954b6",
+              "ms": 47,
+              "query_id": "01c894d3-0000-c0af-0001-19a2017cc492",
               "status": "SUCCESS",
               "type": "DROP"
             },
             {
               "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-              "ms": 89,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954ba",
+              "ms": 61,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf1e",
               "status": "SUCCESS",
               "type": "CREATE"
             },
             {
-              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_E9A5785AA4C74",
-              "ms": 428,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954be",
+              "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_3EE7974B3DDA4",
+              "ms": 507,
+              "query_id": "01c894d3-0000-c0b2-0001-19a2017cbf22",
               "status": "SUCCESS",
               "type": "CALL"
             },
             {
               "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-              "ms": 62,
-              "query_id": "01c818bd-0000-b511-0001-19a2011954c2",
+              "ms": 48,
+              "query_id": "01c894d3-0000-c0af-0001-19a2017cc49e",
               "status": "SUCCESS",
               "type": "DROP"
             }
           ]
         },
-        "tag": "e9a5785aa4c740129a7e03ed35fc4d59r4"
+        "tag": "3ee7974b3dda4448bf659481bb963570r4"
       }
     }
   },
@@ -1392,15 +1396,15 @@
   },
   "temp_procedure.e1_sql_event": {
     "call_ok": true,
-    "dbt_wall_s": 1.66,
+    "dbt_wall_s": 1.92,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 100,
-    "first_timestamp": "2026-10-31 10:39:41.364289",
+    "first_timestamp": "2026-11-22 12:26:08.548406",
     "has_snow_query_id": true,
     "landed": 100,
-    "last_timestamp": "2026-10-31 10:39:41.374913",
+    "last_timestamp": "2026-11-22 12:26:08.559676",
     "record_names": [
       "icecore.probe"
     ],
@@ -1428,46 +1432,46 @@
       "telemetry.sdk.language"
     ],
     "rows": 100,
-    "run_id": "5bd16fdf0d084e61953583817472a6a4",
+    "run_id": "49d71e1ad01d4e598d2eeaad230e9705",
     "scope_names": [
       "global"
     ],
     "sdk_languages": [
       "sql"
     ],
-    "seconds_to_visible": 5.5,
+    "seconds_to_visible": 5.4,
     "server": {
-      "emit_ms": 467,
+      "emit_ms": 621,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 72,
-          "query_id": "01c8189f-0000-b511-0001-19a2011912a2",
+          "ms": 109,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac1e",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_5BD16FDF0D0",
-          "ms": 395,
-          "query_id": "01c8189f-0000-b533-0001-19a20118f9ee",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_49D71E1AD01",
+          "ms": 512,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac22",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 45,
-          "query_id": "01c8189f-0000-b533-0001-19a20118f9f2",
+          "ms": 82,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac2a",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c8189f-0000-b533-0001-19a20118f9ee"
+      "01c894ca-0000-c0b2-0001-19a2017cac22"
     ],
     "span_ids": 1,
     "trace_ids": [
-      "01c8189f080557247b906f2c41b7acc8"
+      "01c894ca3575233d6c3c4b2e889680c2"
     ]
   },
   "temp_procedure.e1_sql_event.attribute_types": {
@@ -1480,15 +1484,15 @@
   },
   "temp_procedure.e1_sql_log": {
     "call_ok": true,
-    "dbt_wall_s": 1.58,
+    "dbt_wall_s": 1.62,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 100,
-    "first_timestamp": "2026-10-31 10:36:16.925000",
+    "first_timestamp": "2026-11-22 12:28:34.380000",
     "has_snow_query_id": true,
     "landed": 100,
-    "last_timestamp": "2026-10-31 10:36:16.943000",
+    "last_timestamp": "2026-11-22 12:28:34.398000",
     "record_names": [],
     "record_types": {
       "LOG": 100
@@ -1514,59 +1518,59 @@
       "telemetry.sdk.language"
     ],
     "rows": 100,
-    "run_id": "2036eba311ea4f07aa3fa12bc6754847",
+    "run_id": "7e818a7cb34f49c2a51a658502497112",
     "scope_names": [
       "None"
     ],
     "sdk_languages": [
       "sql"
     ],
-    "seconds_to_visible": 5.5,
+    "seconds_to_visible": 10.5,
     "server": {
-      "emit_ms": 485,
+      "emit_ms": 475,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 88,
-          "query_id": "01c8189c-0000-b533-0001-19a20118f8de",
+          "ms": 73,
+          "query_id": "01c894cc-0000-c0b2-0001-19a2017cb1f6",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_2036EBA311EA4",
-          "ms": 397,
-          "query_id": "01c8189c-0000-b533-0001-19a20118f8e2",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_7E818A7CB34F4",
+          "ms": 402,
+          "query_id": "01c894cc-0000-c0b2-0001-19a2017cb1fa",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 60,
-          "query_id": "01c8189c-0000-b511-0001-19a2011911ae",
+          "ms": 54,
+          "query_id": "01c894cc-0000-c0b2-0001-19a2017cb1fe",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c8189c-0000-b533-0001-19a20118f8e2"
+      "01c894cc-0000-c0b2-0001-19a2017cb1fa"
     ],
     "span_ids": 1,
     "trace_ids": [
-      "01c8189c3213263c8a2d6727c7dc031d"
+      "01c894cc86fd499365752f3716d051e0"
     ]
   },
   "temp_procedure.e1_sql_span_attrs": {
     "call_ok": true,
-    "dbt_wall_s": 1.52,
+    "dbt_wall_s": 1.48,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 1,
-    "first_timestamp": "2026-10-31 10:43:06.963834",
+    "first_timestamp": "2026-11-22 12:26:31.483252",
     "has_snow_query_id": true,
     "landed": 1,
-    "last_timestamp": "2026-10-31 10:43:06.963834",
+    "last_timestamp": "2026-11-22 12:26:31.483252",
     "record_names": [
       "snow.auto_instrumented"
     ],
@@ -1594,60 +1598,60 @@
       "telemetry.sdk.language"
     ],
     "rows": 1,
-    "run_id": "6443ff9a0f014554b619bf3e1058b56c",
+    "run_id": "10c4714266874922ba0aec12c8f473f1",
     "scope_names": [
       "global"
     ],
     "sdk_languages": [
       "sql"
     ],
-    "seconds_to_visible": 5.3,
+    "seconds_to_visible": 10.4,
     "server": {
-      "emit_ms": 390,
+      "emit_ms": 386,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 68,
-          "query_id": "01c818a3-0000-b533-0001-19a20118fb52",
+          "ms": 75,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac72",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_SPAN_6443FF9A0F01",
-          "ms": 322,
-          "query_id": "01c818a3-0000-b511-0001-19a2011913fa",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_SPAN_10C471426687",
+          "ms": 311,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac76",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 54,
-          "query_id": "01c818a3-0000-b511-0001-19a2011913fe",
+          "ms": 51,
+          "query_id": "01c894ca-0000-c0b2-0001-19a2017cac7a",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c818a3-0000-b511-0001-19a2011913fa"
+      "01c894ca-0000-c0b2-0001-19a2017cac76"
     ],
     "span_ids": 1,
     "trace_ids": [
-      "01c818a3ec5e92602cc65976efa7dda8"
+      "01c894ca9eb955f77eb2204e6d182e7f"
     ]
   },
   "temp_procedure.e1_sql_span_attrs.span_name": "snow.auto_instrumented",
   "temp_procedure.e2_python_logs": {
     "call_ok": true,
-    "dbt_wall_s": 3.86,
+    "dbt_wall_s": 3.7,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 100,
-    "first_timestamp": "2026-10-31 10:47:42.692104",
+    "first_timestamp": "2026-11-22 12:32:25.580019",
     "has_snow_query_id": true,
     "landed": 100,
-    "last_timestamp": "2026-10-31 10:47:42.705421",
+    "last_timestamp": "2026-11-22 12:32:25.592154",
     "record_names": [],
     "record_types": {
       "LOG": 100
@@ -1674,46 +1678,46 @@
       "telemetry.sdk.language"
     ],
     "rows": 100,
-    "run_id": "01c7b6a44bd941238bedd4f2bb470449",
+    "run_id": "5e142aad50734203b66083f70a00b277",
     "scope_names": [
       "icecore"
     ],
     "sdk_languages": [
       "python"
     ],
-    "seconds_to_visible": 21.1,
+    "seconds_to_visible": 10.7,
     "server": {
-      "emit_ms": 2708,
+      "emit_ms": 2697,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 216,
-          "query_id": "01c818a7-0000-b533-0001-19a2011933f6",
+          "ms": 201,
+          "query_id": "01c894d0-0000-c0b2-0001-19a2017cbc32",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_01C7B6A44BD941",
-          "ms": 2492,
-          "query_id": "01c818a7-0000-b533-0001-19a2011933fa",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_5E142AAD507342",
+          "ms": 2496,
+          "query_id": "01c894d0-0000-c0af-0001-19a2017cc1a2",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 52,
-          "query_id": "01c818a7-0000-b533-0001-19a20119340e",
+          "ms": 55,
+          "query_id": "01c894d0-0000-c0b2-0001-19a2017cbc66",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c818a7-0000-b533-0001-19a2011933fa"
+      "01c894d0-0000-c0af-0001-19a2017cc1a2"
     ],
     "span_ids": 1,
     "trace_ids": [
-      "01c818a7b206111726baedf88d661b77"
+      "01c894d03fa3957cda0b65e27eeb7a85"
     ]
   },
   "temp_procedure.e2_python_logs.sample_record_attributes": {
@@ -1725,19 +1729,19 @@
     "dbt.result.rows_affected": 1200,
     "dbt.test.failures": 0,
     "icecore.flag": true,
-    "icecore.run_id": "01c7b6a44bd941238bedd4f2bb470449"
+    "icecore.run_id": "5e142aad50734203b66083f70a00b277"
   },
   "temp_procedure.e2_python_span_timings": {
     "call_ok": true,
-    "dbt_wall_s": 3.87,
+    "dbt_wall_s": 3.95,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 6,
-    "first_timestamp": "2026-10-31 08:55:22",
+    "first_timestamp": "2026-11-22 10:28:12",
     "has_snow_query_id": true,
     "landed": 6,
-    "last_timestamp": "2026-10-31 08:55:34.600000",
+    "last_timestamp": "2026-11-22 10:28:24.600000",
     "record_names": [
       "icecore.node",
       "icecore.probe"
@@ -1769,76 +1773,76 @@
       "telemetry.sdk.language"
     ],
     "rows": 6,
-    "run_id": "442cb712ef3a4ad9bcbd7c040f468efd",
+    "run_id": "11d328426dc54b2a93b34d540bcbfb77",
     "scope_names": [
       "icecore"
     ],
     "sdk_languages": [
       "python"
     ],
-    "seconds_to_visible": 5.4,
+    "seconds_to_visible": 10.5,
     "server": {
-      "emit_ms": 2749,
+      "emit_ms": 2710,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 195,
-          "query_id": "01c818af-0000-b533-0001-19a201193836",
+          "ms": 230,
+          "query_id": "01c894cb-0000-c0b2-0001-19a2017caf8a",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_442CB712EF3A4A",
-          "ms": 2554,
-          "query_id": "01c818af-0000-b511-0001-19a201191ed6",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_11D328426DC54B",
+          "ms": 2480,
+          "query_id": "01c894cb-0000-c0b2-0001-19a2017caf96",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 51,
-          "query_id": "01c818af-0000-b511-0001-19a201191efe",
+          "ms": 68,
+          "query_id": "01c894cb-0000-c0b2-0001-19a2017cafd2",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c818af-0000-b511-0001-19a201191ed6"
+      "01c894cb-0000-c0b2-0001-19a2017caf96"
     ],
     "span_ids": 3,
     "trace_ids": [
-      "01c818af535c016a0d846d55ef62dfa2"
+      "01c894cb4eda30764744d299aa935ae3"
     ]
   },
   "temp_procedure.e2_python_span_timings.check": {
     "spans": [
       {
-        "end": "2026-10-31 08:55:26.200000",
-        "start": "2026-10-31 08:55:22"
+        "end": "2026-11-22 10:28:16.200000",
+        "start": "2026-11-22 10:28:12"
       },
       {
-        "end": "2026-10-31 08:55:30.400000",
-        "start": "2026-10-31 08:55:26.200000"
+        "end": "2026-11-22 10:28:20.400000",
+        "start": "2026-11-22 10:28:16.200000"
       },
       {
-        "end": "2026-10-31 08:55:34.600000",
-        "start": "2026-10-31 08:55:30.400000"
+        "end": "2026-11-22 10:28:24.600000",
+        "start": "2026-11-22 10:28:20.400000"
       }
     ],
     "timings_kept": true
   },
   "temp_procedure.e2_python_spans": {
     "call_ok": true,
-    "dbt_wall_s": 4.58,
+    "dbt_wall_s": 6.2,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 20,
-    "first_timestamp": "2026-10-31 10:51:28.983357",
+    "first_timestamp": "2026-11-22 12:30:16.296594",
     "has_snow_query_id": true,
     "landed": 20,
-    "last_timestamp": "2026-10-31 10:51:28.986395",
+    "last_timestamp": "2026-11-22 12:30:16.298924",
     "record_names": [
       "icecore.node",
       "icecore.probe"
@@ -1870,46 +1874,46 @@
       "telemetry.sdk.language"
     ],
     "rows": 20,
-    "run_id": "47e6ad3888a94c3e81db15f80bf062cf",
+    "run_id": "e3f5b692e4784f708b873968427388f1",
     "scope_names": [
       "icecore"
     ],
     "sdk_languages": [
       "python"
     ],
-    "seconds_to_visible": 21.2,
+    "seconds_to_visible": 10.5,
     "server": {
-      "emit_ms": 3502,
+      "emit_ms": 4621,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 221,
-          "query_id": "01c818ab-0000-b533-0001-19a20119357a",
+          "ms": 791,
+          "query_id": "01c894ce-0000-c0b2-0001-19a2017cb90e",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_47E6AD3888A94C",
-          "ms": 3281,
-          "query_id": "01c818ab-0000-b533-0001-19a20119357e",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_PY_E3F5B692E4784F",
+          "ms": 3830,
+          "query_id": "01c894ce-0000-c0b2-0001-19a2017cb916",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 66,
-          "query_id": "01c818ab-0000-b511-0001-19a201191c66",
+          "ms": 125,
+          "query_id": "01c894ce-0000-c0b2-0001-19a2017cb942",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c818ab-0000-b533-0001-19a20119357e"
+      "01c894ce-0000-c0b2-0001-19a2017cb916"
     ],
     "span_ids": 10,
     "trace_ids": [
-      "01c818ab117f7db79e17c6d16bf56129"
+      "01c894ce227f78407b6e20264275d2d0"
     ]
   },
   "temp_procedure.e2_python_spans.sample_span": {
@@ -1917,7 +1921,7 @@
       "flags": 256,
       "kind": "SPAN_KIND_INTERNAL",
       "name": "icecore.node",
-      "parent_span_id": "89095c3cd0056116",
+      "parent_span_id": "b92636d68e81b2a3",
       "status": {
         "code": "STATUS_CODE_UNSET"
       }
@@ -1928,11 +1932,11 @@
       "dbt.result.rows_affected": 1200,
       "dbt.test.failures": 0,
       "icecore.flag": true,
-      "icecore.run_id": "47e6ad3888a94c3e81db15f80bf062cf",
+      "icecore.run_id": "e3f5b692e4784f708b873968427388f1",
       "icecore.span_index": 1
     },
-    "start_timestamp": "2026-10-31 10:51:28.983270",
-    "timestamp": "2026-10-31 10:51:28.983372"
+    "start_timestamp": "2026-11-22 12:30:16.296524",
+    "timestamp": "2026-11-22 12:30:16.296607"
   },
   "temp_procedure.escaping": {
     "calls_ok": {
@@ -1948,43 +1952,42 @@
       "e2_log_attrs": true,
       "e2_log_message": true
     },
-    "run_id": "ec10662b3a754c4786ac57d52e663df3"
+    "run_id": "930af76df15d41c58775773f035eea38"
   },
   "temp_procedure.levels_off": {
     "calls": {
       "python": {
         "call_ok": true,
-        "dbt_wall_s": 4.19
+        "dbt_wall_s": 3.91
       },
       "sql_event": {
         "call_ok": true,
-        "dbt_wall_s": 1.77
+        "dbt_wall_s": 1.58
       },
       "sql_log": {
         "call_ok": true,
-        "dbt_wall_s": 1.85
+        "dbt_wall_s": 1.68
       },
       "sql_span_attrs": {
         "call_ok": true,
-        "dbt_wall_s": 1.66
+        "dbt_wall_s": 1.61
       }
     },
     "executable_types": [
       "PROCEDURE"
     ],
-    "first_timestamp": "2026-10-31 11:05:28.604000",
+    "first_timestamp": "2026-11-22 12:32:54.612000",
     "has_snow_query_id": true,
-    "landed": 6,
-    "last_timestamp": "2026-10-31 11:05:36.140204",
+    "landed": 3,
+    "last_timestamp": "2026-11-22 12:32:57.811658",
     "record_names": [
-      "icecore.node",
       "icecore.probe",
       "snow.auto_instrumented"
     ],
     "record_types": {
-      "LOG": 2,
-      "SPAN": 2,
-      "SPAN_EVENT": 2
+      "LOG": 1,
+      "SPAN": 1,
+      "SPAN_EVENT": 1
     },
     "resource_attribute_keys": [
       "db.user",
@@ -1992,7 +1995,6 @@
       "snow.database.name",
       "snow.executable.id",
       "snow.executable.name",
-      "snow.executable.runtime.version",
       "snow.executable.type",
       "snow.owner.id",
       "snow.owner.name",
@@ -2005,45 +2007,40 @@
       "snow.user.id",
       "snow.warehouse.id",
       "snow.warehouse.name",
-      "snow.worker.id",
       "telemetry.sdk.language"
     ],
-    "rows": 6,
-    "run_id": "384f4ac9f9984d188385b6f5ec57bb0a",
+    "rows": 3,
+    "run_id": "32ecc108541b47469aff5c7718d4f59f",
     "scope_names": [
       "None",
-      "global",
-      "icecore"
+      "global"
     ],
     "sdk_languages": [
-      "python",
       "sql"
     ],
     "snow_query_ids": [
-      "01c818b9-0000-b511-0001-19a201194c92",
-      "01c818b9-0000-b511-0001-19a201194caa",
-      "01c818b9-0000-b511-0001-19a201194cba",
-      "01c818b9-0000-b511-0001-19a201194cce"
+      "01c894d0-0000-c0af-0001-19a2017cc226",
+      "01c894d0-0000-c0af-0001-19a2017cc232",
+      "01c894d0-0000-c0b2-0001-19a2017cbcbe"
     ],
-    "span_ids": 5,
+    "span_ids": 3,
     "trace_ids": [
-      "01c818b9645e728e37356d1652fe5ef7",
-      "01c818b9666d36a929cf41df6c339401",
-      "01c818b9772a0e451d4d7becf203c667",
-      "01c818b9b39e584c440936d5710aa57d"
+      "01c894d029ea283511c6da6c221b75e1",
+      "01c894d0ca1f65ec39175f712a27bd14",
+      "01c894d0f554cb71e2359d24094f9c32"
     ]
   },
   "temp_procedure.rollback": {
     "call_ok": true,
-    "dbt_wall_s": 3.82,
+    "dbt_wall_s": 2.74,
     "executable_types": [
       "PROCEDURE"
     ],
     "expected": 2,
-    "first_timestamp": "2026-10-31 11:09:01.340749",
+    "first_timestamp": "2026-11-22 12:37:05.845218",
     "has_snow_query_id": true,
     "landed": 2,
-    "last_timestamp": "2026-10-31 11:09:02.072000",
+    "last_timestamp": "2026-11-22 12:37:06.258000",
     "record_names": [
       "icecore.probe"
     ],
@@ -2072,7 +2069,7 @@
       "telemetry.sdk.language"
     ],
     "rows": 2,
-    "run_id": "625ee98b97384d749d574d44fc7f4211",
+    "run_id": "de5b293c9c314f5dace797a6f2e11e55",
     "scope_names": [
       "None",
       "global"
@@ -2080,62 +2077,62 @@
     "sdk_languages": [
       "sql"
     ],
-    "seconds_to_visible": 5.4,
+    "seconds_to_visible": 10.4,
     "server": {
-      "emit_ms": 1561,
+      "emit_ms": 927,
       "statements": [
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 91,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953d6",
+          "ms": 85,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfbe",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
           "head": "CREATE OR REPLACE TEMPORARY PROCEDURE ICECORE_SA",
-          "ms": 97,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953da",
+          "ms": 64,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfc2",
           "status": "SUCCESS",
           "type": "CREATE"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_625EE98B973",
-          "ms": 671,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953e6",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_EVENT_DE5B293C9C3",
+          "ms": 396,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfc6",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
-          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_625EE98B97384",
-          "ms": 702,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953ea",
+          "head": "CALL ICECORE_SANDBOX.SPIKES.S1_LOG_DE5B293C9C314",
+          "ms": 382,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfce",
           "status": "SUCCESS",
           "type": "CALL"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 65,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953f6",
+          "ms": 54,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfd2",
           "status": "SUCCESS",
           "type": "DROP"
         },
         {
           "head": "DROP PROCEDURE IF EXISTS ICECORE_SANDBOX.SPIKES.",
-          "ms": 71,
-          "query_id": "01c818bd-0000-b511-0001-19a2011953fa",
+          "ms": 48,
+          "query_id": "01c894d5-0000-c0b2-0001-19a2017cbfd6",
           "status": "SUCCESS",
           "type": "DROP"
         }
       ]
     },
     "snow_query_ids": [
-      "01c818bd-0000-b511-0001-19a2011953e6",
-      "01c818bd-0000-b511-0001-19a2011953ea"
+      "01c894d5-0000-c0b2-0001-19a2017cbfc6",
+      "01c894d5-0000-c0b2-0001-19a2017cbfce"
     ],
     "span_ids": 2,
     "trace_ids": [
-      "01c818bd981c72b34a1b07beb7a3b0f9",
-      "01c818bdc07bc3d21e7f7e290c0827ac"
+      "01c894d57a842f130d81293e006417b1",
+      "01c894d5d5ccb18c73c92ed67341789c"
     ]
   },
   "temp_procedure.trace_grouping": {
@@ -2146,18 +2143,18 @@
     "errors": [],
     "landed": 2,
     "query_ids": [
-      "01c818b2-0000-b511-0001-19a20119411e",
-      "01c818b2-0000-b533-0001-19a201193996"
+      "01c894cf-0000-c0af-0001-19a2017cc01a",
+      "01c894cf-0000-c0b2-0001-19a2017cba7a"
     ],
-    "run_id": "62fef72cf7c84dc381b07394f3b7403e",
+    "run_id": "8fbb2f30ca7340d3b71258d2db1f9ac2",
     "shared_trace": false,
     "trace_id_prefix_matches_query_id": [
       true,
       true
     ],
     "trace_ids": [
-      "01c818b25c53c78f3b1049788c20c4d3",
-      "01c818b2d9e9c1a226e613c33c09b4d9"
+      "01c894cf2f7d73e1d7c22e375c4acd6d",
+      "01c894cfbe5ee9762050a2079957efbc"
     ]
   }
 }

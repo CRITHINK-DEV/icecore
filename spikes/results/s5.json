@@ -2,13 +2,13 @@
   "changes_fallback": {
     "delete_10_rows_across_partitions": {
       "changes_net": {
-        "bytes_scanned": 74729984,
+        "bytes_scanned": 75187712,
         "count": -10,
         "partitions_scanned": 18,
         "partitions_total": 18
       },
       "full_count_scan": {
-        "bytes_scanned": 39264256,
+        "bytes_scanned": 39724032,
         "count": 1000090,
         "partitions_scanned": 9,
         "partitions_total": 9
@@ -40,7 +40,7 @@
         "partitions_total": null
       },
       "full_count_scan": {
-        "bytes_scanned": 35474944,
+        "bytes_scanned": 35472896,
         "count": 1000100,
         "partitions_scanned": 11,
         "partitions_total": 11
@@ -48,74 +48,74 @@
     },
     "merge_10_updates_across_partitions_50_inserts": {
       "changes_net": {
-        "bytes_scanned": 71357952,
+        "bytes_scanned": 80373760,
         "count": 50,
-        "partitions_scanned": 15,
-        "partitions_total": 15
+        "partitions_scanned": 13,
+        "partitions_total": 13
       },
       "full_count_scan": {
-        "bytes_scanned": 39931392,
+        "bytes_scanned": 40658944,
         "count": 1000130,
-        "partitions_scanned": 8,
-        "partitions_total": 8
+        "partitions_scanned": 6,
+        "partitions_total": 6
       }
     },
     "view_without_change_tracking": {
-      "error": "091930 (2F003): SQL compilation error: Change tracking is not enabled or has been missing for the time range requested on table 'ICECORE_SANDBOX.SPIKES.S5_CHG_VPLAIN_5C1DDD146FCF4B5992761F8BCB98D32E'.",
+      "error": "091930 (2F003): SQL compilation error: Change tracking is not enabled or has been missing for the time range requested on table 'ICECORE_SANDBOX.SPIKES.S5_CHG_VPLAIN_EA7C363B42B349E3A90EA49870BB684D'.",
       "ok": false
     }
   },
   "dbt_write_patterns": {
     "create_or_replace_as_select": {
       "expected_rows": 250,
-      "last_change": "2026-10-31T08:58:30.790000Z",
+      "last_change": "2026-11-22T12:45:50.034000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437110790000000",
+      "last_change_token": "1795351550034000000",
       "row_count": 250,
       "row_count_ok": true,
       "token_increased": true
     },
     "ctas": {
       "expected_rows": 100,
-      "last_change": "2026-10-31T08:58:27.542000Z",
+      "last_change": "2026-11-22T12:45:47.024000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437107542000000",
+      "last_change_token": "1795351547024000000",
       "row_count": 100,
       "row_count_ok": true,
       "token_increased": true
     },
     "delete": {
       "expected_rows": 200,
-      "last_change": "2026-10-31T08:58:33.663000Z",
+      "last_change": "2026-11-22T12:45:52.570000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437113663000001",
+      "last_change_token": "1795351552570000001",
       "row_count": 200,
       "row_count_ok": true,
       "token_increased": true
     },
     "insert_overwrite": {
       "expected_rows": 7,
-      "last_change": "2026-10-31T08:58:36.306000Z",
+      "last_change": "2026-11-22T12:45:55.176000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437116306000001",
+      "last_change_token": "1795351555176000001",
       "row_count": 7,
       "row_count_ok": true,
       "token_increased": true
     },
     "merge": {
       "expected_rows": 10,
-      "last_change": "2026-10-31T08:58:38.984000Z",
+      "last_change": "2026-11-22T12:45:57.679000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437118984000001",
+      "last_change_token": "1795351557679000001",
       "row_count": 10,
       "row_count_ok": true,
       "token_increased": true
     },
     "truncate": {
       "expected_rows": 0,
-      "last_change": "2026-10-31T08:58:41.418000Z",
+      "last_change": "2026-11-22T12:46:00.150000Z",
       "last_change_at_or_after_statement": true,
-      "last_change_token": "1793437121418000001",
+      "last_change_token": "1795351560150000001",
       "row_count": 0,
       "row_count_ok": true,
       "token_increased": true
@@ -126,9 +126,9 @@
       "is_dynamic": "YES",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:57:12.544000Z",
-      "last_change": "2026-10-31T08:57:12.137000Z",
-      "last_change_token": "1793437032137000001",
+      "last_altered": "2026-11-22T12:47:09.994000Z",
+      "last_change": "2026-11-22T12:47:09.883000Z",
+      "last_change_token": "1795351629883000001",
       "row_count": 0,
       "table_type": "BASE TABLE"
     },
@@ -136,11 +136,11 @@
       "is_dynamic": "YES",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:57:18.048000Z",
-      "last_change": "2026-10-31T08:57:18.048000Z",
+      "last_altered": "2026-11-22T12:47:14.748000Z",
+      "last_change": "2026-11-22T12:47:14.748000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793437038048000001",
-      "read_after_s": 2.1,
+      "last_change_token": "1795351634748000001",
+      "read_after_s": 2.0,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
@@ -149,44 +149,44 @@
       "is_dynamic": "YES",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:57:18.048000Z",
-      "last_change": "2026-10-31T08:57:18.048000Z",
+      "last_altered": "2026-11-22T12:47:14.748000Z",
+      "last_change": "2026-11-22T12:47:14.748000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793437038048000001",
-      "read_after_s": 62.4,
+      "last_change_token": "1795351634748000001",
+      "read_after_s": 61.8,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
     },
     "write_path": "s5_write on the source table, then ALTER DYNAMIC TABLE ... REFRESH",
-    "write_started_at": "2026-10-31T08:57:14.932000Z"
+    "write_started_at": "2026-11-22T12:47:12.073000Z"
   },
   "iceberg": {
     "skipped": "ICECORE_EXTERNAL_VOLUME is not set: the sandbox has no external volume for Iceberg tables"
   },
   "quoted_identifier": {
     "adapter_quote_escapes_embedded_quotes": false,
-    "adapter_quote_output": "\"Mixed Case \"Orders\" f6c1d0e34d084a67861c008a3d893b2e\"",
+    "adapter_quote_output": "\"Mixed Case \"Orders\" 33740f6f7b3942bab2719dfb31fb4ba6\"",
     "metadata": {
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:58:22.997000Z",
-      "last_change": "2026-10-31T08:58:22.997000Z",
-      "last_change_token": "1793437102997000001",
-      "read_after_s": 2.1,
+      "last_altered": "2026-11-22T12:45:42.977000Z",
+      "last_change": "2026-11-22T12:45:42.977000Z",
+      "last_change_token": "1795351542977000001",
+      "read_after_s": 2.2,
       "row_count": 100,
       "table_type": "BASE TABLE"
     },
-    "relation": "\"ICECORE_SANDBOX\".\"SPIKES\".\"Mixed Case \"\"Orders\"\" f6c1d0e34d084a67861c008a3d893b2e\"",
-    "write_started_at": "2026-10-31T08:58:21.965000Z"
+    "relation": "\"ICECORE_SANDBOX\".\"SPIKES\".\"Mixed Case \"\"Orders\"\" 33740f6f7b3942bab2719dfb31fb4ba6\"",
+    "write_started_at": "2026-11-22T12:45:41.439000Z"
   },
   "standard": {
     "empty": {
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:54:54.071000Z",
+      "last_altered": "2026-11-22T12:46:26.458000Z",
       "last_change": null,
       "last_change_token": "0",
       "row_count": 0,
@@ -196,11 +196,11 @@
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:54:57.483000Z",
-      "last_change": "2026-10-31T08:54:57.483000Z",
+      "last_altered": "2026-11-22T12:46:29.674000Z",
+      "last_change": "2026-11-22T12:46:29.674000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793436897483000001",
-      "read_after_s": 1.9,
+      "last_change_token": "1795351589674000001",
+      "read_after_s": 2.0,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
@@ -209,24 +209,24 @@
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "NO",
-      "last_altered": "2026-10-31T08:54:57.483000Z",
-      "last_change": "2026-10-31T08:54:57.483000Z",
+      "last_altered": "2026-11-22T12:46:29.674000Z",
+      "last_change": "2026-11-22T12:46:29.674000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793436897483000001",
-      "read_after_s": 62.5,
+      "last_change_token": "1795351589674000001",
+      "read_after_s": 61.8,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
     },
     "write_path": "s5_write",
-    "write_started_at": "2026-10-31T08:54:56.566000Z"
+    "write_started_at": "2026-11-22T12:46:28.385000Z"
   },
   "transient": {
     "empty": {
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "YES",
-      "last_altered": "2026-10-31T08:56:02.283000Z",
+      "last_altered": "2026-11-22T12:52:33.957000Z",
       "last_change": null,
       "last_change_token": "0",
       "row_count": 0,
@@ -236,11 +236,11 @@
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "YES",
-      "last_altered": "2026-10-31T08:56:05.809000Z",
-      "last_change": "2026-10-31T08:56:05.809000Z",
+      "last_altered": "2026-11-22T12:52:37.401000Z",
+      "last_change": "2026-11-22T12:52:37.401000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793436965809000001",
-      "read_after_s": 1.9,
+      "last_change_token": "1795351957401000001",
+      "read_after_s": 2.0,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
@@ -249,16 +249,16 @@
       "is_dynamic": "NO",
       "is_iceberg": "NO",
       "is_transient": "YES",
-      "last_altered": "2026-10-31T08:56:05.809000Z",
-      "last_change": "2026-10-31T08:56:05.809000Z",
+      "last_altered": "2026-11-22T12:52:37.401000Z",
+      "last_change": "2026-11-22T12:52:37.401000Z",
       "last_change_at_or_after_write": true,
-      "last_change_token": "1793436965809000001",
-      "read_after_s": 62.6,
+      "last_change_token": "1795351957401000001",
+      "read_after_s": 62.1,
       "row_count": 100,
       "row_count_ok": true,
       "table_type": "BASE TABLE"
     },
     "write_path": "s5_write",
-    "write_started_at": "2026-10-31T08:56:04.815000Z"
+    "write_started_at": "2026-11-22T12:52:36.043000Z"
   }
 }

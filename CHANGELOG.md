@@ -17,7 +17,15 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 - Fewer icecore statements per run (Gate 2, finding 6: on a 178-node project, icecore's own statements were about 97 % of the credits attributed under a build). With `on-run-end: "{{ icecore.end_run(results) }}"`, the monitor tests no longer `CALL` `ICECORE_EMIT` each: they leave their records in their compiled SQL and `end_run` sends them with the run's batch, as span events stamped with the time the test made them on Snowflake's clock, so `METRICS.observed_at` and the views are unchanged. With `start_run`, on-run-start reads the metric history of the run's monitor tests in one query and each test scores against that copy instead of reading `METRICS`. On the shop example with 6 monitor tests: 7 `ICECORE_EMIT` CALLs per build became 1 (the run start), and the monitor reads went from 4.5 s to 3.3 s of Snowflake compile and execution time.
 - Monitor records now land when the run ends. **A run killed before on-run-end loses the records of its monitor tests**; their verdicts never depended on them. Without the `end_run(results)` hook, with `telemetry: false`, or for a test whose records pass 256 KB, a test still sends them at once.
 
+### Fixed
+- A monitor test sends its records only when dbt executes tests (`test`, `build`, `retry`). `dbt compile`, `dbt docs generate`, `dbt show` and `snow dbt deploy` no longer write metric records (the 0.1.2 promise that `dbt compile` writes no telemetry now holds for monitor tests too). The monitors' own measurement queries still run on those commands; only the send is skipped.
+- Docs: `telemetry: false` stops the hooks only; monitor tests still record their metrics.
+
 ### Security
+- The views accept a record only from the full signature of an icecore procedure (`ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR`, ...), not a name prefix, so an overload created in the obs schema cannot forge acknowledgements, notified records or events.
+- Alert text for Slack and Teams neutralizes `[ ] ( )`, backticks and `*` in incident titles and node keys, so a column name or dimension value cannot become a link or emphasis in the message.
+- `result_message: redacted` also masks the `Row Values: [...]` list of a duplicate-row error (bare numbers survived before).
+- Docs: samples and dimension values also appear in Snowflake query history and dbt's debug log; the cost grant is `SNOWFLAKE.USAGE_VIEWER` only (`IMPORTED PRIVILEGES` on `SNOWFLAKE` is no longer offered); a deployed app lets anyone who can open it acknowledge incidents. The sandbox bootstrap grants `SNOWFLAKE.USAGE_VIEWER` instead of `IMPORTED PRIVILEGES`.
 - Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
 
 ## [0.1.2] - 2026-11-20

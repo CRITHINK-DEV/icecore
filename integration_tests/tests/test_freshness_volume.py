@@ -15,7 +15,7 @@ import uuid
 import pytest
 from snowflake.connector import DictCursor
 
-from helpers.events import wait_for_events
+from helpers.events import assert_no_events, wait_for_events
 from helpers.macros import call_macro, install_deps, invoke, node_statuses, run_macro
 
 DATABASE = os.environ.get("SNOWFLAKE_DATABASE", "ICECORE_SANDBOX").upper()
@@ -101,7 +101,7 @@ def monitored(dbt, sf):
             "select query_text, query_type, bytes_scanned from table(information_schema."
             "query_history_by_user(user_name => current_user(), end_time_range_start => %(t)s::timestamp_ltz, "
             "result_limit => 10000))", {"t": started}).fetchall()
-        yield {"run_id": run_id, "fresh": fresh, "vol": vol, "statuses": statuses, "raw": raw, "history": history,
+        yield {"schema": schema, "names": names, "run_id": run_id, "fresh": fresh, "vol": vol, "statuses": statuses, "raw": raw, "history": history,
                "missing": node_statuses(res_missing), "missing_ok": res_missing.success,
                "rows": [{k.lower(): v for k, v in r.items()} for r in rows]}
     finally:
@@ -186,3 +186,15 @@ def test_no_full_scan_of_the_monitored_tables(monitored):
             assert not re.search(rf'\bfrom\s+"?{DATABASE.lower()}"?\."?{SCHEMA.lower()}"?\."?{table.lower()}"?\s*($|\)|where|limit)', text), text
             if "information_schema.tables" not in text:  # that read scans the metadata view, a few hundred bytes
                 assert not h["BYTES_SCANNED"], (text, h["BYTES_SCANNED"])
+
+
+@pytest.mark.sandbox
+def test_dbt_compile_of_a_monitor_test_writes_no_records(sf, monitored):
+    # compile (and `snow dbt deploy`) render the test SQL with execute on; only a command that runs tests may send records.
+    since = sf.cursor().execute("select dateadd(second, -5, sysdate())").fetchone()[0]
+    res = invoke(["compile", "--select", "it_volume_bare", "it_freshness_bare", "--vars",
+                  json.dumps({"icecore": {"obs_schema": monitored["schema"]}, **monitored["names"]})])
+    assert res.success
+    assert_no_events(sf, "resource_attributes:\"snow.database.name\"::string = %(db)s"
+                         " and resource_attributes:\"snow.schema.name\"::string = %(schema)s and record_type = 'SPAN_EVENT'",
+                     {"db": DATABASE, "schema": monitored["schema"]}, wait_s=40, since=since)

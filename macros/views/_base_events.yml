@@ -9,7 +9,7 @@ macros:
       the database and keeps only the records of icecore's two procedures in this environment (spikes/GATE1.md,
       "Identity and record shape"). The predicates come first and in this order, so the filter sits directly on
       the table scan: `RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')`; `RESOURCE_ATTRIBUTES` `snow.database.name` =
-      the database, `snow.schema.name` = the icecore schema and `snow.executable.name like 'ICECORE_EMIT%'`;
+      the database, `snow.schema.name` = the icecore schema and `snow.executable.name` equal to the full signature of one of icecore's procedures (for example `ICECORE_EMIT(EVENTS ARRAY):VARCHAR`; an overload someone else created is not matched);
       then the icecore identity, `SCOPE:name = 'icecore'` (ICECORE_EMIT_RUN records) or a SPAN_EVENT whose name
       starts with `icecore.` (ICECORE_EMIT records, SCOPE `global`). Records of other libraries, other procedures,
       other schemas or other databases sharing the table are never returned; native dbt Projects records are not

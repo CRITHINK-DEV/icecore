@@ -37,7 +37,7 @@ def test_both_views_are_in_the_create_views_list_after_the_earlier_ones():
 
 def test_invocations_reads_the_three_run_records_on_the_invocation_id():
     sql = views()["INVOCATIONS"]
-    assert "with events as (" in sql and "ICECORE_EMIT%" in sql
+    assert "with events as (" in sql and "'ICECORE_EMIT(EVENTS ARRAY):VARCHAR'" in sql
     for part in ["record_name = 'icecore.run_start'", "record_name = 'icecore.invocation'",
                  """attributes:"icecore.kind"::string = 'run_end'""", """"dbt.invocation.status"::string""",
                  """"dbt.invocation.nodes_total\"""", """"dbt.invocation.nodes_failed\"""",

@@ -117,7 +117,9 @@ from <EVENT_TABLE>
 where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
   and RESOURCE_ATTRIBUTES:"snow.database.name"::string   = '<TARGET_DB>'
   and RESOURCE_ATTRIBUTES:"snow.schema.name"::string     = '<OBS_SCHEMA>'
-  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
+  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string in ('ICECORE_EMIT(EVENTS ARRAY):VARCHAR', 'ICECORE_EMIT_RUN(SPANS ARRAY):VARCHAR',
+                                                              'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR',
+                                                              'ICECORE_NOTIFIED(INCIDENT_KEY VARCHAR, CHANNEL VARCHAR):VARCHAR')
   and (
     SCOPE:name::string = 'icecore'
     or (RECORD_TYPE = 'SPAN_EVENT' and RECORD:name::string like 'icecore.%')

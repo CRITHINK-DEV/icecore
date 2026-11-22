@@ -1,24 +1,24 @@
 {
   "emit_run_batch.100x1": {
     "call_ok": true,
-    "dbt_wall_s": 4.91,
+    "dbt_wall_s": 4.8,
     "errors": [],
     "expected": 100,
     "icecore_warnings": [],
     "intact_payloads": 100,
     "landed_spans": 100,
-    "run_id": "79b1c83df66b4f06a30451303d5065a4",
+    "run_id": "538aad1c462f41d8a6428ac47506b83b",
     "total_kb": 100
   },
   "emit_run_batch.15x64": {
     "call_ok": true,
-    "dbt_wall_s": 12.94,
+    "dbt_wall_s": 12.59,
     "errors": [],
     "expected": 15,
     "icecore_warnings": [],
     "intact_payloads": 15,
     "landed_spans": 15,
-    "run_id": "4f28ba90d5cf4257b5964b7c8456851e",
+    "run_id": "1b38fbc15455440d9ff08b9939e70ed3",
     "total_kb": 960
   },
   "emit_run_batch.16x64": {
@@ -29,34 +29,34 @@
     "icecore_warnings": [],
     "intact_payloads": 16,
     "landed_spans": 16,
-    "run_id": "c5f43b9204f34b769912f8713f2c3a3f",
+    "run_id": "5a39a1bc4a0e414db28b8ee6391a36a0",
     "total_kb": 1024
   },
   "emit_run_batch.200x1": {
     "call_ok": true,
-    "dbt_wall_s": 5.3,
+    "dbt_wall_s": 5.14,
     "errors": [],
     "expected": 200,
     "icecore_warnings": [],
     "intact_payloads": 200,
     "landed_spans": 200,
-    "run_id": "a00dc157dad54c2a8b430802c3f6d645",
+    "run_id": "64cf51a6f63042d5b87a69472b42cbb1",
     "total_kb": 200
   },
   "emit_run_batch.64x64": {
     "call_ok": true,
-    "dbt_wall_s": 153.81,
+    "dbt_wall_s": 191.16,
     "errors": [],
     "expected": 64,
     "icecore_warnings": [],
     "intact_payloads": 64,
     "landed_spans": 64,
-    "run_id": "e976351308e242bb819b5ca1e6c96b43",
+    "run_id": "b193b45ac3f3432d998cdc5b1707c8a6",
     "total_kb": 4096
   },
   "proc_batch.1000x1": {
     "call_ok": true,
-    "dbt_wall_s": 20.87,
+    "dbt_wall_s": 22.33,
     "dropped_events_count": 872,
     "expected_chars": 1024,
     "icecore_warnings": [],
@@ -69,7 +69,7 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "74bfa393217b4c9399319b8af05ab6ed",
+    "run_id": "3d3baabe8c6a40b9aa23f6d884f6cb2d",
     "seconds_to_visible": null,
     "seq_range": [
       873,
@@ -81,7 +81,7 @@
   "proc_batch.1000x1.expected_landed": 128,
   "proc_batch.128x1": {
     "call_ok": true,
-    "dbt_wall_s": 4.63,
+    "dbt_wall_s": 2.4,
     "dropped_events_count": null,
     "expected_chars": 1024,
     "icecore_warnings": [],
@@ -94,8 +94,8 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "701837b2f92b48ecb77cfececa99a19f",
-    "seconds_to_visible": 22.1,
+    "run_id": "d6a85a0a70fa4d88b989a682fa0c2338",
+    "seconds_to_visible": 10.7,
     "seq_range": [
       1,
       128
@@ -106,7 +106,7 @@
   "proc_batch.128x1.expected_landed": 128,
   "proc_batch.129x1": {
     "call_ok": true,
-    "dbt_wall_s": 3.35,
+    "dbt_wall_s": 2.31,
     "dropped_events_count": 1,
     "expected_chars": 1024,
     "icecore_warnings": [],
@@ -119,7 +119,7 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "9d29b028df6b4b8286a892b01bf59d35",
+    "run_id": "976fbf1568fc4030b500045d56cae350",
     "seconds_to_visible": null,
     "seq_range": [
       2,
@@ -131,7 +131,7 @@
   "proc_batch.129x1.expected_landed": 128,
   "proc_batch.12x64": {
     "call_ok": true,
-    "dbt_wall_s": 7.65,
+    "dbt_wall_s": 9.21,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -144,8 +144,8 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "a69db39719e84f90937786abb889d9c7",
-    "seconds_to_visible": 5.8,
+    "run_id": "37e67508b1ff4219bc10c5009f8c6334",
+    "seconds_to_visible": 11.1,
     "seq_range": [
       1,
       12
@@ -156,7 +156,7 @@
   "proc_batch.12x64.expected_landed": 12,
   "proc_batch.15x64": {
     "call_ok": true,
-    "dbt_wall_s": 10.38,
+    "dbt_wall_s": 12.72,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -169,8 +169,8 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "b1595bccee954b638cd4e0698e12d1af",
-    "seconds_to_visible": 5.6,
+    "run_id": "c949a49bbec94e8f94580834cd68310a",
+    "seconds_to_visible": 10.8,
     "seq_range": [
       1,
       15
@@ -181,7 +181,7 @@
   "proc_batch.15x64.expected_landed": 15,
   "proc_batch.16x64": {
     "call_ok": true,
-    "dbt_wall_s": 11.32,
+    "dbt_wall_s": 14.92,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -190,7 +190,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "153fd8d14dfa4d148c50c7f97f977ba0",
+    "run_id": "5486c12fb2014d908d4a6b6f3ca4c51a",
     "seconds_to_visible": null,
     "seq_range": null,
     "span_landed": 0,
@@ -205,7 +205,7 @@
   },
   "proc_batch.256x1": {
     "call_ok": true,
-    "dbt_wall_s": 3.37,
+    "dbt_wall_s": 3.85,
     "dropped_events_count": 128,
     "expected_chars": 1024,
     "icecore_warnings": [],
@@ -218,7 +218,7 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "715a5cedc12a495ea7a4b42ea587ad7c",
+    "run_id": "2c6cfedf4a8f455eb409a08d978fe2aa",
     "seconds_to_visible": null,
     "seq_range": [
       129,
@@ -230,7 +230,7 @@
   "proc_batch.256x1.expected_landed": 128,
   "proc_batch.32x64": {
     "call_ok": true,
-    "dbt_wall_s": 39.75,
+    "dbt_wall_s": 42.18,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -239,7 +239,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "bc59c9b134124995aeab47c29ff6fd9c",
+    "run_id": "feea0c5ec0e243efa694774821140241",
     "seconds_to_visible": null,
     "seq_range": null,
     "span_landed": 0,
@@ -254,7 +254,7 @@
   },
   "proc_batch.64x64": {
     "call_ok": true,
-    "dbt_wall_s": 149.7,
+    "dbt_wall_s": 189.36,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -263,7 +263,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "31a8440b5d934e1ab2007bb8b149f100",
+    "run_id": "201d01c8b16f450fb9e5baa88e8696bc",
     "seconds_to_visible": null,
     "seq_range": null,
     "span_landed": 0,
@@ -278,7 +278,7 @@
   },
   "proc_batch.8x64": {
     "call_ok": true,
-    "dbt_wall_s": 4.4,
+    "dbt_wall_s": 4.66,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -291,8 +291,8 @@
       "icecore.run_id",
       "icecore.seq"
     ],
-    "run_id": "da7ee907033949119e53b2dfae53d506",
-    "seconds_to_visible": 5.7,
+    "run_id": "d11f31fd937b463ba2c765b427664405",
+    "seconds_to_visible": 10.7,
     "seq_range": [
       1,
       8
@@ -303,7 +303,7 @@
   "proc_batch.8x64.expected_landed": 8,
   "proc_event.1024": {
     "call_ok": true,
-    "dbt_wall_s": 11.26,
+    "dbt_wall_s": 11.54,
     "dropped_events_count": null,
     "expected_chars": 1048576,
     "icecore_warnings": [],
@@ -312,7 +312,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "86aa0b7887d34533ba8e075fe1d535e5",
+    "run_id": "862dc32bb0604a1ea29aec939982b9a1",
     "seconds_to_visible": null,
     "seq_range": null,
     "span_landed": 0,
@@ -322,7 +322,7 @@
   "proc_event.1024.expected": "dropped",
   "proc_event.256": {
     "call_ok": true,
-    "dbt_wall_s": 2.59,
+    "dbt_wall_s": 2.55,
     "dropped_events_count": null,
     "expected_chars": 262144,
     "icecore_warnings": [],
@@ -334,8 +334,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "b26120f51c4d4207b43f466ce326b62f",
-    "seconds_to_visible": 5.5,
+    "run_id": "b03fe5389a4442a2a0a3436c868d6ab1",
+    "seconds_to_visible": 10.5,
     "seq_range": [
       0,
       0
@@ -346,7 +346,7 @@
   "proc_event.256.expected": "intact",
   "proc_event.64": {
     "call_ok": true,
-    "dbt_wall_s": 1.84,
+    "dbt_wall_s": 1.89,
     "dropped_events_count": null,
     "expected_chars": 65536,
     "icecore_warnings": [],
@@ -358,8 +358,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "71fea65ebcef4ac8b685ec40dd4a0e81",
-    "seconds_to_visible": 5.4,
+    "run_id": "cc5df233824241158f05839b26080dc8",
+    "seconds_to_visible": 10.7,
     "seq_range": [
       0,
       0
@@ -370,7 +370,7 @@
   "proc_event.64.expected": "intact",
   "proc_event.8": {
     "call_ok": true,
-    "dbt_wall_s": 1.78,
+    "dbt_wall_s": 1.82,
     "dropped_events_count": null,
     "expected_chars": 8192,
     "icecore_warnings": [],
@@ -382,8 +382,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "55f54face9454346a9c8359d7d7b06bf",
-    "seconds_to_visible": 5.3,
+    "run_id": "d653cda189114407bc491ecaed81416e",
+    "seconds_to_visible": 10.4,
     "seq_range": [
       0,
       0
@@ -394,7 +394,7 @@
   "proc_event.8.expected": "intact",
   "python_attr.1024": {
     "call_ok": true,
-    "dbt_wall_s": 4.52,
+    "dbt_wall_s": 4.02,
     "expected_chars": 1048576,
     "icecore_warnings": [],
     "intact": null,
@@ -402,7 +402,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "6705692fbad74a0f8047e2839ec44f33",
+    "run_id": "7fac7d723b3c4c818b42b4d796941496",
     "seconds_to_visible": null,
     "tail": null
   },
@@ -410,7 +410,7 @@
   "python_attr.1024.expected": "dropped",
   "python_attr.256": {
     "call_ok": true,
-    "dbt_wall_s": 3.96,
+    "dbt_wall_s": 4.61,
     "expected_chars": 262144,
     "icecore_warnings": [],
     "intact": true,
@@ -424,14 +424,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "d2d84a5e74284c53a60c9098344cc173",
-    "seconds_to_visible": 10.6,
+    "run_id": "9b5a16bace754998a0c1d3702a8a0153",
+    "seconds_to_visible": 6.3,
     "tail": "xxxxxxxxxxxx"
   },
   "python_attr.256.expected": "intact",
   "python_attr.64": {
     "call_ok": true,
-    "dbt_wall_s": 3.96,
+    "dbt_wall_s": 3.78,
     "expected_chars": 65536,
     "icecore_warnings": [],
     "intact": true,
@@ -445,14 +445,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "e159096a37b240ef878b81052890a809",
+    "run_id": "64e57ffd3fba4a44984445a13c7a7138",
     "seconds_to_visible": 10.4,
     "tail": "xxxxxxxxxxxx"
   },
   "python_attr.64.expected": "intact",
   "python_attr.8": {
     "call_ok": true,
-    "dbt_wall_s": 3.8,
+    "dbt_wall_s": 3.78,
     "expected_chars": 8192,
     "icecore_warnings": [],
     "intact": true,
@@ -466,14 +466,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "e6554f8e74a2445183ed77cae0400015",
-    "seconds_to_visible": 5.4,
+    "run_id": "82792fe18a1f4429a6b6531495241f2d",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "python_attr.8.expected": "intact",
   "python_log.1024": {
     "call_ok": true,
-    "dbt_wall_s": 4.45,
+    "dbt_wall_s": 4.47,
     "expected_chars": 1048576,
     "icecore_warnings": [],
     "intact": false,
@@ -487,14 +487,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "361d75558fd34bce93378419296303df",
-    "seconds_to_visible": 5.5,
+    "run_id": "b0ed9b1ed53a4845b8cca7f3b0f65fcd",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxx..."
   },
   "python_log.1024.expected": "truncated",
   "python_log.256": {
     "call_ok": true,
-    "dbt_wall_s": 4.12,
+    "dbt_wall_s": 4.28,
     "expected_chars": 262144,
     "icecore_warnings": [],
     "intact": true,
@@ -508,14 +508,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "0f950c03a6324b89914bd92d801ae32f",
-    "seconds_to_visible": 5.5,
-    "tail": "2d801ae32f 1"
+    "run_id": "3a6f3a12eea3400a888cad251c7911fd",
+    "seconds_to_visible": 5.4,
+    "tail": "251c7911fd 1"
   },
   "python_log.256.expected": "intact",
   "python_log.64": {
     "call_ok": true,
-    "dbt_wall_s": 4.17,
+    "dbt_wall_s": 3.82,
     "expected_chars": 65536,
     "icecore_warnings": [],
     "intact": true,
@@ -529,14 +529,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "9249e6470c624e8caea1b8e8c515c489",
-    "seconds_to_visible": 5.4,
-    "tail": "e8c515c489 1"
+    "run_id": "744a70b8afc6453b8eac48b84f1e4618",
+    "seconds_to_visible": 10.5,
+    "tail": "b84f1e4618 1"
   },
   "python_log.64.expected": "intact",
   "python_log.8": {
     "call_ok": true,
-    "dbt_wall_s": 4.01,
+    "dbt_wall_s": 3.86,
     "expected_chars": 8192,
     "icecore_warnings": [],
     "intact": true,
@@ -550,14 +550,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "7f992d21bc934200808342a228890e7a",
-    "seconds_to_visible": 5.7,
-    "tail": "a228890e7a 1"
+    "run_id": "7ca4e9ff488645f8a920d23e92f32522",
+    "seconds_to_visible": 10.5,
+    "tail": "3e92f32522 1"
   },
   "python_log.8.expected": "intact",
   "sql_event.1024": {
     "call_ok": true,
-    "dbt_wall_s": 2.48,
+    "dbt_wall_s": 2.24,
     "expected_chars": 1048576,
     "icecore_warnings": [],
     "intact": null,
@@ -565,7 +565,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "e50b71fec0434f569fd400cf79adac05",
+    "run_id": "72cfdbaba17743eaad4c5fc2a5348fd9",
     "seconds_to_visible": null,
     "tail": null
   },
@@ -573,7 +573,7 @@
   "sql_event.1024.expected": "dropped",
   "sql_event.256": {
     "call_ok": true,
-    "dbt_wall_s": 1.7,
+    "dbt_wall_s": 1.78,
     "expected_chars": 262144,
     "icecore_warnings": [],
     "intact": true,
@@ -584,14 +584,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "bfc7d9dd48b7481fbd7e48472c94bbcd",
-    "seconds_to_visible": 5.5,
+    "run_id": "916f98da42844b218d41a5024dbdddfc",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "sql_event.256.expected": "intact",
   "sql_event.64": {
     "call_ok": true,
-    "dbt_wall_s": 1.76,
+    "dbt_wall_s": 1.63,
     "expected_chars": 65536,
     "icecore_warnings": [],
     "intact": true,
@@ -602,14 +602,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "717d3616b73740d692e60155e3422259",
-    "seconds_to_visible": 5.4,
+    "run_id": "2e69a5657a1e4db3af89fb6c538f2d7c",
+    "seconds_to_visible": 10.4,
     "tail": "xxxxxxxxxxxx"
   },
   "sql_event.64.expected": "intact",
   "sql_event.8": {
     "call_ok": true,
-    "dbt_wall_s": 1.55,
+    "dbt_wall_s": 1.67,
     "expected_chars": 8192,
     "icecore_warnings": [],
     "intact": true,
@@ -620,14 +620,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "4e16ae06ec0449399ea01d3fd65a095d",
-    "seconds_to_visible": 5.5,
+    "run_id": "166f05dd25ca4752aaab2b1eba2456ff",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "sql_event.8.expected": "intact",
   "sql_log.1024": {
     "call_ok": true,
-    "dbt_wall_s": 1.93,
+    "dbt_wall_s": 2.48,
     "expected_chars": 1048576,
     "icecore_warnings": [],
     "intact": null,
@@ -635,7 +635,7 @@
     "landed_rows": 0,
     "payload_chars": null,
     "record_attribute_keys": [],
-    "run_id": "0b00ae9b019d4aca81198e592f075652",
+    "run_id": "cc9c325b7e9a4203ad20bbba302a369f",
     "seconds_to_visible": null,
     "tail": null
   },
@@ -643,7 +643,7 @@
   "sql_log.1024.expected": "dropped",
   "sql_log.256": {
     "call_ok": true,
-    "dbt_wall_s": 1.72,
+    "dbt_wall_s": 1.7,
     "expected_chars": 262144,
     "icecore_warnings": [],
     "intact": true,
@@ -653,14 +653,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "1be2756c9fbf4cd6a3904ef329485820",
-    "seconds_to_visible": 5.4,
-    "tail": "f329485820 1"
+    "run_id": "44653e41cc4042cea41ad1f8e09d6d89",
+    "seconds_to_visible": 10.5,
+    "tail": "f8e09d6d89 1"
   },
   "sql_log.256.expected": "intact",
   "sql_log.64": {
     "call_ok": true,
-    "dbt_wall_s": 1.63,
+    "dbt_wall_s": 1.85,
     "expected_chars": 65536,
     "icecore_warnings": [],
     "intact": true,
@@ -670,14 +670,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "0234c152cda348269088736d8a0e3f64",
-    "seconds_to_visible": 5.3,
-    "tail": "6d8a0e3f64 1"
+    "run_id": "e5f276bf0d1845a0aeb098791f7f451e",
+    "seconds_to_visible": 10.4,
+    "tail": "791f7f451e 1"
   },
   "sql_log.64.expected": "intact",
   "sql_log.8": {
     "call_ok": true,
-    "dbt_wall_s": 2.01,
+    "dbt_wall_s": 1.83,
     "expected_chars": 8192,
     "icecore_warnings": [],
     "intact": true,
@@ -687,14 +687,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "30f5178cf0754c1c83e6ecf18fa70a41",
-    "seconds_to_visible": 5.4,
-    "tail": "f18fa70a41 1"
+    "run_id": "43f96476572940b8bd1f74192ec8ce17",
+    "seconds_to_visible": 10.4,
+    "tail": "192ec8ce17 1"
   },
   "sql_log.8.expected": "intact",
   "threshold.proc_event.384": {
     "call_ok": true,
-    "dbt_wall_s": 3.43,
+    "dbt_wall_s": 3.58,
     "dropped_events_count": null,
     "expected_chars": 393216,
     "icecore_warnings": [],
@@ -706,7 +706,7 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "cfd21a83d31a4fefb29b78310263a5cc",
+    "run_id": "817dcb8a559746f587be7b1798af8a70",
     "seconds_to_visible": 5.5,
     "seq_range": [
       0,
@@ -718,7 +718,7 @@
   "threshold.proc_event.384.expected": "intact",
   "threshold.proc_event.512": {
     "call_ok": true,
-    "dbt_wall_s": 4.72,
+    "dbt_wall_s": 4.4,
     "dropped_events_count": null,
     "expected_chars": 524288,
     "icecore_warnings": [],
@@ -730,8 +730,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "2f8de383d2c54f788534faa0599519db",
-    "seconds_to_visible": 5.5,
+    "run_id": "67307fa125d44a41aaa426ea9f8dbdbb",
+    "seconds_to_visible": 10.5,
     "seq_range": [
       0,
       0
@@ -742,7 +742,7 @@
   "threshold.proc_event.512.expected": "intact",
   "threshold.proc_event.768": {
     "call_ok": true,
-    "dbt_wall_s": 7.57,
+    "dbt_wall_s": 7.84,
     "dropped_events_count": null,
     "expected_chars": 786432,
     "icecore_warnings": [],
@@ -754,8 +754,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "426fa824494142778956396eb372d7d6",
-    "seconds_to_visible": 5.6,
+    "run_id": "33e3a0d2fbc44319971afa7b01e093bf",
+    "seconds_to_visible": 5.5,
     "seq_range": [
       0,
       0
@@ -766,7 +766,7 @@
   "threshold.proc_event.768.expected": "intact",
   "threshold.proc_event.960": {
     "call_ok": true,
-    "dbt_wall_s": 10.13,
+    "dbt_wall_s": 11.13,
     "dropped_events_count": null,
     "expected_chars": 983040,
     "icecore_warnings": [],
@@ -778,8 +778,8 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "a0d442419f0149bf94ebaddc23c8af38",
-    "seconds_to_visible": 10.5,
+    "run_id": "3364f396713841548b4650c285273089",
+    "seconds_to_visible": 10.6,
     "seq_range": [
       0,
       0
@@ -790,7 +790,7 @@
   "threshold.proc_event.960.expected": "intact",
   "threshold.python_attr.384": {
     "call_ok": true,
-    "dbt_wall_s": 4.05,
+    "dbt_wall_s": 4.17,
     "expected_chars": 393216,
     "icecore_warnings": [],
     "intact": true,
@@ -804,14 +804,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "b5f090065ee44e10895197ee9400a330",
-    "seconds_to_visible": 5.6,
+    "run_id": "1550329572ae40b2b5bdcdf997d8d1c5",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.python_attr.384.expected": "intact",
   "threshold.python_attr.512": {
     "call_ok": true,
-    "dbt_wall_s": 4.28,
+    "dbt_wall_s": 4.11,
     "expected_chars": 524288,
     "icecore_warnings": [],
     "intact": true,
@@ -825,14 +825,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "c164b383a4094c87a567ab23ccd2ff36",
-    "seconds_to_visible": 5.5,
+    "run_id": "467b39d1de054583bd28e66703e96d0f",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.python_attr.512.expected": "intact",
   "threshold.python_attr.768": {
     "call_ok": true,
-    "dbt_wall_s": 4.2,
+    "dbt_wall_s": 4.14,
     "expected_chars": 786432,
     "icecore_warnings": [],
     "intact": true,
@@ -846,14 +846,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "7d12ad8e0fed4fb98a57315afd1c1671",
-    "seconds_to_visible": 5.5,
+    "run_id": "262510965c494ce9819beee976f67661",
+    "seconds_to_visible": 5.4,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.python_attr.768.expected": "intact",
   "threshold.python_attr.960": {
     "call_ok": true,
-    "dbt_wall_s": 4.35,
+    "dbt_wall_s": 4.15,
     "expected_chars": 983040,
     "icecore_warnings": [],
     "intact": true,
@@ -867,14 +867,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "dd8c40ed728d478aa4b1f4d3cc96cdb3",
-    "seconds_to_visible": 5.5,
+    "run_id": "f480ee8142c94e7aad25a0ee837e66d5",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.python_attr.960.expected": "intact",
   "threshold.python_log.384": {
     "call_ok": true,
-    "dbt_wall_s": 4.63,
+    "dbt_wall_s": 3.95,
     "expected_chars": 393216,
     "icecore_warnings": [],
     "intact": true,
@@ -888,14 +888,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "8ad8340298644720bd96ce26c41b63d7",
-    "seconds_to_visible": 5.5,
-    "tail": "26c41b63d7 1"
+    "run_id": "23ff0b190fd745608367de20d6331b73",
+    "seconds_to_visible": 10.5,
+    "tail": "20d6331b73 1"
   },
   "threshold.python_log.384.expected": "intact",
   "threshold.python_log.512": {
     "call_ok": true,
-    "dbt_wall_s": 4.21,
+    "dbt_wall_s": 4.08,
     "expected_chars": 524288,
     "icecore_warnings": [],
     "intact": false,
@@ -909,8 +909,8 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "e5ecb33393f5406ab088cfba5d1bed06",
-    "seconds_to_visible": 5.5,
+    "run_id": "c1dc647e7e404ad78b9c1a19354a36af",
+    "seconds_to_visible": 10.7,
     "tail": "xxxxxxxxx..."
   },
   "threshold.python_log.512.expected": "truncated",
@@ -930,14 +930,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "a4d75e5f9159495a86614f92fb409398",
-    "seconds_to_visible": 5.4,
+    "run_id": "a2ed84ac13be461fa1cccf17403cd6c4",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxx..."
   },
   "threshold.python_log.768.expected": "truncated",
   "threshold.python_log.960": {
     "call_ok": true,
-    "dbt_wall_s": 4.24,
+    "dbt_wall_s": 4.31,
     "expected_chars": 983040,
     "icecore_warnings": [],
     "intact": false,
@@ -951,14 +951,14 @@
       "icecore.payload_kb",
       "icecore.run_id"
     ],
-    "run_id": "06ee5ac7fe7e4787ac0a826b7d955c07",
-    "seconds_to_visible": 5.5,
+    "run_id": "42769f556e264fc1973a22b2832f8aed",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxx..."
   },
   "threshold.python_log.960.expected": "truncated",
   "threshold.sql_event.384": {
     "call_ok": true,
-    "dbt_wall_s": 1.93,
+    "dbt_wall_s": 1.72,
     "expected_chars": 393216,
     "icecore_warnings": [],
     "intact": true,
@@ -969,14 +969,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "1957409dc46f44a6a210062c44458479",
-    "seconds_to_visible": 5.5,
+    "run_id": "bcdc364c09544cf0a7dd099392bd7064",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.sql_event.384.expected": "intact",
   "threshold.sql_event.512": {
     "call_ok": true,
-    "dbt_wall_s": 2.01,
+    "dbt_wall_s": 2.05,
     "expected_chars": 524288,
     "icecore_warnings": [],
     "intact": true,
@@ -987,14 +987,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "7de2bc4c1f1a48e3a92a951c20151e59",
-    "seconds_to_visible": 5.5,
+    "run_id": "43c3d0a0db4a4f088ac1a6ecc87075af",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.sql_event.512.expected": "intact",
   "threshold.sql_event.768": {
     "call_ok": true,
-    "dbt_wall_s": 1.94,
+    "dbt_wall_s": 2.17,
     "expected_chars": 786432,
     "icecore_warnings": [],
     "intact": true,
@@ -1005,14 +1005,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "4fdd5a4a71db409baccc704fedf8f0e2",
-    "seconds_to_visible": 5.6,
+    "run_id": "16b2ac9a0baf4fa6995ed663d24cfb1c",
+    "seconds_to_visible": 10.5,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.sql_event.768.expected": "intact",
   "threshold.sql_event.960": {
     "call_ok": true,
-    "dbt_wall_s": 1.96,
+    "dbt_wall_s": 2.08,
     "expected_chars": 983040,
     "icecore_warnings": [],
     "intact": true,
@@ -1023,14 +1023,14 @@
       "icecore.payload",
       "icecore.run_id"
     ],
-    "run_id": "abb3236ad9704164b5c34b6274a72352",
-    "seconds_to_visible": 5.5,
+    "run_id": "153b379fba4b420dbbf2ab69323f9092",
+    "seconds_to_visible": 10.6,
     "tail": "xxxxxxxxxxxx"
   },
   "threshold.sql_event.960.expected": "intact",
   "threshold.sql_log.384": {
     "call_ok": true,
-    "dbt_wall_s": 2.49,
+    "dbt_wall_s": 1.89,
     "expected_chars": 393216,
     "icecore_warnings": [],
     "intact": true,
@@ -1040,14 +1040,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "61c306a7a44f480a90b2c97e381cb4c9",
-    "seconds_to_visible": 26.0,
-    "tail": "7e381cb4c9 1"
+    "run_id": "336cb6b7c9254867bb19c57b33504c6b",
+    "seconds_to_visible": 10.5,
+    "tail": "7b33504c6b 1"
   },
   "threshold.sql_log.384.expected": "intact",
   "threshold.sql_log.512": {
     "call_ok": true,
-    "dbt_wall_s": 2.14,
+    "dbt_wall_s": 2.11,
     "expected_chars": 524288,
     "icecore_warnings": [],
     "intact": true,
@@ -1057,14 +1057,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "cdee6820045b4996bc7fe6816ad0b674",
-    "seconds_to_visible": 5.5,
-    "tail": "816ad0b674 1"
+    "run_id": "16143c8bdefc41509cf9516d505dddf1",
+    "seconds_to_visible": 10.5,
+    "tail": "6d505dddf1 1"
   },
   "threshold.sql_log.512.expected": "intact",
   "threshold.sql_log.768": {
     "call_ok": true,
-    "dbt_wall_s": 1.96,
+    "dbt_wall_s": 1.97,
     "expected_chars": 786432,
     "icecore_warnings": [],
     "intact": true,
@@ -1074,14 +1074,14 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "58f562071d7a4517a01d293d9090c5bc",
-    "seconds_to_visible": 10.6,
-    "tail": "3d9090c5bc 1"
+    "run_id": "29b521b9d2be4c76b16342726ea4a1b2",
+    "seconds_to_visible": 10.5,
+    "tail": "726ea4a1b2 1"
   },
   "threshold.sql_log.768.expected": "intact",
   "threshold.sql_log.960": {
     "call_ok": true,
-    "dbt_wall_s": 2.18,
+    "dbt_wall_s": 2.23,
     "expected_chars": 983040,
     "icecore_warnings": [],
     "intact": true,
@@ -1091,9 +1091,9 @@
     "record_attribute_keys": [
       "code.lineno"
     ],
-    "run_id": "e5ee81f80584448387f089d754588395",
-    "seconds_to_visible": 5.4,
-    "tail": "d754588395 1"
+    "run_id": "2b91fafca21f4ae2a27f95b30e2953ec",
+    "seconds_to_visible": 10.6,
+    "tail": "b30e2953ec 1"
   },
   "threshold.sql_log.960.expected": "intact"
 }

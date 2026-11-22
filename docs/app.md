@@ -97,7 +97,7 @@ The files, relative to `streamlit/`:
 - `lib/__init__.py`, `ack.py`, `console_component.py`, `console_data.py`, `incidents.py`, `queries.py`, `settings.py` and `status.py`;
 - `components/console/build/index.html` and `components/console/build/assets/*`.
 
-The packages are in `environment.yml` (Streamlit 1.50.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
+The packages are in `environment.yml` (Streamlit 1.52.2, Pillow 12.3.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
 
 ### Option 1: `make deploy-app` (recommended)
 

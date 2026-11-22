@@ -20,6 +20,7 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ### Security
 - Console: ECharts 5.5.0 to 6.1.0 (a cross-site scripting advisory), and the console build tooling (vite 5.4.21 to 6.4.6, with esbuild 0.25) to clear the open advisories. The charts keep the v5 look: the console loads ECharts' `v5` theme and turns off the v6 plot-area and axis-name repositioning, so every console page renders pixel-identical to before. The committed console build is rebuilt.
+- App: Streamlit 1.50.0 to 1.52.2 and Pillow pinned to 12.3.0, the newest the Snowflake Anaconda channel offers (the warehouse runtime allows no other source). Known advisories drop from 61 to 44. None of the 44 can be reached from the app: the 42 in Pillow need an attacker-supplied image, and the app never opens an image or takes an upload; Streamlit's SSRF only affects Windows hosts; its weak cache-key hash needs attacker-chosen keys, and the app's only cache key is the day range and the configured views schema. Clearing them needs Streamlit 1.53.1+ and Pillow 13, which are only on PyPI (Snowflake's container runtime).
 
 ## [0.1.2] - 2026-11-20
 

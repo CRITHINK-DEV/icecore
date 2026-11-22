@@ -130,7 +130,7 @@ All views, with their columns: [views reference](docs/reference/views.md).
 
 The Console is one full-page Streamlit app: Overview, Incidents, Tests and anomalies, Runs, Schedules and freshness, Schema changes, Cost, Lineage, Models and sources, and Settings. It reads only the icecore views, and its one write is acknowledging an incident through `ICECORE_ACK`. Full guide: [docs/app.md](docs/app.md).
 
-**Run it locally first (recommended).** No warehouse is kept running for the app: it holds a Snowflake session only while you use it. You need Python 3.10 to 3.13 and a clone of this repository (the app is not part of the dbt package install).
+**Run it locally first (recommended).** No warehouse is kept running for the app: it holds a Snowflake session only while you use it. You need Python 3.11 to 3.13 and a clone of this repository (the app is not part of the dbt package install).
 
 ```bash
 git clone https://github.com/crithink-dev/icecore.git && cd icecore

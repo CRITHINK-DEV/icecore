@@ -7,7 +7,7 @@
 #     + SNOWFLAKE_PRIVATE_KEY_PATH (key pair) or nothing (browser login)
 #   PORT                   default 8501
 #   VENV                   a virtualenv with streamlit/requirements-local.txt installed (default: .venv-app, made on first run)
-#   PYTHON                 the interpreter for that virtualenv (default: the first Python 3.10 to 3.13 found)
+#   PYTHON                 the interpreter for that virtualenv (default: the first Python 3.11 to 3.13 found)
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$root/scripts/lib/app_venv.sh"

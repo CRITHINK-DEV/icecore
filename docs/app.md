@@ -56,13 +56,13 @@ The app takes the views schema (`DATABASE.SCHEMA`, plain unquoted identifiers, u
 
 **How**
 
-1. Clone the repository (the app is in `streamlit/`; it is not part of the dbt package install) and install the packages (Python 3.10 to 3.13):
+1. Clone the repository (the app is in `streamlit/`; it is not part of the dbt package install) and install the packages (Python 3.11 to 3.13):
 
    ```bash
    git clone https://github.com/crithink-dev/icecore.git && cd icecore
    ```
 
-   `make app` (step 3) makes the virtualenv `.venv-app` on the first run, with the first Python 3.10 to 3.13 it finds and `streamlit/requirements-local.txt`. Set `PYTHON=<interpreter>` to choose another.
+   `make app` (step 3) makes the virtualenv `.venv-app` on the first run, with the first Python 3.11 to 3.13 it finds and `streamlit/requirements-local.txt`. Set `PYTHON=<interpreter>` to choose another.
 
 2. Tell the app how to log in. Use one of:
 
@@ -97,7 +97,7 @@ The files, relative to `streamlit/`:
 - `lib/__init__.py`, `ack.py`, `console_component.py`, `console_data.py`, `incidents.py`, `queries.py`, `settings.py` and `status.py`;
 - `components/console/build/index.html` and `components/console/build/assets/*`.
 
-The packages are in `environment.yml` (Streamlit 1.52.2, Pillow 12.3.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
+The packages are in `environment.yml` (Streamlit 1.52.2, Pillow 12.3.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`. A local run uses newer versions (`streamlit/requirements-local.txt`: Streamlit 1.67.0 and Pillow 13.0.0, from PyPI), which fix the advisories the channel's versions still carry; none of those can be reached from the app (see the 0.2.0 changelog).
 
 ### Option 1: `make deploy-app` (recommended)
 

@@ -105,7 +105,9 @@
 {% macro _icecore_redact_literals(text) %}
   {#- Regex escapes: \x27 is a single quote and \x22 a double quote (so no quote character is written by hand here). -#}
   {%- set pattern = '(?s)(\\x27)(?:[^\\x27\\\\]|\\\\.|\\x27\\x27)*(?:\\x27|$)|(\\x22)(?:[^\\x22\\\\]|\\\\.|\\x22\\x22)*(?:\\x22|$)' -%}
-  {{ return(modules.re.sub(pattern, '\\1\\2?\\1\\2', text)) }}
+  {#- A duplicate-row error ends with the row, `Row Values: [12345678, "x"]`: the quoted parts are masked above; everything
+      from `Row Values:` to the end goes, so bare numbers, nested arrays and values printed over several lines cannot survive. -#}
+  {{ return(modules.re.sub('(?s)(Row Values:).*', '\\1 [?]', modules.re.sub(pattern, '\\1\\2?\\1\\2', text))) }}
 {% endmacro %}
 
 

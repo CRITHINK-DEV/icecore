@@ -15,7 +15,8 @@
 {#- What a monitor test renders before its SELECT: '' once the records are sent (icecore.emit_events), or the comment
     end_run reads back. events as emit_events takes them. -#}
 {% macro _icecore_emit_from_test(events) %}
-  {%- if not execute or not events -%}{{ return('') }}{%- endif -%}
+  {#- only commands that execute tests: compile, docs generate, show and `snow dbt deploy` render the SQL but run nothing -#}
+  {%- if not execute or not events or flags.WHICH not in ['test', 'build', 'retry'] -%}{{ return('') }}{%- endif -%}
   {%- if icecore._icecore_telemetry_enabled() and icecore._icecore_test_id() is not none and icecore._icecore_end_run_collects() -%}
     {%- set comment = icecore._icecore_records_comment(events) -%}
     {%- if comment | length <= 262144 -%}

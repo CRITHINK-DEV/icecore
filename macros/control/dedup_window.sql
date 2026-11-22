@@ -42,7 +42,7 @@ notified as (
 {{ icecore.base_events(event_table=event_table, database=database, obs_schema=icecore.obs_schema_name(schema)) }}
     )
     where record_type = 'SPAN_EVENT' and record_name = 'icecore.notified'
-      and startswith(executable_name, 'ICECORE_NOTIFIED(')
+      and executable_name = 'ICECORE_NOTIFIED(INCIDENT_KEY VARCHAR, CHANNEL VARCHAR):VARCHAR'
 ),
 last_notified as (
     select feed.incident_key, max(notified.event_at) as last_notified_at

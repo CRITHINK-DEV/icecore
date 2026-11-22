@@ -7,8 +7,8 @@ through a view built on base_events:
 
 | case                | procedure                               | record                       | expected |
 |---------------------|-----------------------------------------|------------------------------|----------|
-| kept_emit           | <schema>.ICECORE_EMIT_<id> (SQL)        | SPAN_EVENT `icecore.probe`   | returned |
-| kept_emit_run       | <schema>.ICECORE_EMIT_RUN_<id> (Python) | SPAN, SCOPE `icecore`        | returned |
+| kept_emit           | <schema>.ICECORE_EMIT (the real one)    | SPAN_EVENT `icecore.probe`   | returned |
+| kept_emit_run       | <schema>.ICECORE_EMIT_RUN (the real one)| SPAN, SCOPE `icecore`        | returned |
 | foreign_name        | <schema>.ICECORE_EMIT_<id> (SQL)        | SPAN_EVENT `other.probe`     | excluded |
 | foreign_scope       | <schema>.ICECORE_EMIT_RUN_OTHER_<id>    | SPAN, SCOPE `other_library`  | excluded |
 | foreign_executable  | <schema>.OTHER_EMIT_<id> (SQL)          | SPAN_EVENT `icecore.probe`   | excluded |
@@ -67,7 +67,7 @@ def test_predicates_come_first_in_order():
         "RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')",
         """RESOURCE_ATTRIBUTES:"snow.database.name"::string = 'ICECORE_SANDBOX'""",
         """RESOURCE_ATTRIBUTES:"snow.schema.name"::string = 'ICECORE_OBS'""",
-        """RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'""",
+        """RESOURCE_ATTRIBUTES:"snow.executable.name"::string in ('ICECORE_EMIT(EVENTS ARRAY):VARCHAR'""",
         "SCOPE:name::string = 'icecore'",
         "RECORD:name::string like 'icecore.%'",
     ]
@@ -161,14 +161,15 @@ def fixture_records(dbt, sf):
             run_macro("s1_emit_proc_create", {"run_id": run_id})
             run_macro("s1_emit_run_proc_create", {"run_id": run_id})
         run_macro("s1_emit_proc_create", {"run_id": run_id})  # same name, in SPIKES
+        run_macro("it_create_emit_procedures", {}, ["--vars", json.dumps({"icecore": {"obs_schema": schema}})])  # the real ones
         run_macro("it_be_foreign_procs", {"schema": schema, "run_id": run_id})
 
         since, now_ns = _now(sf)
         start_ns = int(now_ns) - 60_000_000_000
         calls = [
-            {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT_{rid}",
-             "events": _events(run_id, "kept_emit", extra=NUMERIC) + _events(run_id, "foreign_name", "other.probe")},
-            {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT_RUN_{rid}", "events": _spans(run_id, "kept_emit_run", start_ns, NUMERIC)},
+            {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT", "events": _events(run_id, "kept_emit", extra=NUMERIC)},
+            {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT_{rid}", "events": _events(run_id, "foreign_name", "other.probe")},
+            {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT_RUN", "events": _spans(run_id, "kept_emit_run", start_ns, NUMERIC)},
             {"proc": f"{DATABASE}.{schema}.ICECORE_EMIT_RUN_OTHER_{rid}", "events": _spans(run_id, "foreign_scope", start_ns)},
             {"proc": f"{DATABASE}.{schema}.OTHER_EMIT_{rid}", "events": _events(run_id, "foreign_executable")},
             {"proc": f"{DATABASE}.{SPIKES}.ICECORE_EMIT_{rid}", "events": _events(run_id, "foreign_schema")},

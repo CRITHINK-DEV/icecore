@@ -9,6 +9,8 @@ macros:
       warning). The record carries `base_attributes()` (with `dbt.invocation_id` and `dbt.command`), plus
       `dbt.version`, `icecore.anomaly_engine`, `icecore.shadow_engine` and `dbt.invocation.started_at` (dbt's
       `run_started_at`, ISO-8601 UTC; the span event itself is stamped with the CALL's time), and the message `dbt <command>
-      started`. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
+      started`. Then reads, in one guarded query of the METRICS view, the history of every selected icecore monitor test
+      that scores, and keeps it for the run in dbt's `graph`, so each test scores against that copy instead of reading
+      the view (`score_monitor_metrics`); a failed read logs a warning and the tests read the view. Returns an empty string, so the hook runs no SQL of its own. A no-op at parse time and when
       `var('icecore').telemetry` is false. On dbt 1.8, `dbt source freshness` fires no project hooks unless
       the behaviour flag `source_freshness_run_project_hooks` is true (spike S3).

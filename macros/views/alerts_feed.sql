@@ -77,7 +77,7 @@ acks as (
 {{ icecore.base_events(event_table=event_table, database=database, obs_schema=obs_schema) }}
     )
     where record_type = 'SPAN_EVENT' and record_name = 'icecore.ack'
-      and startswith(executable_name, 'ICECORE_ACK(')
+      and executable_name = 'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR'
       and attributes:"icecore.ack.incident_key"::string is not null
 ),
 signals as (

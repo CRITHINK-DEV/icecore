@@ -13,7 +13,7 @@ macros:
       the `lineage` var is on: the graph's edges split under the payload cap, as `emit_lineage` splits them), one sample per
       failing test with `store_failures` (only when the `samples` var is on, which is not the default), plus the rows the procedures write themselves:
       one SPAN per CALL (spikes/S3.md, finding 4) and about 3 Snowpark LOG rows per `ICECORE_EMIT_RUN` CALL
-      (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 512 KB. S3 measured ingestion lag,
+      (spikes/S1.md, "Python noise"), with `ICECORE_EMIT_RUN` CALLs of at most 768 KB. S3 measured ingestion lag,
       not volume. Credits use Snowflake's Service Consumption Table (effective October 29, 2026), Table 5:
       Telemetry Data Ingest, 0.0212 Platform Credits per GB. The range runs from `bytes_per_record` per row to the
       payload cap per row, with GB taken as 10^9 bytes. Until Telemetry Data Ingest replaces Logging on an account,

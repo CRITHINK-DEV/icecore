@@ -19,6 +19,7 @@
 
   {%- set breaches = [] -%}
   {%- set anomalies = [] -%}
+  {%- set records = '' -%}
   {%- if execute -%}
     {%- set name = icecore._icecore_quoted_name(model) -%}
     {%- set signature = icecore.get_columns_signature(model) -%}
@@ -57,8 +58,8 @@
           {%- do anomalies.append({'column': entry['column'], 'metric': entry['metric'], 'value': entry['value'], 'min': result.get('lower'), 'max': result.get('upper'), 'reason': icecore._icecore_anomaly_text(result)}) -%}
         {%- endif -%}
       {%- endfor -%}
-      {#- one CALL for the whole test (emit_events chunks at 100 events) -#}
-      {%- do icecore.emit_metrics(model, to_emit) -%}
+      {#- sent with the run's end-of-run batch, or in one CALL now (macros/telemetry/test_records.sql) -#}
+      {%- set records = icecore._icecore_emit_from_test(icecore._icecore_metrics_events(model, to_emit)) -%}
     {%- endif -%}
   {%- endif -%}
 
@@ -70,6 +71,7 @@
     {%- do failing.append(anomalies[0]) -%}
   {%- endif -%}
   {%- if breaches and failing | length < 2 -%}{%- do failing.append(breaches[0]) -%}{%- endif -%}
+  {{ records }}
   {%- if failing -%}
     {%- for b in failing %}
   select {{ icecore._icecore_sql_literal(b['column']) }}::varchar as column_name, {{ icecore._icecore_sql_literal(b['metric']) }}::varchar as metric,

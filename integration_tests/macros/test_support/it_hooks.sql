@@ -26,7 +26,7 @@
 {% endmacro %}
 
 {#- end_run's batch for these results, as ICECORE_EMIT_RUN receives it, and how it chunks. -#}
-{% macro it_end_run_render(results, max_bytes=524288) %}
+{% macro it_end_run_render(results, max_bytes=786432) %}
   {% set records = icecore._icecore_emit_run_records(icecore._icecore_end_run_items(results)) %}
   {% set chunks = icecore._icecore_emit_run_chunks(records, max_bytes) %}
   {% set sizes, bytes = [], [] %}
@@ -42,7 +42,7 @@
 {% endmacro %}
 
 {#- emit_run's records and chunks for arbitrary items. -#}
-{% macro it_emit_run_render(items, max_bytes=524288) %}
+{% macro it_emit_run_render(items, max_bytes=786432) %}
   {% set records = icecore._icecore_emit_run_records(items) %}
   {% set sizes, bytes = [], [] %}
   {% for chunk in icecore._icecore_emit_run_chunks(records, max_bytes) %}
@@ -71,5 +71,51 @@
   {% for message in messages %}
     {% do out.append(icecore.node_attributes(none, {'message': message, 'status': 'error'}).get('dbt.result.message')) %}
   {% endfor %}
+  {% do _it_result(out) %}
+{% endmacro %}
+
+
+{#- Monitor records at run end (macros/telemetry/test_records.sql): the comment a test renders for `events`, put in the
+    compiled code of a fake test result (unique_id, or `foreign` records of another invocation id), then end_run's batch
+    for those results with `span` false dropping the test's timing so it has no node span. -#}
+{% macro it_test_records(events, span=true, foreign=false, offset_ns=none) %}
+  {% if offset_ns is not none %}
+    {% do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': {}, 'lookback_days': 30, 'series': {}, 'clock_offset_ns': offset_ns}}) %}
+  {% endif %}
+  {% set before_ns = icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) %}
+  {% set comment = icecore._icecore_records_comment(events) %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% if foreign %}{% set comment = comment | replace(invocation_id, 'another-invocation') %}{% endif %}
+  {% set timing = [{'name': 'compile', 'started_at': '2026-11-20T10:00:00.000000Z', 'completed_at': '2026-11-20T10:00:01.000000Z'}] if span else [] %}
+  {% set results = [{'unique_id': 'test.p.mon', 'status': 'pass', 'timing': timing, 'execution_time': 1, 'adapter_response': {}, 'message': none, 'failures': 0,
+                     'node': {'unique_id': 'test.p.mon', 'name': 'mon', 'resource_type': 'test', 'config': {}, 'compiled_code': '  ' ~ comment ~ '\n  select 1 where false'}}] %}
+  {% set items = icecore._icecore_end_run_items(results) %}
+  {% do _it_result({'comment': comment, 'items': items, 'collects': icecore._icecore_end_run_collects(), 'before_ns': before_ns}) %}
+{% endmacro %}
+
+
+{#- One history read per run (macros/engines/get_metric_history.sql): seed the run's copy as on-run-start leaves it,
+    then the source a test gets, and whether end_run forgets it. -#}
+{% macro it_history_source(test_id, relation, metric, column=none, dimension=none, lookback_days=30, seed=true, points=none) %}
+  {% if seed %}
+    {% do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': {'test.p.mon': true}, 'lookback_days': 30,
+        'series': {tojson(['test.p.mon', relation, metric, column, dimension]): points or []}}}) %}
+  {% endif %}
+  {% set source = icecore._icecore_history_source(test_id, relation, metric, column, dimension, lookback_days) %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% do _it_result({'source': source, 'sql': none if source is none else icecore.get_metric_history_sql(relation, metric, column, dimension, lookback_days, 1, source, none, test_id),
+                    'forgotten': invocation_id not in ((graph.get('icecore') or {}).get('history') or {})}) %}
+{% endmacro %}
+
+
+{#- The run's copies without a connection: the event table lookup kept for the run, and the schema snapshot of a relation
+    served from the run's history copy (_icecore_previous_signature). -#}
+{% macro it_run_copies(relation_name, signature, event_table) %}
+  {% do graph.setdefault('icecore', {}).setdefault('event_table', {}).update({invocation_id: {target.database: event_table}}) %}
+  {% do graph['icecore'].setdefault('history', {}).update({invocation_id: {'tests': {}, 'lookback_days': 30, 'series': {}, 'signatures': {relation_name: signature}}}) %}
+  {% set relation = api.Relation.create(database='DB', schema='S', identifier='T') %}
+  {% set out = {'event_table': icecore._icecore_history_event_table(), 'signature': icecore._icecore_previous_signature(relation)} %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% do out.update({'forgotten': invocation_id not in graph['icecore']['event_table'] and invocation_id not in graph['icecore']['history']}) %}
   {% do _it_result(out) %}
 {% endmacro %}

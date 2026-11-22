@@ -17,7 +17,7 @@ A record kind that no code writes has no detail here.
 | Record types | `SPAN_EVENT` | `SPAN`, `SPAN_EVENT` (on a span), `LOG` |
 | `SCOPE:name` | `global` | `icecore` |
 | Identity | Record name starts with `icecore.` | `SCOPE:name = 'icecore'` |
-| Limits per `CALL` | 100 events and 512 KB (icecore's rule) | 512 KB (icecore's rule) |
+| Limits per `CALL` | 100 events and 512 KB (icecore's rule) | 768 KB (icecore's rule) |
 
 Why two: SQL cannot set `SCOPE`, cannot write LOG attributes and cannot write spans with your own times. Only Python can. SQL is cheaper for small frequent writes ([S1.md](../spikes/S1.md#icecore_emit_run-python)). 100 events in one `ICECORE_EMIT` `CALL` took 0.73 s on the server. 100 `CALL`s of one event took 78.3 s (S1.md, `proc.batch`, `proc.per_event`).
 
@@ -117,7 +117,9 @@ from <EVENT_TABLE>
 where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
   and RESOURCE_ATTRIBUTES:"snow.database.name"::string   = '<TARGET_DB>'
   and RESOURCE_ATTRIBUTES:"snow.schema.name"::string     = '<OBS_SCHEMA>'
-  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
+  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string in ('ICECORE_EMIT(EVENTS ARRAY):VARCHAR', 'ICECORE_EMIT_RUN(SPANS ARRAY):VARCHAR',
+                                                              'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR',
+                                                              'ICECORE_NOTIFIED(INCIDENT_KEY VARCHAR, CHANNEL VARCHAR):VARCHAR')
   and (
     SCOPE:name::string = 'icecore'
     or (RECORD_TYPE = 'SPAN_EVENT' and RECORD:name::string like 'icecore.%')
@@ -264,7 +266,7 @@ icecore keeps well under these limits:
 
 - **Cap per record.** `payload_cap_kb`, default 64, clamped to 1 to 256 (GATE1.md, "Payload cap"). Over the cap, icecore cuts the longest string values until the record fits, and sets `icecore.truncated = true` and `icecore.truncated_keys`. The cut is never silent.
 - **Large values** go in attributes, not in log messages.
-- **Chunks.** `ICECORE_EMIT`: at most 100 events and 512 KB per `CALL`. A `CALL` keeps only its last 128 events, and drops all of them when the kept events total about 1 MB, with no drop count (S2.md, `proc_batch.129x1`, `proc_batch.16x64`). `ICECORE_EMIT_RUN`: at most 512 KB per `CALL`. 200 spans and 4 MB landed whole in S2, but the 4 MB `CALL` took 153.81 s of dbt time against 5.30 s for 200 KB (S2.md, `emit_run_batch.64x64`), so the limit is for dbt time. The size is measured on the escaped statement, as it is sent.
+- **Chunks.** `ICECORE_EMIT`: at most 100 events and 512 KB per `CALL`. A `CALL` keeps only its last 128 events, and drops all of them when the kept events total about 1 MB, with no drop count (S2.md, `proc_batch.129x1`, `proc_batch.16x64`). `ICECORE_EMIT_RUN`: at most 768 KB per `CALL`. 200 spans and 4 MB landed whole in S2, but the 4 MB `CALL` took 153.81 s of dbt time against 5.30 s for 200 KB (S2.md, `emit_run_batch.64x64`), so the limit is for dbt time. Each `CALL` also pays about 2.5 s of Python start whatever its size (a pilot run sent 524 KB, then 18 KB, in 5.9 s and 2.3 s; log-only `CALL`s of 18 KB and 960 KB took 2.7 s and 3.1 s), so fewer, larger `CALL`s cost less. 768 KB stays well under the 1 MB statement size. The size is measured on the escaped statement, as it is sent.
 - **Never one `CALL` per event.**
 
 If a `CALL` fails, dbt prints one warning per hook and carries on (see [Configuration](configuration.md#hooks)).

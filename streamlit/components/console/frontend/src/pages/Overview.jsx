@@ -1,5 +1,5 @@
 import React, { useState, useMemo, Fragment } from 'react';
-import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median } from '../lib/format.js';
+import { MS, parseT, fmtTs, fmtRun, fmtSec, sum, median, attributed as isAttributed } from '../lib/format.js';
 import { D, RUNS, LAST, AS_OF, NODE, ASSETS, FAILS, TESTED, SLAS, LAYER_GROUP, LAYER_LABEL, MODEL_KEYS, KIND_LABEL, incNode, incAsset, incTarget, CAP, HAS_MODEL_LAYERS, LAYER_ISSUES, LAYER_ISSUE_LABEL } from '../lib/model.js';
 import { useApp, pal, base, ax, EChart } from '../lib/charts.jsx';
 import { stripClass, stripJoin } from '../lib/strip.js';
@@ -48,13 +48,13 @@ export function Overview() {
   const wr = useMemo(() => runsInWindow(win), [win]);
   const open = incidents.filter(i => i.state !== 'resolved');
   const missed = SLAS.filter(s => s.late || incidents.some(i => i.kind === 'silence' && i.state !== 'resolved' && incAsset(i) === s.unique_id));
-  const credits = wr.map(r => r.credits); const pending = wr.filter(r => r.credits == null).length;
+  const credits = wr.map(r => r.credits); const pending = wr.filter(r => !isAttributed(r)).length;
   const days = [...Array(7)].map((_, i) => AS_OF - (6 - i) * MS.d);
   const openTrend = days.map(d => incidents.filter(i => parseT(i.first_detected_at) <= d && (i.state !== 'resolved' || (i.resolvedAt || 0) > d)).length);
   const okRuns = wr.filter(r => r.status === 'success').length;
   const byState = st => incidents.filter(i => i.state === st).length;
   const winLabel = win === '7' ? 'last 7 days' : 'last 15 days';
-  const attributed = wr.filter(r => r.credits != null);
+  const attributed = wr.filter(isAttributed);
   const rows = open.filter(i => layer === 'all' || (incAsset(i) && LAYER_GROUP(NODE[incAsset(i)].layer) === layer));
   const opt = useMemo(() => {
     const p = pal();
@@ -81,8 +81,8 @@ export function Overview() {
         calc={[[`Runs, ${winLabel}`, wr.length], ['Success', okRuns], ['Error or not finished', wr.length - okRuns], ['Median duration', fmtSec(median(wr.map(r => r.duration_s)))], ['Longest run', wr.length ? fmtSec(Math.max(...wr.map(r => r.duration_s || 0))) : '—']]} />
       <Kpi label="Missed schedules" value={missed.length} tone={missed.length ? 'stale' : 'ok'} sub={`of ${SLAS.length} declared schedules`} help="A schedule is declared on a model (icecore_sla). It is missed when the last success is older than the expected interval plus the grace period, or when a missed-schedule alert is still open."
         calc={[['Declared schedules', SLAS.length], ['Met', SLAS.length - missed.length], ...missed.map(s => [`Missed: ${s.name}`, `every ${s.expected_every}, grace ${s.grace || '0'}`])]} />
-      <Kpi label="Credits" value={sum(credits).toFixed(2)} sub={pending ? `${pending} recent runs not yet attributed` : 'all runs attributed'} spark={credits} sparkTone="accent" help="Warehouse credits used by the runs in the window, from Snowflake's query history. Snowflake publishes this with a delay of up to a few hours, so the most recent runs show no credits yet."
-        calc={[[`Runs, ${winLabel}`, wr.length], ['With credits', attributed.length], ['Not yet attributed', pending], ['Credits', sum(credits).toFixed(4)], ['Average per attributed run', attributed.length ? (sum(attributed.map(r => r.credits)) / attributed.length).toFixed(4) : '—']]} />
+      <Kpi label="Credits" value={sum(credits).toFixed(2)} sub={pending ? `${pending} recent runs not yet attributed` : 'all runs attributed'} spark={credits} sparkTone="accent" help="Warehouse credits used by the runs in the window, from Snowflake's query history. Snowflake publishes this with a delay of up to a few hours, so the most recent runs show an estimate made at run end until then."
+        calc={[[`Runs, ${winLabel}`, wr.length], ['Attributed', attributed.length], ['Not yet attributed', pending], ['Credits', sum(credits).toFixed(4)], ['Average per attributed run', attributed.length ? (sum(attributed.map(r => r.credits)) / attributed.length).toFixed(4) : '—']]} />
     </div>
     <HealthStrip health={health} />
     <LayerCheck />

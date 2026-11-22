@@ -79,7 +79,7 @@ dbt runs outside Snowflake emit telemetry through package macros; native dbt Pro
 **Write path.** Package macros run in three places: an `on-run-start` hook (the run starts), node-level hooks and test macros (metrics, results, samples), and an `on-run-end` hook (per-node results, root-cause pass, invocation and node spans). Every emission is a `CALL` to one of two procedures that `setup` creates in `<target_db>.ICECORE_OBS` (Gate 1, `spikes/GATE1.md`), executed through the adapter's normal `run_query`:
 
 - `ICECORE_EMIT(events ARRAY)`, SQL: one span event per element through `SYSTEM$ADD_EVENT`. It takes the frequent small writes made during the run, such as test metrics, batched per `CALL`.
-- `ICECORE_EMIT_RUN(spans ARRAY)`, Python: custom spans with explicit start and end times, and LOG records with attributes. `on-run-end` calls it for the invocation and node spans, in as many `CALL`s as the 512 KB chunking needs (section 4). Each `CALL` is its own trace in Snowsight (S1); every record carries `dbt.invocation_id`, which the views and the app group on.
+- `ICECORE_EMIT_RUN(spans ARRAY)`, Python: custom spans with explicit start and end times, and LOG records with attributes. `on-run-end` calls it for the invocation and node spans, in as many `CALL`s as the 768 KB chunking needs (section 4). Each `CALL` is its own trace in Snowsight (S1); every record carries `dbt.invocation_id`, which the views and the app group on.
 
 Both are persisted and `EXECUTE AS OWNER`, because dbt threads use separate sessions. Records go to the event table of the procedures' database and inherit that database's `LOG_LEVEL` / `TRACE_LEVEL`; the package changes no session setting. This routing is measured for a database with an event table of its own; for a database without one it is unmeasured (S1 open point 5, `spikes/GATE1.md`). Each `CALL` sits in a guard block that turns any error into a dbt warning. There is no INSERT anywhere in the package.
 
@@ -106,7 +106,7 @@ A missing procedure or grant never fails a run (the guard), but the telemetry is
 
 All package emissions are identified by the procedure that wrote them, the package identity (`SCOPE` or record-name prefix) and one attribute prefix, and they reuse Snowflake's own attribute names wherever Snowflake already defines one. The event table has a fixed schema (`TIMESTAMP`, `START_TIMESTAMP`, `OBSERVED_TIMESTAMP`, `TRACE`, `RESOURCE`, `RESOURCE_ATTRIBUTES`, `SCOPE`, `SCOPE_ATTRIBUTES`, `RECORD_TYPE`, `RECORD`, `RECORD_ATTRIBUTES`, `VALUE`, `EXEMPLARS`), so all package data lives in `RECORD_ATTRIBUTES` and `VALUE` (VARIANT).
 
-**Record types used** (Gate 1, `spikes/GATE1.md`): what `on-run-end` sends goes through `ICECORE_EMIT_RUN`; every other emission (test macros, node hooks, `setup` / `doctor`, the silence task, the app) goes through `ICECORE_EMIT`.
+**Record types used** (Gate 1, `spikes/GATE1.md`): what `on-run-end` sends goes through `ICECORE_EMIT_RUN`; every other emission (test macros, node hooks, `setup` / `doctor`, the silence task, the app) goes through `ICECORE_EMIT`. Exception (`spikes/GATE2.md`, finding 6): when the project's on-run-end calls `icecore.end_run(results)`, the monitor tests leave their records in their compiled SQL and `end_run` sends them through `ICECORE_EMIT_RUN`, as span events on the test's node span stamped with the time the test made them (same names and attributes, `SCOPE` `icecore`); a run killed before on-run-end loses them.
 
 | Record type | Written by | Used for | One row per |
 | --- | --- | --- | --- |
@@ -114,7 +114,7 @@ All package emissions are identified by the procedure that wrote them, the packa
 | `SPAN_EVENT` | `ICECORE_EMIT_RUN` | Query executed by a node, with its `query_id`, as an event on the node's span | Query |
 | `LOG` (INFO / WARN / ERROR) | `ICECORE_EMIT_RUN` | Node result, test result, root-cause attribution, lineage edges | Event |
 | `LOG` (INFO) | `ICECORE_EMIT_RUN` | Failed-row samples (payload capped, see S2), at INFO because the levels are the database's | Test failure |
-| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`) | Metric per table/column per run, or event |
+| `SPAN_EVENT` named `icecore.<kind>` | `ICECORE_EMIT` (monitor test records: `ICECORE_EMIT_RUN` with the `end_run(results)` hook) | Monitor values (row count, freshness lag, null rate, column stats, cost in credits) and anomaly scores, anomaly verdicts, monitor breaches, schema diff, silence-detector verdict, capabilities snapshot (from `setup` / `doctor`) | Metric per table/column per run, or event |
 
 There are no `METRIC` records: SQL cannot write them (S1).
 
@@ -149,7 +149,7 @@ There are no `METRIC` records: SQL cannot write them (S1).
 - Each `CALL` is its own trace (S1), so `dbt.invocation_id` is an attribute on every record, and views and the app group a run on it. Whether node spans written in a later `ICECORE_EMIT_RUN` `CALL` can be nested under the invocation span is unmeasured.
 - `VALUE` carries the human-readable message for logs; everything structured goes in attributes, metric values included, never parsed out of the message. Large values go in attributes, not in log messages: Python truncates a message to 524,252 characters plus `...`, with no flag (S2).
 - Payloads are capped per record at `payload_cap_kb` (default 64 KB); an override is clamped at 256 KB, well under the roughly 1 MB at which Snowflake silently drops a record (S2). A value icecore cuts is flagged; samples are truncated row-wise with a `dbt.sample.truncated = true` flag rather than failing the hook.
-- Batches are chunked: at most 100 events and 512 KB per `ICECORE_EMIT` `CALL`, which keeps only its last 128 events and drops all of them at about 1 MB; at most 512 KB per `ICECORE_EMIT_RUN` `CALL`, for dbt time (S2). Never one `CALL` per event: 100 events cost 78 s of server time that way, 0.73 s in one `CALL` (S1).
+- Batches are chunked: at most 100 events and 512 KB per `ICECORE_EMIT` `CALL`, which keeps only its last 128 events and drops all of them at about 1 MB; at most 768 KB per `ICECORE_EMIT_RUN` `CALL`, for dbt time (S2). Never one `CALL` per event: 100 events cost 78 s of server time that way, 0.73 s in one `CALL` (S1).
 - Timestamps come from the dbt result, not from the ingestion time, so lag never shifts the analytics. `ICECORE_EMIT_RUN` writes each span with the node's own start and end times, kept to the millisecond (S1); `ICECORE_EMIT` span events carry the `CALL`'s time, so dbt timings travel as attributes. Spans are written after the fact, so incremental reads window on more than `TIMESTAMP`.
 - Every `CALL` is wrapped in a guard block (`EXCEPTION WHEN OTHER`) and the macro turns the error into a dbt warning: a missing procedure or grant never fails the run. A bare `CALL` to a missing procedure fails it (S1).
 

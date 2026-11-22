@@ -7,10 +7,10 @@ macros:
       `dbt.invocation_id` the `icecore.run_start` span event (ICECORE_EMIT), the `icecore.invocation` span and the
       run-end LOG, `icecore.kind = run_end` (both ICECORE_EMIT_RUN). Columns: `invocation_id`, `runtime`, `command`,
       `target`, `project`, `dbt_version`, `started_at`, `ended_at`, `duration_s`, `status`, `nodes_total`,
-      `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped`, `credits`. `status` is the run-end LOG's
+      `nodes_success`, `nodes_failed`, `nodes_warned`, `nodes_skipped`, `credits`, `credits_estimated`, `cost_pending_nodes`. `status` is the run-end LOG's
       `dbt.invocation.status` (success, warn or error). A run with a start and no end shows `running` when its start
       record landed less than 24 hours ago, else `unfinished`, with `ended_at` and the counts null. `credits` is the sum of the nodes'
-      credits (latest cost record per node, backfilled ones included), null until a cost record exists. Clocks: `started_at`, `ended_at` and `duration_s` are dbt's clock, the
+      credits (latest cost record per node, backfilled ones included), null until a cost record exists; a node's attributed or settled record wins over its estimate, never added to it. `credits_estimated` is true when the sum includes an estimate. `cost_pending_nodes` is the run-end LOG's `icecore.cost.pending_nodes`, the nodes still waiting for Snowflake's attribution after the run (null with `cost` off). Clocks: `started_at`, `ended_at` and `duration_s` are dbt's clock, the
       dbt host's, read from the `dbt.invocation.*` attributes; the TIMESTAMP of the records is Snowflake's clock, the
       time of the CALL. The two are never subtracted from each other.
     arguments:

@@ -9,6 +9,8 @@ export const fmtTs = t => { if (t == null) return '—'; const d = new Date(t); 
 export const fmtRun = t => { const d = new Date(t); return `${MON[d.getMonth()]} ${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 export const fmtSec = s => (s == null ? '—' : s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
 export const fmtSpan = ms => { const a = Math.abs(ms); return a < MS.h ? `${Math.round(a / MS.m)} min` : a < 2 * MS.d ? `${(a / MS.h).toFixed(1)} h` : `${(a / MS.d).toFixed(1)} days`; };
+// credits Snowflake has attributed, not the estimate icecore writes at run end
+export const attributed = x => x != null && x.credits != null && !x.credits_estimated;
 export const fmtCr = c => (c == null ? '—' : c < 0.1 ? c.toFixed(4) : c.toFixed(3));
 export const fmtNum = v => { if (v == null) return '—'; const a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : a >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : v.toLocaleString('en-US'); };
 export const pct = v => (v == null ? 'n/a' : `${v.toFixed(v >= 99.95 || v === 0 ? 0 : 1)}%`);

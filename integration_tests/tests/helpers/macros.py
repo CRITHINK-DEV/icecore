@@ -56,6 +56,18 @@ def target_dir() -> Path:
     return Path(os.environ.get("DBT_TARGET_PATH") or IT_DIR / "target")
 
 
+def _cost_off(extra: list[str] | None) -> list[str]:
+    """Cost is on by default and would query Snowflake: a wrapper macro runs with it off unless `--vars` says otherwise."""
+    extra = list(extra or [])
+    if "--vars" not in extra:
+        return extra + ["--vars", json.dumps({"icecore": {"cost": False}})]
+    i = extra.index("--vars") + 1
+    given = json.loads(extra[i])
+    if isinstance(given.get("icecore"), dict):
+        extra[i] = json.dumps({**given, "icecore": {"cost": False, **given["icecore"]}})
+    return extra
+
+
 def run_macro_with_logs(macro: str, args: dict, extra: list[str] | None = None):
     """Run `macro` through dbt run-operation; return (last value logged with RESULT_PREFIX or None,
     other `icecore:` log lines). Raise MacroFailed with dbt's error lines when the operation fails."""
@@ -74,7 +86,7 @@ def run_macro_with_logs(macro: str, args: dict, extra: list[str] | None = None):
             # error; the stack trace still carries it.
             errors.append(msg)
 
-    res = invoke(["run-operation", macro, "--args", json.dumps(args)] + (extra or []), [collect])
+    res = invoke(["run-operation", macro, "--args", json.dumps(args)] + _cost_off(extra), [collect])
     if not res.success:
         raise MacroFailed(f"{macro} failed: " + ("\n".join(errors) or str(res.exception)))
     return (seen[-1] if seen else None), logs

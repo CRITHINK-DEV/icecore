@@ -3,7 +3,7 @@ emitter they share, icecore.emit_run (emit_run.sql). Gate 1 option B (spikes/GAT
 
 start_run writes one span event `icecore.run_start` through ICECORE_EMIT. end_run builds one batch (the
 emitters behind their vars, then the invocation-end LOG with status and node counts) and sends it to
-ICECORE_EMIT_RUN in as many guarded CALLs of at most 512 KB as needed. Both are no-ops when
+ICECORE_EMIT_RUN in as many guarded CALLs of at most 768 KB as needed. Both are no-ops when
 var('icecore').telemetry is false.
 
 Offline tests render through integration_tests/macros/test_support/it_hooks.sql. Sandbox tests run real
@@ -92,6 +92,7 @@ def test_telemetry_is_off_for_dbt_compile():
     assert res.success and any("select 'False' as telemetry" in line for line in lines), lines[-5:]
 
 
+
 def test_run_end_log_has_status_and_node_counts():
     records = run_macro("it_end_run_render", {"results": SUCCESS})["records"]
     end = records[-1]
@@ -157,8 +158,15 @@ def test_emit_run_chunks_by_bytes_only():
     assert run_macro("it_emit_run_render", {"items": small})["chunk_sizes"] == [250]
     big = [{"type": "log", "message": "x", "attrs": {"i": i, "v": "z" * (60 * KB)}} for i in range(20)]
     out = run_macro("it_emit_run_render", {"items": big})
-    assert sum(out["chunk_sizes"]) == 20 and len(out["chunk_sizes"]) >= 3
-    assert all(b <= 512 * KB for b in out["chunk_bytes"])
+    assert sum(out["chunk_sizes"]) == 20 and len(out["chunk_sizes"]) >= 2
+    assert all(b <= 768 * KB for b in out["chunk_bytes"])
+
+
+def test_emit_run_sends_600_kb_in_one_call():
+    # each CALL pays about 2.5 s of Python start: a batch just over the old 512 KB limit must not spill a tiny second CALL
+    items = [{"type": "log", "message": "x", "attrs": {"i": i, "v": "z" * (60 * KB)}} for i in range(10)]
+    out = run_macro("it_emit_run_render", {"items": items})
+    assert out["chunk_sizes"] == [10] and 512 * KB < out["chunk_bytes"][0] <= 768 * KB
 
 
 def test_integration_project_wires_both_hooks_next_to_the_s3_probe():

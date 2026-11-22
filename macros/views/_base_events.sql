@@ -4,8 +4,9 @@
     Predicates come first, in this order, so the filter sits directly on the event-table scan:
       1. RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG'), the only types icecore writes;
       2. RESOURCE_ATTRIBUTES snow.database.name = the target database, snow.schema.name = the icecore schema
-         (var icecore.obs_schema, default ICECORE_OBS) and snow.executable.name like 'ICECORE_EMIT%': the records
-         of icecore's two procedures in this environment only, so environments sharing one table stay apart;
+         (var icecore.obs_schema, default ICECORE_OBS) and snow.executable.name equal to the full signature of one of
+         icecore's four procedures (Snowflake names a procedure `NAME(ARG TYPE, ...):RETURN`, so a prefix would also match an overload someone
+         else created in the schema): the records of icecore's procedures in this environment only, so environments sharing one table stay apart;
       3. the icecore identity: SCOPE icecore (ICECORE_EMIT_RUN records), or a SPAN_EVENT named icecore.*
          (ICECORE_EMIT records, whose SCOPE is global because SQL cannot set it).
     Native dbt Projects records fail this filter by design; their own predicate is still to be defined (GATE1.md,
@@ -59,9 +60,9 @@ from {{ event_table }}
 where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
   and RESOURCE_ATTRIBUTES:"snow.database.name"::string = {{ icecore._sql(icecore._icecore_stored_name(database), 'string') }}
   and RESOURCE_ATTRIBUTES:"snow.schema.name"::string = {{ icecore._sql(icecore._icecore_stored_name(obs_schema), 'string') }}
-  and (RESOURCE_ATTRIBUTES:"snow.executable.name"::string like 'ICECORE_EMIT%'
-       or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')
-       or startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_NOTIFIED('))
+  and RESOURCE_ATTRIBUTES:"snow.executable.name"::string in ('ICECORE_EMIT(EVENTS ARRAY):VARCHAR', 'ICECORE_EMIT_RUN(SPANS ARRAY):VARCHAR',
+                                                              'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR',
+                                                              'ICECORE_NOTIFIED(INCIDENT_KEY VARCHAR, CHANNEL VARCHAR):VARCHAR')
   and (
     SCOPE:name::string = 'icecore'
     or (RECORD_TYPE = 'SPAN_EVENT' and RECORD:name::string like 'icecore.%')
@@ -139,6 +140,8 @@ where RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')
     ('anomaly_is_anomaly', 'dbt.anomaly.is_anomaly', 'boolean'),
     ('cost_credits', 'dbt.cost.credits', 'float'),
     ('cost_warehouse', 'dbt.cost.warehouse', 'string'),
+    ('cost_estimated', 'dbt.cost.estimated', 'boolean'),
+    ('cost_pending_nodes', 'icecore.cost.pending_nodes', 'integer'),
     ('root_cause_unique_id', 'dbt.root_cause.unique_id', 'string'),
     ('root_cause_kind', 'dbt.root_cause.kind', 'string'),
     ('icecore_version', 'icecore.version', 'string'),

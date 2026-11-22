@@ -90,3 +90,127 @@ order by observed_at
 {% macro _icecore_history_delay(delay_minutes=none) %}
   {{ return(var('icecore', {}).get('history_delay_minutes', 1) if delay_minutes is none else delay_minutes) }}
 {% endmacro %}
+
+
+{#- One history read per run (spikes/GATE2.md, finding 6). on-run-start (icecore.start_run) reads, in one guarded query of
+    the METRICS view, the history of every selected icecore monitor test that scores, and keeps it for the run in dbt's
+    `graph` under icecore.history.<invocation_id>. graph is the one object dbt hands every hook and node of an
+    invocation (Elementary keeps its run cache there too); it is written before any node runs and only read by the
+    tests, so threads never race on it. A test then scores its series from that copy (_icecore_history_source) instead
+    of reading the view, through the same window as get_metric_history_sql. Nothing breaks without it: when the read
+    failed, the test is not in it, or a dbt runtime gave a test another graph, the test reads the view as before.
+    The same read takes Snowflake's clock, so the records the tests stamp for end_run are on Snowflake's clock, not
+    dbt's (a client clock 18 s ahead was seen); without it they carry dbt's clock, as node spans do. -#}
+{% macro _icecore_load_metric_history() %}
+  {%- if not execute or graph is not defined or selected_resources is not defined or not icecore._icecore_flag('monitor_score', true) -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set tests = {} -%}
+  {%- set names = [] -%}
+  {%- set days = namespace(max=30) -%}
+  {%- for unique_id in selected_resources if unique_id.startswith('test.') -%}
+    {%- set node = graph.nodes.get(unique_id) or {} -%}
+    {%- set kind = (node.get('test_metadata') or {}).get('name') -%}
+    {%- if kind in ['freshness', 'volume', 'column_anomaly', 'all_columns_anomaly', 'dimension_anomaly', 'schema_changes']
+          and ('macro.icecore.test_' ~ kind) in ((node.get('depends_on') or {}).get('macros') or []) -%}
+      {%- do tests.update({unique_id: true}) -%}
+      {#- the relation a schema_changes test checks, named as its records name it; one the graph names differently misses the copy and reads for itself -#}
+      {%- set target_id = node.get('attached_node') or ((node.get('depends_on') or {}).get('nodes') or [none])[0] -%}
+      {%- set target_node = graph.nodes.get(target_id) or graph.sources.get(target_id) -%}
+      {%- if kind == 'schema_changes' and target_node -%}
+        {%- set parts = [target_node.get('database'), target_node.get('schema'), target_node.get('alias') or target_node.get('identifier') or target_node.get('name')] | map('string') | map('upper') | list -%}
+        {%- if icecore._sql_error(parts, 'name') is none -%}{%- do names.append(icecore._sql(parts, 'name')) -%}{%- endif -%}
+      {%- endif -%}
+      {%- set lookback = (node['test_metadata'].get('kwargs') or {}).get('lookback_days') -%}
+      {%- if lookback is integer and lookback > days.max -%}{%- set days.max = lookback -%}{%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if not tests -%}{{ return(none) }}{%- endif -%}
+  {%- set ids = [] -%}
+  {%- for unique_id in tests -%}{%- do ids.append(icecore._sql(unique_id, 'string')) -%}{%- endfor -%}
+  {%- set sql -%}
+select array_agg(object_construct_keep_null('u', node_unique_id, 'r', relation, 'm', metric, 'c', "COLUMN", 'd', dimension, 'p', p))
+from (
+  select node_unique_id, relation, metric, "COLUMN", dimension,
+         array_agg(array_construct(to_varchar(observed_at, 'YYYY-MM-DD"T"HH24:MI:SS.FF9'), value)) within group (order by observed_at) as p
+  from {{ icecore._icecore_procedure('METRICS') }}
+  where node_unique_id in ({{ ids | join(', ') }})
+    and value is not null
+    and observed_at > dateadd(day, -{{ days.max }}, convert_timezone('UTC', current_timestamp())::timestamp_ntz)
+  group by node_unique_id, relation, metric, "COLUMN", dimension
+)
+  {%- endset -%}
+  {#- the schema snapshots the schema_changes tests compare with (one read of the event table, for all of them), when the event table is known -#}
+  {%- set event_table = icecore._icecore_history_event_table() if names else none -%}
+  {#- one guarded statement: Snowflake's clock first, so it is known even when the history cannot be read; each read has its own guard -#}
+  {%- set block -%}
+declare
+  now_text varchar default null;
+  v variant default null;
+  verr varchar default null;
+  sg variant default null;
+begin
+  now_text := to_varchar(sysdate(), 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"');
+  begin
+    select x into :v from (select ({{ sql }})::variant as x);
+  exception
+    when other then verr := sqlerrm;
+  end;
+  {%- if event_table is not none %}
+  begin
+    select x into :sg from (select ({{ icecore._icecore_signatures_sql(event_table, names) }})::variant as x);
+  exception
+    when other then sg := null;
+  end;
+  {%- endif %}
+  return object_construct('now', now_text, 'value', v, 'error', verr, 'signatures', sg);
+exception
+  when other then return object_construct('error', sqlerrm);
+end;
+  {%- endset -%}
+  {%- set res = fromjson(run_query('execute immediate ' ~ icecore._sql(block, 'string')).rows[0][0]) or {'error': 'the result is not JSON'} -%}
+  {%- set client_ns = icecore._icecore_epoch_ns(modules.datetime.datetime.utcnow()) -%}
+  {%- set server_ns = icecore._icecore_epoch_ns(res.get('now')) if res.get('now') is string else none -%}
+  {%- set series = {} -%}
+  {%- if 'error' in res or (res.get('value') is not none and res.get('value') is string) -%}
+    {%- do log('icecore: warning: the metric history of the run could not be read at once (' ~ res.get('error', 'unexpected result') ~ '); each monitor test reads its own', info=True) -%}
+    {%- set tests = {} -%}
+  {%- else -%}
+    {%- for row in res.get('value') or [] -%}
+      {%- do series.update({tojson([row['u'], row['r'], row['m'], row['c'], row['d']]): row['p']}) -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {#- a relation is in the copy only when the read worked: a failed read leaves the test to read for itself -#}
+  {%- set signatures = {} -%}
+  {%- if res.get('signatures') is iterable and res.get('signatures') is not string -%}
+    {%- for name in names -%}{%- do signatures.update({name: none}) -%}{%- endfor -%}
+    {%- for row in res['signatures'] -%}{%- do signatures.update({row['r']: row['c']}) -%}{%- endfor -%}
+  {%- endif -%}
+  {%- do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': tests, 'lookback_days': days.max, 'series': series,
+      'signatures': signatures, 'clock_offset_ns': 0 if server_ns is none else server_ns - client_ns}}) -%}
+{% endmacro %}
+
+
+{#- The run's copy of one series as the `source` of get_metric_history_sql (a subquery with the METRICS columns it
+    filters on), or none when the run has no copy that covers this test and lookback: then the view is read. -#}
+{% macro _icecore_history_source(test_id, relation, metric, column, dimension, lookback_days) %}
+  {%- set run = ((graph.get('icecore') or {}).get('history') or {}).get(invocation_id) if graph is defined else none -%}
+  {%- if run is none or test_id is none or test_id not in run['tests'] or lookback_days > run['lookback_days'] -%}
+    {{ return(none) }}
+  {%- endif -%}
+  {%- set points = run['series'].get(tojson([test_id, relation, metric, column, dimension])) or [] -%}
+  {{ return('(select ' ~ icecore._sql(relation, 'string') ~ ' as relation, ' ~ icecore._sql(metric, 'string') ~ ' as metric, '
+      ~ ('null' if column is none else icecore._sql(column, 'string')) ~ '::varchar as "COLUMN", '
+      ~ ('null' if dimension is none else icecore._sql(dimension, 'string')) ~ '::varchar as dimension, '
+      ~ icecore._sql(test_id, 'string') ~ ' as node_unique_id, to_timestamp_ntz(f.value[0]::string, ' ~ icecore._sql('YYYY-MM-DD"T"HH24:MI:SS.FF9', 'string') ~ ') as observed_at, f.value[1]::float as value '
+      ~ 'from table(flatten(input => parse_json(' ~ icecore._sql(tojson(points), 'string') ~ '))) as f)') }}
+{% endmacro %}
+
+
+{#- end_run: drop the run's copy (a process that runs dbt again keeps its graph). -#}
+{% macro _icecore_forget_metric_history() %}
+  {%- if graph is defined -%}
+    {%- do ((graph.get('icecore') or {}).get('history') or {}).pop(invocation_id, none) -%}
+    {%- do ((graph.get('icecore') or {}).get('event_table') or {}).pop(invocation_id, none) -%}
+  {%- endif -%}
+{% endmacro %}

@@ -97,9 +97,9 @@ def test_samples_and_query_events_follow_their_arguments():
 
 def test_large_runs_need_more_emit_run_calls():
     out, _ = estimate(nodes=1000, runs_per_day=1)
-    # 1 + 1 + 1000 + 1000 + 1000 + 1 lineage = 3003 end-run records at 1500 bytes = about 4.5 MB: 9 CALLs of 512 KB
-    assert out["emit_run_calls"] == 9
-    assert out["records_per_run"]["call_overhead"] == 1 + 9 * 4
+    # 1 + 1 + 1000 + 1000 + 1000 + 1 lineage = 3003 end-run records at 1500 bytes = about 4.5 MB: 6 CALLs of 768 KB
+    assert out["emit_run_calls"] == 6
+    assert out["records_per_run"]["call_overhead"] == 1 + 6 * 4
 
 
 def test_nodes_default_to_the_graph():
@@ -177,9 +177,11 @@ def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
     base, base_logs = estimate(runs_per_day=24)
     out, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}})
     mon = out["records_per_run"]["monitors"]
-    # the fixtures hold monitor tests: their records are their own entry, and so are their procedure spans
+    # the fixtures hold monitor tests: their records are their own entry. This project's on-run-end calls
+    # icecore.end_run(results), so they ride the end-of-run batch: no CALL and no procedure span of their own
     assert mon > 0 and out["rows_per_run"] > base["rows_per_run"]
-    assert out["records_per_run"]["call_overhead"] > base["records_per_run"]["call_overhead"]
+    assert out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"] == \
+        4 * (out["emit_run_calls"] - base["emit_run_calls"])
     assert out["rows_per_run"] == base["rows_per_run"] + mon + (out["records_per_run"]["call_overhead"] - base["records_per_run"]["call_overhead"])
     text = message(logs)
     assert f"{mon:,} are icecore monitor records" in text
@@ -188,6 +190,14 @@ def test_the_estimate_adds_the_monitor_line_and_keeps_the_others():
     assert {k: v for k, v in out["records_per_run"].items() if k not in ("monitors", "call_overhead")} == \
            {k: v for k, v in base["records_per_run"].items() if k != "call_overhead"}
     assert "credits per month" in text and "monitor records" not in message(base_logs)
+
+
+def test_without_the_end_run_hook_writing_the_monitor_records_cost_one_call_per_test():
+    off = ["--vars", json.dumps({"icecore": {"telemetry": False}})]
+    live, logs = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}}, off)
+    at_end, _ = run_macro_with_logs("it_call", {"name": "estimate_telemetry_cost", "kwargs": {"runs_per_day": 24}})
+    assert live["records_per_run"]["call_overhead"] > at_end["records_per_run"]["call_overhead"]
+    assert "procedure spans over" in message(logs)
 
 
 # --- sandbox --------------------------------------------------------------------------------------

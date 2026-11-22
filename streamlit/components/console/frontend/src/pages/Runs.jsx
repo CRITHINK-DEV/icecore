@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { esc, fmtTs, fmtSec, fmtCr, sum, median } from '../lib/format.js';
+import { esc, fmtTs, fmtSec, fmtCr, sum, median, attributed } from '../lib/format.js';
 import { RUNS, LAST, RUN_IDX, NODE, ASSETS, FAILS, EX, EX_RUN, LAYER_GROUP, LAYER_LABEL, LAYER_ORDER } from '../lib/model.js';
 import { useApp, pal, layerColor, base, ax, EChart } from '../lib/charts.jsx';
-import { RunPill, Layer, Spark, Kpi, Delta, Seg, Card, Tabs, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
+import { Pill, RunPill, Layer, Spark, Kpi, Delta, Seg, Card, Tabs, PageHead, DataTable, WINDOWS, runsInWindow } from '../components/ui.jsx';
 
 /* ---------------- Runs ---------------- */
 export function Gantt({ run, filterLayer }) {
@@ -40,7 +40,7 @@ export function Runs() {
       <Kpi label="Runs" value={wr.length} sub={`${win === '7' ? 'last 7 days' : 'last 15 days'}, target ${RUNS[LAST].target}`} />
       <Kpi label="Runs ended in error" value={wr.filter(r => r.status !== 'success').length} tone={wr.some(r => r.status !== 'success') ? 'fail' : 'ok'} spark={wr.map(r => r.nodes_failed)} sparkType="bar" sparkTone="fail" sub="bars: failed nodes per run" />
       <Kpi label="Median duration" value={fmtSec(median(wr.map(r => r.duration_s)))} spark={wr.map(r => r.duration_s)} sparkTone="muted" delta={<Delta v={RUNS[LAST].duration_s - median(wr.map(r => r.duration_s))} goodWhenDown fmt={v => v.toFixed(1) + ' s'} />} sub=" latest vs median" />
-      <Kpi label="Credits" value={sum(wr.map(r => r.credits)).toFixed(3)} spark={wr.map(r => r.credits)} sub={`${wr.filter(r => r.credits == null).length} runs not yet attributed`} />
+      <Kpi label="Credits" value={sum(wr.map(r => r.credits)).toFixed(3)} spark={wr.map(r => r.credits)} sub={`${wr.filter(r => !attributed(r)).length} runs not yet attributed`} />
       <Kpi label="Slowest model, latest run" value={lastEx[0] ? fmtSec(lastEx[0].execution_time_s) : '—'} sub={lastEx[0] ? NODE[lastEx[0].unique_id].name : ''} />
     </div>
     <div className="fbar">
@@ -61,7 +61,7 @@ export function Runs() {
           { key: 'status', label: 'Status', render: r => <RunPill s={r.status} /> },
           { key: 'command', label: 'Command' },
           { key: 'duration_s', label: 'Duration', num: true, desc: true, render: r => fmtSec(r.duration_s) },
-          { key: 'credits', label: 'Credits', num: true, desc: true, render: r => r.credits == null ? <span className="muted">Not yet attributed</span> : fmtCr(r.credits) },
+          { key: 'credits', label: 'Credits', num: true, desc: true, render: r => r.credits == null ? <span className="muted">Not yet attributed</span> : <>{fmtCr(r.credits)}{r.credits_estimated && <> <Pill tone="muted">estimate</Pill></>}</> },
           { key: 'nodes_failed', label: 'Failed nodes', num: true, desc: true, render: r => r.nodes_failed ? <b className="t-fail">{r.nodes_failed}</b> : <span className="muted">0</span> },
           { key: 'ft', label: 'Failing tests', num: true, desc: true, render: r => FAILS[r.idx] ? <b className="t-fail">{FAILS[r.idx]}</b> : <span className="muted">0</span>, sort: r => FAILS[r.idx] },
           { key: 'nodes_total', label: 'Nodes', num: true },

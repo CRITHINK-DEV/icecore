@@ -1,5 +1,5 @@
 name: icecore
-version: "0.1.2"
+version: "0.2.0"
 config-version: 2
 require-dbt-version: [">=1.8.0", "<3.0.0"]
 
@@ -18,7 +18,7 @@ vars:
     samples_on_warn: false              # also sample tests that only warned
     result_message: redacted            # dbt.result.message: redacted (quoted literals as '?', max 1,000 chars), full or none
     monitors: true
-    cost: false
+    cost: true                          # end_run: credits per node, an estimate at once, Snowflake's attributed number later (UC4). false turns it off
     root_cause: false
     root_cause_lookback_hours: 24       # root cause: how far back SCHEMA_CHANGES and METRICS signals count (UC4)
     alerts: false                       # true: setup creates the alerts and the silence task AND resumes them (warehouse time); false: it creates neither

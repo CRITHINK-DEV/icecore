@@ -37,7 +37,7 @@ def test_alerts_feed_is_one_of_the_created_views():
 
 def test_feed_reads_base_events_and_unions_the_three_live_signals():
     sql = feed_sql()
-    assert "from DB.TELEMETRY.EVENTS" in sql and "ICECORE_EMIT%" in sql
+    assert "from DB.TELEMETRY.EVENTS" in sql and "'ICECORE_EMIT(EVENTS ARRAY):VARCHAR'" in sql
     for needle in ["'node_result'", "record_name = 'icecore.metric'", "record_name = 'icecore.schema_change'",
                    "where status in ('fail', 'error', 'warn')", "where anomaly_is_anomaly = true",
                    "record_name = 'icecore.ack'", '"icecore.ack.incident_key"', '"icecore.ack.by"']:
@@ -105,12 +105,12 @@ def test_acknowledge_takes_no_by_argument():
 
 def test_feed_counts_only_acks_of_icecore_ack_at_or_after_first_detection():
     sql = feed_sql()
-    assert "startswith(executable_name, 'ICECORE_ACK(')" in sql
+    assert "executable_name = 'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR'" in sql
     assert "acks.event_at >= incidents.first_detected_at" in sql
 
 
 def test_base_events_admits_the_ack_procedure():
-    assert """startswith(RESOURCE_ATTRIBUTES:"snow.executable.name"::string, 'ICECORE_ACK(')""" in feed_sql()
+    assert "'ICECORE_ACK(INCIDENT_KEY VARCHAR):VARCHAR'" in feed_sql().split("executable_name = ")[0]
 
 
 # --- sandbox --------------------------------------------------------------------------------------

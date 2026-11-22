@@ -16,7 +16,7 @@ The left menu has these sections. Each one shows 3 to 5 KPI tiles, a filter bar 
 | Runs | Each dbt invocation and the timeline of its nodes. |
 | Schedules and freshness | Declared schedules (`meta.sla`), missed runs, and source freshness against its limit. |
 | Schema changes | Columns added, removed or retyped. |
-| Cost | Credits per run and per model, from Snowflake's query attribution. Opt-in: empty until the `cost` var is on ([configuration](configuration.md#cost-per-node)), and a run's credits arrive hours later. |
+| Cost | Credits per run and per model, from Snowflake's query attribution. On by default (`cost: false` turns it off, [configuration](configuration.md#cost-per-node)). A run's credits are an estimate at first, and Snowflake's attributed number replaces it hours later. |
 | Lineage | The DAG, left to right, with a status overlay, upstream and downstream highlight, the root-cause path, a layer filter and a node search. |
 | Models and sources | Every node, with its page: status history, tests, metrics, schema, cost. |
 | Settings and about | What `setup` detected (edition, event table, levels, Cortex), and the data-quality list of views that could not be read. |
@@ -33,7 +33,7 @@ Each tile has a help text that says how its number is computed.
 
 **Refresh and cache.** The app reads the last 30 days once and filters the window and layer in the browser. The data is cached for 5 minutes. The refresh button in the top bar clears the cache and reads the views again. The footer of the menu shows when the views were read.
 
-**Acknowledge.** On an open incident, Acknowledge calls `ICECORE_ACK` with the incident key. The procedure refuses a key that is not a current unacknowledged incident and records your own Snowflake user as the acknowledger. The views show it after a few seconds (event-table delay); until then the app shows the incident as acknowledged. Resolve and Reopen are kept in the browser tab only.
+**Acknowledge.** On an open incident, Acknowledge calls `ICECORE_ACK` with the incident key. The procedure refuses a key that is not a current unacknowledged incident and records your own Snowflake user as the acknowledger. The views show it after a few seconds (event-table delay); until then the app shows the incident as acknowledged. Resolve and Reopen are kept in the browser tab only. A deployed app runs with its owner's rights, so anyone who can open it can acknowledge incidents, whatever their own grants on `ICECORE_ACK`; give USAGE on the app only to people you trust to acknowledge.
 
 **Views that cannot be read.** If a view is missing or the role cannot read it, the app still opens. A red bar lists each view and its error, and the sections that depend on it show what is recorded so far.
 
@@ -97,7 +97,7 @@ The files, relative to `streamlit/`:
 - `lib/__init__.py`, `ack.py`, `console_component.py`, `console_data.py`, `incidents.py`, `queries.py`, `settings.py` and `status.py`;
 - `components/console/build/index.html` and `components/console/build/assets/*`.
 
-The packages are in `environment.yml` (Streamlit 1.50.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
+The packages are in `environment.yml` (Streamlit 1.52.2, Pillow 12.3.0 and Snowpark, from the Snowflake Anaconda channel). That file applies on the warehouse runtime; the account's default container runtime ignores it, which is why `snowflake.yml` sets `runtime_name: SYSTEM$WAREHOUSE_RUNTIME`.
 
 ### Option 1: `make deploy-app` (recommended)
 

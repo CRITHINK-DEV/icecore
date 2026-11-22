@@ -29,10 +29,10 @@ export function normalise(raw) {
       depends_on: Array.isArray(n.depends_on) ? n.depends_on.map(String) : [] };
   });
   d.runs = d.runs.filter(r => r.invocation_id && parseT(r.started_at) != null).map(r => ({ ...r, invocation_id: String(r.invocation_id),
-    duration_s: num(r.duration_s), credits: num(r.credits), nodes_total: num(r.nodes_total), nodes_failed: num(r.nodes_failed),
+    duration_s: num(r.duration_s), credits: num(r.credits), credits_estimated: !!r.credits_estimated, cost_pending_nodes: num(r.cost_pending_nodes), nodes_total: num(r.nodes_total), nodes_failed: num(r.nodes_failed),
     status: r.status == null ? null : String(r.status).toLowerCase(), command: str(r.command), target: str(r.target) }));
   d.node_executions = d.node_executions.filter(e => e.invocation_id && e.unique_id).map(e => ({ ...e,
-    execution_time_s: num(e.execution_time_s), credits: num(e.credits), status: e.status == null ? null : String(e.status).toLowerCase() }));
+    execution_time_s: num(e.execution_time_s), credits: num(e.credits), credits_estimated: !!e.credits_estimated, status: e.status == null ? null : String(e.status).toLowerCase() }));
   d.test_results = d.test_results.filter(r => r.invocation_id && r.test_unique_id).map(r => ({ ...r,
     status: r.status == null ? null : String(r.status).toLowerCase(), failures: num(r.failures) }));
   d.metrics = d.metrics.filter(m => m.unique_id && parseT(m.observed_at) != null).map(m => ({ ...m, relation: m.relation == null ? lastSeg(m.unique_id) : String(m.relation),

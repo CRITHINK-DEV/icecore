@@ -26,15 +26,21 @@
     computes many values in one run. metrics: [{metric, value, column, dimension, anomaly, attributes, threshold}], the keys as
     emit_metric's arguments (only metric and value are required). Same rules as emit_metric for each entry. -#}
 {% macro emit_metrics(relation, metrics) %}
-  {%- set events = [] -%}
-  {%- for m in metrics -%}
-    {%- do events.extend(icecore._icecore_metric_events(relation, m['metric'], m['value'], m.get('column'), m.get('dimension'), m.get('anomaly'), m.get('attributes'), m.get('threshold'))) -%}
-  {%- endfor -%}
-  {{ return(icecore.emit_events(events)) }}
+  {{ return(icecore.emit_events(icecore._icecore_metrics_events(relation, metrics))) }}
 {% endmacro %}
 
 
 {#- Private --------------------------------------------------------------------------------------- -#}
+
+{#- The events emit_metrics sends for metrics, in order. -#}
+{% macro _icecore_metrics_events(relation, metrics) %}
+  {%- set events = [] -%}
+  {%- for m in metrics -%}
+    {%- do events.extend(icecore._icecore_metric_events(relation, m['metric'], m['value'], m.get('column'), m.get('dimension'), m.get('anomaly'), m.get('attributes'), m.get('threshold'))) -%}
+  {%- endfor -%}
+  {{ return(events) }}
+{% endmacro %}
+
 
 {#- The events emit_metric sends, as emit_events takes them ({kind, message, attributes, level}); [] when value is
     not a number. -#}

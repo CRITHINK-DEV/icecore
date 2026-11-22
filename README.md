@@ -30,7 +30,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 ![The Console overview](docs/assets/app/v2-overview.png)
 
 > [!NOTE]
-> **This is an early public release (`v0.1.2`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
+> **This is an early public release (`v0.2.0`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Add icecore to `packages.yml`, pinned to the release tag, then install:
 # packages.yml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.1.2
+    revision: v0.2.0
 ```
 
 ```bash
@@ -116,7 +116,7 @@ models:
 
 The other monitors are `icecore.schema_changes`, `icecore.column_anomaly`, `icecore.all_columns_anomaly` and `icecore.dimension_anomaly`. Each metric is scored against the test's own history (30 days, at least 7 points; until then it only records metrics). An anomaly warns by default; set `vars: icecore: anomaly_severity: error` to make it fail the test. A threshold you wrote (`max_lag`, `min_rows`, `bounds`) fails the test. Arguments: [Configuration](docs/configuration.md#generic-tests) and the [generic test reference](docs/reference/tests.md). To declare a schedule and let icecore detect a missed run, add `meta.sla` to a model.
 
-**Cost per model is opt-in.** Set `vars: icecore: cost: true`. The role that runs dbt then needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on the `SNOWFLAKE` database) to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns and the run carries on. Until it is on, the app's Cost page stays empty.
+**Cost per model is on by default** (`vars: icecore: cost: false` turns it off). A node shows an estimate at once, from the query history, and Snowflake's attributed number replaces it hours later. The role that runs dbt needs `SNOWFLAKE.USAGE_VIEWER` to read `QUERY_ATTRIBUTION_HISTORY`; without it icecore warns once and the run carries on with estimates.
 
 Then read the views, not the event table:
 
@@ -159,7 +159,7 @@ It uploads the app files (including the Console's `components/console/build/`) a
 - **Views and external tables** have no row-count metadata, so `icecore.volume` cannot measure them.
 - **`setup` with `app: true`** does nothing yet: deploy the app as described above.
 - **Alerts and tasks use a warehouse** once resumed (`alerts: true`).
-- **Cost** is off by default (`cost: true` turns it on) and appears hours after a run: Snowflake publishes query attribution with a lag, and a later dbt run writes the credits.
+- **Cost** is on by default (`cost: false` turns it off). A run shows an estimate at once and Snowflake's attributed number appears hours later: Snowflake publishes query attribution with a lag, and a later dbt run replaces the estimate.
 - **Resolve and Reopen** in the app are kept in the browser tab only. Acknowledge is the only recorded action.
 - **Snowflake only**, for good.
 
@@ -185,9 +185,9 @@ vars:
     result_message: redacted # redacted, full or none
 ```
 
-`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
+`result_message` controls how much of dbt's result message reaches the event table. dbt's message can quote data values from a Snowflake error, for example `Numeric value 'jane@x.com' is not recognized`, and people who can read the event table may not be allowed to read your data. `redacted`, the default, replaces every single-quoted literal with `'?'` and every double-quoted one with `"?"`, masks the whole list of a duplicate-row error's `Row Values: [...]` (it holds bare numbers too), then cuts the message at 1,000 characters. `full` keeps dbt's text as it is. `none` leaves the message out.
 
-Samples are off by default because they copy real row values from your tables into the event table, and anyone who can read the event table can read them, which may be more people than can read the data. To turn them on, set `samples: true`: each failed test that stores its failures (`store_failures`) then writes up to `sample_rows` rows. To keep sensitive values out, list the columns in `sample_exclude_columns` (any case): their names stay in each row and their values become `?`.
+Samples are off by default because they copy real row values from your tables into the event table, and anyone who can read the event table can read them, which may be more people than can read the data. The same values (and the dimension values a `dimension_anomaly` test records) also travel in the text of the `CALL` that writes them, so they appear in Snowflake's query history and in dbt's debug log (`logs/dbt.log`), where the people who can read those may differ again. To turn them on, set `samples: true`: each failed test that stores its failures (`store_failures`) then writes up to `sample_rows` rows. To keep sensitive values out, list the columns in `sample_exclude_columns` (any case): their names stay in each row and their values become `?`.
 
 
 ## How it works
@@ -204,7 +204,7 @@ flowchart LR
     views --> alerts["Snowflake Alerts and tasks<br/>email, Slack, Teams"]
 ```
 
-- **Write path.** Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 512 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks land nothing in the database's event table (for LOG records, the only ones checked, the record goes to the account table and only when the session sets `LOG_LEVEL`; SPAN and SPAN_EVENT routing there is unmeasured), while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
+- **Write path.** Gate 1 (31 Oct) chose two procedures, created by `icecore.setup` in the target database. `ICECORE_EMIT` (SQL) takes the frequent small writes, such as metric records from the generic tests, as span events with scope `global`. `ICECORE_EMIT_RUN` (Python) is called at `on-run-end`, in as many `CALL`s as its 768 KB chunks need, and writes the invocation and node spans with the real dbt timings, plus LOG records with attributes, under scope `icecore`. Each `CALL` is its own trace, and every record carries `dbt.invocation_id`, which groups a run. Spike S1 measured why: anonymous Snowflake Scripting blocks land nothing in the database's event table (for LOG records, the only ones checked, the record goes to the account table and only when the session sets `LOG_LEVEL`; SPAN and SPAN_EVENT routing there is unmeasured), while a procedure in the target database writes to that database's event table; and only the Python path gives real spans with explicit timings.
 - **Read path.** `icecore.setup` creates views over the event table (and the two emitter procedures; no tables). Views are the only public interface: the app and your BI tools read views, never the raw table.
 - **Control path.** Snowflake Alerts run against the views and notify through a notification integration. A Snowflake task detects runs that never happened.
 

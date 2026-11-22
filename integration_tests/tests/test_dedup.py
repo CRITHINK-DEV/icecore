@@ -38,7 +38,7 @@ def minutes(settings=None) -> int:
 
 def test_dedup_reads_the_feed_and_the_notified_events_through_base_events():
     sql = dedup(schema="my_obs")
-    assert f"from {EVENT_TABLE}" in sql and "ICECORE_EMIT%" in sql
+    assert f"from {EVENT_TABLE}" in sql and "'ICECORE_EMIT(EVENTS ARRAY):VARCHAR'" in sql
     assert """"snow.schema.name"::string = 'MY_OBS'""" in sql
     assert f'from "{DATABASE}"."MY_OBS"."ALERTS_FEED"' in sql
     assert "record_name = 'icecore.notified'" in sql
@@ -65,7 +65,7 @@ def test_window_defaults_to_the_incident_window(settings, expected):
 
 def test_only_notified_records_of_the_notified_procedure_after_first_detection_count():
     sql = dedup()
-    assert "startswith(executable_name, 'ICECORE_NOTIFIED(')" in sql
+    assert "executable_name = 'ICECORE_NOTIFIED(INCIDENT_KEY VARCHAR, CHANNEL VARCHAR):VARCHAR'" in sql
     assert "and notified.event_at >= feed.first_detected_at" in sql
 
 

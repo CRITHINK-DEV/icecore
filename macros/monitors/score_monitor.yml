@@ -9,7 +9,8 @@ macros:
       baseline and history sizes) to pass to `emit_metric` / `emit_metrics` as `anomaly`, or none when the point is not scored:
       fewer than `min_points` points in the lookback (an info line says so; never an error), scoring switched off
       (`var('icecore').monitor_score: false`), or a failed read (a warning). The history is the lag-aware reader's window
-      (`get_metric_history_sql`: the METRICS view of the obs schema, `lookback_days`, minus `history_delay_minutes`).
+      (`get_metric_history_sql`: the METRICS view of the obs schema, `lookback_days`, minus `history_delay_minutes`), read
+      from the run's copy of the history when `start_run` read it at on-run-start (one read per run), else from the view.
       One query reads and scores the history of every metric of the test (one scored subquery per point, chunked at 25 points):
       one query for `freshness`, `volume` and `column_anomaly`, `ceil(points / 25)` for the two wide tests. The history is the
       calling test's own: its metrics carry the test's `unique_id` and the read filters on it. The native engine

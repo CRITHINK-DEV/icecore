@@ -29,7 +29,7 @@ These keys control what the `start_run` and `end_run` hooks write.
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `telemetry` | `true` | boolean | `false` makes both hooks write nothing. | Cost: no rows at all. Use it to switch icecore off for one run with `--vars`. |
+| `telemetry` | `true` | boolean | `false` makes both hooks write nothing. | Cost: the hooks write no rows; monitor tests still record their metrics (their history is what anomaly detection reads), see below. Use it to stop the hooks for one run with `--vars`. |
 | `node_results` | `true` | boolean | `end_run` writes one record per node result: status, rows affected, execution time, message, test failures. | Cost: one row per node per run. Privacy: carries `dbt.result.message`, see `result_message`. |
 | `query_events` | `true` | boolean | `end_run` adds one `icecore.query` event with the Snowflake query id to each node's span. | Cost: one row per node query per run. The query id is what cost attribution joins on later. |
 | `lineage` | `true` | boolean | `end_run` writes the project's dependency edges (parent and child unique ids, between models, seeds, snapshots and sources) as log records. The whole graph is sent every run, not only the selected nodes. Edges that do not fit under `payload_cap_kb` are split over as many records as needed, and none is dropped. A graph with no edges writes no record. | Cost: at least one row per run, one more for each payload cap of edges. Privacy: unique ids only, no data. |
@@ -76,6 +76,12 @@ The five monitor tests (`icecore.freshness`, `icecore.volume`, `icecore.column_a
 
 **History is per test.** Each test stamps its metrics with its own `unique_id` and reads only those points, so two tests on the same column never share points. A test starts with no history after upgrading: it scores from its 7th run.
 
+**One history read per run.** With the `start_run` hook, on-run-start reads the history of every selected monitor test in one query of `METRICS` and keeps it for the run; each test scores against that copy, through the same window, instead of reading the view itself. A record that lands between the start of the run and the test (another run of the same project finishing at that moment) is not in the copy. The same read also takes, for every selected `schema_changes` test, the newest complete schema snapshot of its relation from the event table, and the event table is looked up once per run (not once per test and again for the cost backfill). Without the hook, or when a read fails (a warning says so), each test reads the view, the snapshot and the event table's name as before.
+
+The scoring query of each test (one per test, `execute immediate`) is not a history read: it carries the run's copy of the series inside its text and scans no table.
+
+**Monitor records go out at run end.** With `on-run-end: "{{ icecore.end_run(results) }}"`, a monitor test does not `CALL` `ICECORE_EMIT` for its metric, anomaly, schema signature and schema change records: it writes them into its own compiled SQL as one comment (`/* icecore:records ... */`, also in `target/compiled` and the query history), and `end_run` sends them with the run's batch, as span events stamped with the time the test made them, on Snowflake's clock (the one history read of on-run-start also measures how far dbt's clock is from it; without `start_run` the stamp is dbt's clock, like node spans), so `METRICS.observed_at` and every other time stays the time of the observation. They land when the run ends, not while it runs. **A run killed before on-run-end (a cancelled job, a lost connection) loses the records of its monitor tests**; the tests' verdicts never depend on them. Without that hook, with `telemetry: false`, or when a test's records pass 256 KB, the test sends them at once in one `CALL`, as before.
+
 Each test takes these arguments, which override the vars below for that test only: `engine`, `sensitivity`, `min_consecutive`, `lookback_days` (default 30), `min_points` (default 7) and `shadow_engine`. Example: `data_tests: [icecore.volume: {engine: native, sensitivity: high}]`.
 
 **Cost per test.** Native engine: one query reads and scores all the test's metrics (`freshness`, `volume`, `column_anomaly`: 1; `all_columns_anomaly`, `dimension_anomaly`: `ceil(metrics / 25)`). With `auto` or `cortex`, a series of 14 or more days is also tried with Cortex: 2 queries per metric when the relation's model scores. The model is per relation, so when it cannot score (no model, stale, error) the first metric pays the failed calls (2 to 5 queries) and the rest of the relation's metrics fall back to native without calling; one info line says why. Set `engine: native` on a test, or `anomaly_engine: native`, to never try Cortex. A shadow engine adds one native query per metric (or the Cortex calls). The native band of a constant series whose median and spread are both 0 is zero-width (a null rate that was always 0): any move off 0 is an anomaly; set `anomaly_mad_floor_abs` to tolerate it.
@@ -107,7 +113,7 @@ Off by default. When `root_cause` is true, `end_run` explains each failed test o
 
 | Var | Default | Type | What it does | Privacy or cost effect |
 | --- | --- | --- | --- | --- |
-| `cost` | `false` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a later run with `cost` on fills the credits of earlier runs. | Reads `ACCOUNT_USAGE`: the role needs `SNOWFLAKE.USAGE_VIEWER` (or IMPORTED PRIVILEGES on `SNOWFLAKE`). A missing grant is a warning, never a failed run. |
+| `cost` | `true` | boolean | `end_run` joins each node's query ids to `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY` and writes `dbt.cost.credits` and `dbt.cost.warehouse` on a `cost` LOG, and one `credits` metric per node. Snowflake publishes attribution hours late, so a node not attributed yet gets an **estimate** at once (`dbt.cost.estimated = true`, from the query history: execution time times the credits per hour of a standard warehouse of that size; no metric, no scoring), and a later run with `cost` on replaces it with Snowflake's number, at most `cost_backfill_limit` nodes per run. The run-end LOG carries `icecore.cost.pending_nodes`, and a run warns when more nodes wait than a run fills. `cost: false` turns all of it off. | Reads `ACCOUNT_USAGE`: attribution needs `SNOWFLAKE.USAGE_VIEWER`; without it the run warns once and estimates still work, never a failed run. Estimates read `INFORMATION_SCHEMA` query history of the current user: no grant. |
 
 ### Declared, not read
 
@@ -151,8 +157,8 @@ on-run-end: "{{ icecore.end_run(results) }}"
 
 | Hook | What it writes | When it writes nothing |
 | --- | --- | --- |
-| `icecore.start_run()` | One `icecore.run_start` span event through `ICECORE_EMIT`, with the run's attributes, `dbt.version`, `icecore.anomaly_engine` and `icecore.shadow_engine`. | `telemetry: false`, or at parse time. |
-| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 512 KB as needed. | `telemetry: false`, or at parse time. |
+| `icecore.start_run()` | One `icecore.run_start` span event through `ICECORE_EMIT`, with the run's attributes, `dbt.version`, `icecore.anomaly_engine` and `icecore.shadow_engine`. Then one read of the metric history, and of the schema snapshots, of the run's monitor tests (see "One history read per run"). | `telemetry: false`, or at parse time. |
+| `icecore.end_run(results)` | Through `ICECORE_EMIT_RUN`: the invocation span, one span per node, the records the monitor tests left in their compiled SQL (on the test's node span, 100 at most, then on `icecore.monitor` spans), the `node_results`, `query_events` and `lineage` records, and one invocation-end log with the status (`success`, `warn` or `error`) and the node counts. Sent in as many `CALL`s of at most 768 KB as needed. | `telemetry: false`, or at parse time. |
 
 Every record carries `dbt.invocation_id`, which groups a run. A telemetry failure never fails your dbt run: if a procedure or a grant is missing, icecore logs one warning per hook and dbt carries on. If one end-of-run emitter reports an error, `end_run` skips it, warns, and sends the others. One failure cannot be caught: if the query that makes the `CALL` itself cannot run (no warehouse, a closed connection), dbt raises it.
 
@@ -220,9 +226,9 @@ The icecore monitor tests of the graph get their own line, `of the rows per run,
 | `icecore.schema_signature` | One per `schema_changes` test per run. | A signature of a wide table is split when its columns pass `payload_cap_kb`; the estimate counts about 100 bytes per declared column for that. |
 | Cost records | Counted in the `cost` entry, when the `cost` var is on. | Not repeated in the monitor line. |
 | Silence verdicts | 0. | The silence task writes them when a run is missing, not a run; 0 in a healthy project. |
-| Procedure spans | One per `ICECORE_EMIT` CALL: one CALL per test, one more for each 100 events. | Added to `call_overhead`. |
+| Procedure spans | With `end_run(results)` as the on-run-end hook: none, the records go with the end-of-run batch, plus one `icecore.monitor` span per further 100 events of a test. Without it: one per `ICECORE_EMIT` CALL, one CALL per test and one more for each 100 events. | Added to `call_overhead` when the tests CALL. |
 
-These records go through `ICECORE_EMIT` while the tests run, not through `end_run`, so they do not change `emit_run_calls`.
+With the `end_run(results)` hook these records count towards the end-of-run bytes and `emit_run_calls`; without it they go through `ICECORE_EMIT` while the tests run.
 
 | Argument | Default | Type | What it does |
 | --- | --- | --- | --- |
@@ -245,7 +251,7 @@ Until Telemetry Data Ingest replaces Logging on your account, Snowflake bills Lo
 | Object | Kind | What it is |
 | --- | --- | --- |
 | `ICECORE_EMIT` | SQL procedure | Writes span events. At most 100 events and 512 KB per `CALL`. |
-| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 512 KB per `CALL`. |
+| `ICECORE_EMIT_RUN` | Python procedure | Writes spans with real timings, and log records, at the end of a run. At most 768 KB per `CALL`. |
 | `ICECORE_ACK` | SQL procedure | Acknowledges one open incident of `ALERTS_FEED` and records the caller as the acknowledger. Granted only to the roles that may acknowledge. |
 | `METRICS` | view | One row per metric a monitor computed. |
 | `SCHEMA_CHANGES` | view | One row per detected column change. |

@@ -2,7 +2,7 @@
   UC1 on-run-end hook: `on-run-end: "{{ icecore.end_run(results) }}"`.
 
   One orchestrator. It builds one batch for the run and sends it with icecore.emit_run to ICECORE_EMIT_RUN, in
-  as many guarded CALLs of at most 512 KB as needed (spikes/GATE1.md, "Consequences for the build"). In order:
+  as many guarded CALLs of at most 768 KB as needed (spikes/GATE1.md, "Consequences for the build"). In order:
     1. the invocation span and one span per node, with dbt's own timings (spans.sql);
     2. each emitter of _icecore_end_run_emitters() whose var is on adds its items to the batch;
     3. the invocation-end LOG: dbt.invocation.status (success, warn or error), the node counts and the
@@ -17,6 +17,7 @@
       {%- do log('icecore: warning: ' ~ layers_problem, info=True) -%}
     {%- endif -%}
     {%- do icecore.emit_run(icecore._icecore_end_run_items(results)) -%}
+    {%- do icecore._icecore_forget_metric_history() -%}
   {%- endif -%}
   {{ return('') }}
 {% endmacro %}
@@ -34,7 +35,7 @@
       {'name': 'lineage', 'var': 'lineage', 'default': true, 'macro': icecore.emit_lineage},
       {'name': 'samples', 'var': 'samples', 'default': false, 'macro': icecore.emit_samples},
       {'name': 'root_cause', 'var': 'root_cause', 'default': false, 'macro': icecore.emit_root_cause},
-      {'name': 'cost', 'var': 'cost', 'default': false, 'macro': icecore.attach_cost},
+      {'name': 'cost', 'var': 'cost', 'default': true, 'macro': icecore.attach_cost},
   ]) }}
 {% endmacro %}
 
@@ -57,6 +58,7 @@
       {%- do batch['node_spans'].update({span['attrs'].get('dbt.node.unique_id'): span}) -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- do icecore._icecore_attach_test_records(results, batch) -%}
   {%- set skipped = [] -%}
   {%- for emitter in icecore._icecore_end_run_emitters() + (extra_emitters or []) -%}
     {%- if emitter is not mapping or emitter.get('macro') is not callable -%}
@@ -71,13 +73,13 @@
   {%- if skipped -%}
     {%- do log('icecore: warning: end_run emitters reported errors, the others still ran (' ~ (skipped | join('; ')) ~ ')', info=True) -%}
   {%- endif -%}
-  {%- do batch['items'].append(icecore._icecore_run_end_log(results, timing)) -%}
+  {%- do batch['items'].append(icecore._icecore_run_end_log(results, timing, batch)) -%}
   {{ return(batch['items']) }}
 {% endmacro %}
 
 
 {#- The invocation-end LOG: status, node counts and the invocation's times, at level error, warn or info to match the status. -#}
-{% macro _icecore_run_end_log(results, timing=none) %}
+{% macro _icecore_run_end_log(results, timing=none, batch=none) %}
   {%- set counts = icecore._icecore_node_counts(results) -%}
   {%- set status = 'error' if counts['failed'] else ('warn' if counts['warned'] else 'success') -%}
   {%- set attrs = {'icecore.kind': 'run_end', 'dbt.invocation.status': status} -%}
@@ -86,6 +88,10 @@
   {%- for key in ['total', 'success', 'failed', 'warned', 'skipped'] -%}
     {%- do attrs.update({'dbt.invocation.nodes_' ~ key: counts[key]}) -%}
   {%- endfor -%}
+  {#- set by backfill_cost: the nodes still waiting for Snowflake's attribution after this run -#}
+  {%- if batch and batch.get('cost_pending_nodes') is not none -%}
+    {%- do attrs.update({'icecore.cost.pending_nodes': batch['cost_pending_nodes']}) -%}
+  {%- endif -%}
   {{ return({
       'type': 'log',
       'level': {'error': 'error', 'warn': 'warn'}.get(status, 'info'),

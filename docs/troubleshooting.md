@@ -285,19 +285,19 @@ Models cannot be shared across roles, so they are trained and scored in the role
 
 ## Missing costs
 
-**Symptom.** You set `cost: true`, and the `credits` metric or the cost record is missing for some nodes, or the run prints:
+**Symptom.** The `credits` metric is missing for some nodes, their cost is marked `credits_estimated`, or the run prints:
 
 ```text
 icecore: warning: cost: attribution is not available yet for 3 of 5 nodes; a later run backfills them (QUERY_ATTRIBUTION_HISTORY lags by hours)
 ```
 
-The `cost` var is off by default. With it off, nothing is read or written.
+The `cost` var is on by default. With `cost: false`, nothing is read or written.
 
-**Why.** Credits come from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY`, joined to the node by its query ids. That view lags by hours, Snowflake documents up to 6, so right after a run there is usually nothing to read. The run then writes nothing for those nodes and does not fail.
+**Why.** Credits come from `SNOWFLAKE.ACCOUNT_USAGE.QUERY_ATTRIBUTION_HISTORY`, joined to the node by its query ids. That view lags by hours, Snowflake documents up to 6, so right after a run there is usually nothing to read. The run then writes an estimate for those nodes (`dbt.cost.estimated = true`, from the query history: execution time times the credits per hour of a standard warehouse of that size, no `credits` metric) and does not fail. Summed execution time overstates the bill when dbt threads share a warehouse, so read an estimate as an upper guess, never as billed cost.
 
 **Fix by cause.**
 
-- **Attribution lag.** Nothing to fix. A later run backfills nodes of the last `cost_lookback_days` (default 7), at most `cost_backfill_limit` nodes per run. The backfilled record keeps the original invocation id. It needs a later dbt run with `cost` on: no run, no backfill.
+- **Attribution lag.** Nothing to fix. When more nodes wait than `cost_backfill_limit`, the run warns `icecore: warning: cost: N nodes are still waiting for Snowflake's attribution ...`: they keep their estimate until later runs fill them (`cost_backfill_limit` per run), and a node older than `cost_lookback_days` keeps its estimate for good. `INVOCATIONS.cost_pending_nodes` is that count. A later run backfills nodes of the last `cost_lookback_days` (default 7), at most `cost_backfill_limit` nodes per run. The backfilled record keeps the original invocation id. It needs a later dbt run with `cost` on: no run, no backfill.
 - **0 credits after a day.** Snowflake writes no attribution row for many statements, such as views and plain table creation. After `cost_settle_hours` (default 24) a node whose queries still have no attribution is closed at the credits that were attributed, 0 when none, and its cost record carries `dbt.cost.settled = no_attribution`. It gets no `credits` metric. A 0 is not an error.
 - **Missing privilege.** The role that runs dbt must read `ACCOUNT_USAGE`. An admin grants it:
 
@@ -307,4 +307,4 @@ The `cost` var is off by default. With it off, nothing is read or written.
 
   or `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <dbt_role>`. Without it the warning above carries the error text and every node stays unattributed.
 
-`NODE_EXECUTIONS.credits` comes from the node's latest `cost` record, so a later backfill replaces an earlier value, and `INVOCATIONS.credits` sums them per run. Both stay null until a cost record lands. `NODE_EXECUTIONS.credits_settled` is `no_attribution` on a node closed with what was attributed, which is 0 when Snowflake wrote no attribution row (see the [views reference](reference/views.md)).
+`NODE_EXECUTIONS.credits` comes from the node's latest `cost` record, so a later backfill replaces an earlier value, and `INVOCATIONS.credits` sums them per run. Both stay null until a cost record lands. A node's attributed or settled record wins over its estimate, never added to it; `credits_estimated` (on both views) is true when the value is, or for a run includes, an estimate. `NODE_EXECUTIONS.credits_settled` is `no_attribution` on a node closed with what was attributed, which is 0 when Snowflake wrote no attribution row (see the [views reference](reference/views.md)).

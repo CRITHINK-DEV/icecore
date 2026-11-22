@@ -9,7 +9,7 @@ macros:
       the database and keeps only the records of icecore's two procedures in this environment (spikes/GATE1.md,
       "Identity and record shape"). The predicates come first and in this order, so the filter sits directly on
       the table scan: `RECORD_TYPE in ('SPAN', 'SPAN_EVENT', 'LOG')`; `RESOURCE_ATTRIBUTES` `snow.database.name` =
-      the database, `snow.schema.name` = the icecore schema and `snow.executable.name like 'ICECORE_EMIT%'`;
+      the database, `snow.schema.name` = the icecore schema and `snow.executable.name` equal to the full signature of one of icecore's procedures (for example `ICECORE_EMIT(EVENTS ARRAY):VARCHAR`; an overload someone else created is not matched);
       then the icecore identity, `SCOPE:name = 'icecore'` (ICECORE_EMIT_RUN records) or a SPAN_EVENT whose name
       starts with `icecore.` (ICECORE_EMIT records, SCOPE `global`). Records of other libraries, other procedures,
       other schemas or other databases sharing the table are never returned; native dbt Projects records are not
@@ -20,7 +20,7 @@ macros:
       `executable_name`, `emit_query_id` (the emitting CALL's query id), one typed column per attribute of spec
       section 4 (strings; `result_rows_affected`, `test_failures`, `icecore_schema_version` as NUMBER;
       `result_execution_time_s`, `metric_value`, `anomaly_expected`, `anomaly_lower`, `anomaly_upper`,
-      `anomaly_score`, `cost_credits` as FLOAT; `anomaly_is_anomaly` as BOOLEAN), `value` and `attributes` (raw
+      `anomaly_score`, `cost_credits` as FLOAT; `anomaly_is_anomaly`, `cost_estimated` as BOOLEAN; `cost_pending_nodes` as NUMBER), `value` and `attributes` (raw
       RECORD_ATTRIBUTES). Typed columns use TRY_TO_*, so a malformed value reads as null and never fails a view.
       Spans are written after the fact with dbt's times, so do not window incremental reads on `event_at` alone.
     arguments:

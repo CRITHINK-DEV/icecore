@@ -106,3 +106,16 @@
   {% do _it_result({'source': source, 'sql': none if source is none else icecore.get_metric_history_sql(relation, metric, column, dimension, lookback_days, 1, source, none, test_id),
                     'forgotten': invocation_id not in ((graph.get('icecore') or {}).get('history') or {})}) %}
 {% endmacro %}
+
+
+{#- The run's copies without a connection: the event table lookup kept for the run, and the schema snapshot of a relation
+    served from the run's history copy (_icecore_previous_signature). -#}
+{% macro it_run_copies(relation_name, signature, event_table) %}
+  {% do graph.setdefault('icecore', {}).setdefault('event_table', {}).update({invocation_id: {target.database: event_table}}) %}
+  {% do graph['icecore'].setdefault('history', {}).update({invocation_id: {'tests': {}, 'lookback_days': 30, 'series': {}, 'signatures': {relation_name: signature}}}) %}
+  {% set relation = api.Relation.create(database='DB', schema='S', identifier='T') %}
+  {% set out = {'event_table': icecore._icecore_history_event_table(), 'signature': icecore._icecore_previous_signature(relation)} %}
+  {% do icecore._icecore_forget_metric_history() %}
+  {% do out.update({'forgotten': invocation_id not in graph['icecore']['event_table'] and invocation_id not in graph['icecore']['history']}) %}
+  {% do _it_result(out) %}
+{% endmacro %}

@@ -7,8 +7,11 @@
 {#- The event table the history reads use (the target database's EVENT_TABLE, mapped by event_table_to_read), or
     none when none is active or the lookup fails. resolve_event_table raises when there is none, and a Jinja macro
     cannot catch that, so the lookup runs in a Snowflake Scripting block that returns the error instead; the mapping
-    is event_table_to_read's. -#}
+    is event_table_to_read's. The answer is kept for the run in dbt's `graph` under icecore.event_table.<invocation_id>
+    (like the metric history, see _icecore_load_metric_history), so the lookup runs once per run, not once per test. -#}
 {% macro _icecore_history_event_table() %}
+  {%- set cache = graph.setdefault('icecore', {}).setdefault('event_table', {}).setdefault(invocation_id, {}) if graph is defined else {} -%}
+  {%- if target.database in cache -%}{{ return(cache[target.database]) }}{%- endif -%}
   {%- set block -%}
 declare
   v varchar default null;
@@ -27,7 +30,9 @@ end;
     {% do log('icecore: warning: the event table could not be looked up: ' ~ out['error'], info=True) %}
     {{ return(none) }}
   {%- endif -%}
-  {{ return(icecore.event_table_to_read(out.get('value'))) }}
+  {%- set table = icecore.event_table_to_read(out.get('value')) -%}
+  {%- do cache.update({target.database: table}) -%}
+  {{ return(table) }}
 {% endmacro %}
 
 
@@ -64,6 +69,11 @@ end;
     (dbt.schema.chunk_index of chunk_count) of one invocation; a record without them is a whole snapshot (older
     records). -#}
 {% macro _icecore_previous_signature(relation) %}
+  {%- set copy = ((graph.get('icecore') or {}).get('history') or {}).get(invocation_id, {}).get('signatures') if graph is defined else none -%}
+  {%- if copy is not none and icecore._icecore_quoted_name(relation) in copy -%}
+    {%- set raw = copy[icecore._icecore_quoted_name(relation)] -%}
+    {{ return(fromjson(raw) if raw is string else none) }}
+  {%- endif -%}
   {%- set event_table = icecore._icecore_history_event_table() -%}
   {%- if event_table is none -%}{{ return(none) }}{%- endif -%}
   {%- set sql -%}
@@ -84,6 +94,35 @@ end;
   {%- endset -%}
   {%- set raw = icecore._icecore_safe_scalar(sql, 'schema_changes baseline', relation) -%}
   {{ return(fromjson(raw) if raw is string else none) }}
+{% endmacro %}
+
+
+{#- The newest complete schema snapshot of each relation in `names` (quoted names, as the records carry them), in one
+    read of the event table: one array of {r: relation, c: columns as JSON text}, none for a relation with no
+    complete snapshot. The same rule as _icecore_previous_signature, for many relations at once. -#}
+{% macro _icecore_signatures_sql(event_table, names) %}
+  {%- set quoted = [] -%}
+  {%- for name in names -%}{%- do quoted.append(icecore._sql(name, 'string')) -%}{%- endfor -%}
+  {%- set sql -%}
+    with s as (
+      select node_relation as rel, invocation_id, event_at,
+             coalesce(attributes:"dbt.schema.chunk_index"::int, 0) as idx,
+             coalesce(attributes:"dbt.schema.chunk_count"::int, 1) as cnt,
+             parse_json(attributes:"dbt.schema.columns"::string) as cols
+      from ({{ icecore.base_events(event_table=event_table) }})
+      where node_relation in ({{ quoted | join(', ') }})
+        and event_at >= dateadd(second, -{{ icecore._icecore_history_lookback_seconds() }}, sysdate())
+        and record_name = 'icecore.schema_signature'
+      qualify row_number() over (partition by node_relation, invocation_id, idx order by event_at desc) = 1
+    ), newest as (
+      select rel, invocation_id from s group by rel, invocation_id having count(*) = max(cnt)
+      qualify row_number() over (partition by rel order by max(event_at) desc) = 1
+    )
+    select coalesce(array_agg(object_construct('r', rel, 'c', c)), array_construct())
+    from (select s.rel, array_flatten(array_agg(s.cols) within group (order by s.idx))::string as c
+          from s join newest n on s.rel = n.rel and s.invocation_id = n.invocation_id group by s.rel)
+  {%- endset -%}
+  {{ return(sql) }}
 {% endmacro %}
 
 

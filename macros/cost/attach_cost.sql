@@ -445,15 +445,10 @@
     The SELECT reads base_events (record attributes, including the node results' and query events' snow.query.id);
     a node is pending when it has a query id and no ATTRIBUTED (not estimated) cost in the window. -#}
 {% macro _icecore_pending_cost_nodes() %}
-  {%- set shown = icecore._icecore_try_show("show parameters like 'EVENT_TABLE' in database " ~ icecore._icecore_identifier(target.database)) -%}
-  {%- if 'error' in shown -%}
-    {%- do log('icecore: warning: cost backfill: the event table could not be looked up (' ~ shown['error'] ~ ')', info=True) -%}
-    {{ return({'nodes': [], 'total': none}) }}
-  {%- endif -%}
-  {%- set rows = shown.get('rows') or [] -%}
-  {%- set table = icecore.event_table_to_read(rows[0]['value'] if rows | length > 0 else none) -%}
+  {#- the run's one lookup of the event table (_icecore_history_event_table: guarded, warns when it fails) -#}
+  {%- set table = icecore._icecore_history_event_table() -%}
   {%- if table is none -%}
-    {%- do log('icecore: warning: cost backfill: the database has no active event table, nothing to backfill', info=True) -%}
+    {%- do log('icecore: warning: cost backfill: the database has no readable active event table, nothing to backfill', info=True) -%}
     {{ return({'nodes': [], 'total': none}) }}
   {%- endif -%}
   {%- set days = (icecore._icecore_number(icecore._icecore_setting('cost_lookback_days', 7)) or 7) | int -%}

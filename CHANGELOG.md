@@ -4,6 +4,8 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-22
+
 ### Added
 - Cost estimates: a node whose Snowflake attribution has not landed at run end now gets a cost record at once, an estimate (`dbt.cost.estimated = true`). It comes from one guarded read of the current user's query history (no grant needed): execution time times the credits per hour of a standard warehouse of that size. An estimate writes no `credits` metric and is never scored. The backfill replaces it with Snowflake's attributed number (or its settled record) on a later run.
 - `NODE_EXECUTIONS.credits_estimated` and `INVOCATIONS.credits_estimated` (true when the credits are, or include, an estimate; an attributed value always wins over the estimate of the same node), `INVOCATIONS.cost_pending_nodes` and the run-end LOG key `icecore.cost.pending_nodes` (nodes still waiting for attribution after the run). The console data passes them through without changing what is shown.

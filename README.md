@@ -30,7 +30,7 @@ You read it all through views, a Streamlit app (the Console) and Snowflake alert
 ![The Console overview](docs/assets/app/v2-overview.png)
 
 > [!NOTE]
-> **This is an early public release (`v0.2.0`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
+> **This is an early public release (`v0.2.1`).** It is tested on dbt Core and a Snowflake sandbox. See [Known limits](#known-limits) before you point it at a production project, and [report what you find](#report-an-issue).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Add icecore to `packages.yml`, pinned to the release tag, then install:
 # packages.yml
 packages:
   - git: "https://github.com/crithink-dev/icecore.git"
-    revision: v0.2.0
+    revision: v0.2.1
 ```
 
 ```bash
@@ -130,7 +130,7 @@ All views, with their columns: [views reference](docs/reference/views.md).
 
 The Console is one full-page Streamlit app: Overview, Incidents, Tests and anomalies, Runs, Schedules and freshness, Schema changes, Cost, Lineage, Models and sources, and Settings. It reads only the icecore views, and its one write is acknowledging an incident through `ICECORE_ACK`. Full guide: [docs/app.md](docs/app.md).
 
-**Run it locally first (recommended).** No warehouse is kept running for the app: it holds a Snowflake session only while you use it. You need Python 3.10 to 3.13 and a clone of this repository (the app is not part of the dbt package install).
+**Run it locally first (recommended).** No warehouse is kept running for the app: it holds a Snowflake session only while you use it. You need Python 3.11 to 3.13 and a clone of this repository (the app is not part of the dbt package install).
 
 ```bash
 git clone https://github.com/crithink-dev/icecore.git && cd icecore

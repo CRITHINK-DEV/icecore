@@ -236,3 +236,62 @@ def test_two_runs_at_once_keep_their_records_apart(batched):
         assert nodes[e["trace"]["span_id"]]["record_attributes"]["dbt.invocation_id"] == e["record_attributes"]["dbt.invocation_id"]
         runs.setdefault(e["record_attributes"]["dbt.invocation_id"], []).append(unique_id_of(e))
     assert len(runs) == 2 and all(len(ids) == 4 and len(set(ids)) == 4 for ids in runs.values()), runs
+
+
+# --- offline: one event table lookup and one schema read per run ----------------------------------
+
+def test_the_event_table_and_the_schema_snapshot_come_from_the_runs_copy():
+    out = run_macro("it_run_copies", {"relation_name": '"DB"."S"."T"', "event_table": "DB.S.EVENTS",
+                                       "signature": json.dumps([{"name": "ID", "data_type": "NUMBER(38,0)"}])})
+    assert out["event_table"] == "DB.S.EVENTS" and out["signature"] == [{"name": "ID", "data_type": "NUMBER(38,0)"}]
+    assert out["forgotten"] is True
+
+
+# --- sandbox: the reads of a run ------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def reads(dbt, sf):
+    """Three tables with a schema_changes test each: a first run writes their snapshots, one table changes, and a second
+    run is measured in the query history."""
+    run_id = uuid.uuid4().hex
+    schema = f"ICECORE_OBS_{run_id}".upper()
+    tables = {k: f"IT_DRIFT_{k.upper()}_{run_id}".upper() for k in ("fail", "warn", "stale")}
+    names = {f"it_uc2_drift_{k}_table": v for k, v in tables.items()}
+    obs = {"icecore": {"obs_schema": schema}, **names}
+    cur = sf.cursor()
+    cur.execute(f'create schema "{DATABASE}"."{schema}"')
+    try:
+        run_macro("it_create_emit_procedures", {}, ["--vars", json.dumps({"icecore": {"obs_schema": schema}})])
+        run_macro("it_create_views", {"schema": schema}, ["--vars", json.dumps({"icecore": {"obs_schema": schema}})])
+        for t in tables.values():
+            cur.execute(f'create table "{DATABASE}"."SPIKES"."{t}" (id number, gone date)')
+        since_utc = cur.execute("select sysdate()").fetchone()[0]
+        select = ["--select", "it_schema_changes_fail", "it_schema_changes_warn", "it_schema_changes_stale"]
+        invoke(["test", *select, "--vars", json.dumps(obs)])
+        wait_for_events(sf, "resource_attributes:\"snow.database.name\"::string = %(db)s and resource_attributes:\"snow.schema.name\"::string = %(schema)s"
+                            " and record:name::string = 'icecore.schema_signature'",
+                        {"db": DATABASE, "schema": schema}, min_rows=3, since=since_utc)
+        cur.execute(f'alter table "{DATABASE}"."SPIKES"."{tables["fail"]}" drop column gone')
+        start = cur.execute("select current_timestamp()").fetchone()[0]
+        second = node_statuses(invoke(["test", *select, "--vars", json.dumps(obs)]))
+        rows = sf.cursor(DictCursor).execute(
+            "select query_text, session_id from table(information_schema.query_history_by_user(user_name => current_user(), "
+            "end_time_range_start => %(t)s::timestamp_ltz, result_limit => 10000)) where start_time >= %(t)s::timestamp_ltz",
+            {"t": start}).fetchall()
+        # only this run's sessions: the account may be in use by others
+        mine = {r["SESSION_ID"] for r in rows if schema in r["QUERY_TEXT"]}
+        yield {"second": second, "texts": [r["QUERY_TEXT"] for r in rows if r["SESSION_ID"] in mine]}
+    finally:
+        cur.execute(f'drop schema if exists "{DATABASE}"."{schema}" cascade')
+        for t in tables.values():
+            cur.execute(f'drop table if exists "{DATABASE}"."SPIKES"."{t}"')
+
+
+@pytest.mark.sandbox
+def test_a_run_looks_up_the_event_table_and_reads_the_schema_history_once(reads):
+    blocks = [t for t in reads["texts"] if t.lower().startswith("execute immediate")]
+    # the verdicts do not change: the table that lost a column fails, from the snapshot the run start read
+    assert reads["second"] == {"it_schema_changes_fail": "fail", "it_schema_changes_warn": "pass", "it_schema_changes_stale": "pass"}
+    lookups = [t for t in blocks if "show parameters like" in t.lower()]
+    assert len(lookups) == 1, [t[:200] for t in lookups]
+    assert sum("dbt.schema.chunk_index" in t and " call " not in t.lower() for t in blocks) == 1

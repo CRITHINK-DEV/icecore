@@ -106,6 +106,7 @@ order by observed_at
     {{ return(none) }}
   {%- endif -%}
   {%- set tests = {} -%}
+  {%- set names = [] -%}
   {%- set days = namespace(max=30) -%}
   {%- for unique_id in selected_resources if unique_id.startswith('test.') -%}
     {%- set node = graph.nodes.get(unique_id) or {} -%}
@@ -113,6 +114,13 @@ order by observed_at
     {%- if kind in ['freshness', 'volume', 'column_anomaly', 'all_columns_anomaly', 'dimension_anomaly', 'schema_changes']
           and ('macro.icecore.test_' ~ kind) in ((node.get('depends_on') or {}).get('macros') or []) -%}
       {%- do tests.update({unique_id: true}) -%}
+      {#- the relation a schema_changes test checks, named as its records name it; one the graph names differently misses the copy and reads for itself -#}
+      {%- set target_id = node.get('attached_node') or ((node.get('depends_on') or {}).get('nodes') or [none])[0] -%}
+      {%- set target_node = graph.nodes.get(target_id) or graph.sources.get(target_id) -%}
+      {%- if kind == 'schema_changes' and target_node -%}
+        {%- set parts = [target_node.get('database'), target_node.get('schema'), target_node.get('alias') or target_node.get('identifier') or target_node.get('name')] | map('string') | map('upper') | list -%}
+        {%- if icecore._sql_error(parts, 'name') is none -%}{%- do names.append(icecore._sql(parts, 'name')) -%}{%- endif -%}
+      {%- endif -%}
       {%- set lookback = (node['test_metadata'].get('kwargs') or {}).get('lookback_days') -%}
       {%- if lookback is integer and lookback > days.max -%}{%- set days.max = lookback -%}{%- endif -%}
     {%- endif -%}
@@ -132,19 +140,30 @@ from (
   group by node_unique_id, relation, metric, "COLUMN", dimension
 )
   {%- endset -%}
-  {#- one guarded statement: Snowflake's clock first, so it is known even when the history cannot be read -#}
+  {#- the schema snapshots the schema_changes tests compare with (one read of the event table, for all of them), when the event table is known -#}
+  {%- set event_table = icecore._icecore_history_event_table() if names else none -%}
+  {#- one guarded statement: Snowflake's clock first, so it is known even when the history cannot be read; each read has its own guard -#}
   {%- set block -%}
 declare
   now_text varchar default null;
   v variant default null;
+  verr varchar default null;
+  sg variant default null;
 begin
   now_text := to_varchar(sysdate(), 'YYYY-MM-DD"T"HH24:MI:SS.FF6"Z"');
   begin
     select x into :v from (select ({{ sql }})::variant as x);
   exception
-    when other then return object_construct('now', now_text, 'error', sqlerrm);
+    when other then verr := sqlerrm;
   end;
-  return object_construct('now', now_text, 'value', v);
+  {%- if event_table is not none %}
+  begin
+    select x into :sg from (select ({{ icecore._icecore_signatures_sql(event_table, names) }})::variant as x);
+  exception
+    when other then sg := null;
+  end;
+  {%- endif %}
+  return object_construct('now', now_text, 'value', v, 'error', verr, 'signatures', sg);
 exception
   when other then return object_construct('error', sqlerrm);
 end;
@@ -161,8 +180,14 @@ end;
       {%- do series.update({tojson([row['u'], row['r'], row['m'], row['c'], row['d']]): row['p']}) -%}
     {%- endfor -%}
   {%- endif -%}
+  {#- a relation is in the copy only when the read worked: a failed read leaves the test to read for itself -#}
+  {%- set signatures = {} -%}
+  {%- if res.get('signatures') is iterable and res.get('signatures') is not string -%}
+    {%- for name in names -%}{%- do signatures.update({name: none}) -%}{%- endfor -%}
+    {%- for row in res['signatures'] -%}{%- do signatures.update({row['r']: row['c']}) -%}{%- endfor -%}
+  {%- endif -%}
   {%- do graph.setdefault('icecore', {}).setdefault('history', {}).update({invocation_id: {'tests': tests, 'lookback_days': days.max, 'series': series,
-      'clock_offset_ns': 0 if server_ns is none else server_ns - client_ns}}) -%}
+      'signatures': signatures, 'clock_offset_ns': 0 if server_ns is none else server_ns - client_ns}}) -%}
 {% endmacro %}
 
 
@@ -186,5 +211,6 @@ end;
 {% macro _icecore_forget_metric_history() %}
   {%- if graph is defined -%}
     {%- do ((graph.get('icecore') or {}).get('history') or {}).pop(invocation_id, none) -%}
+    {%- do ((graph.get('icecore') or {}).get('event_table') or {}).pop(invocation_id, none) -%}
   {%- endif -%}
 {% endmacro %}

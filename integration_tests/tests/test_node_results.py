@@ -147,8 +147,11 @@ def test_redacted_message_is_capped_at_1000_characters():
 
 def test_redacted_message_masks_the_row_values_of_a_duplicate_row_error():
     # Snowflake's text, as seen in the sandbox: 100090 (42P18): Duplicate row detected during DML action\nRow Values: [1, "a"]
-    out = run_macro("it_result_message", {"messages": ['100090 (42P18): Duplicate row detected during DML action\nRow Values: [12345678, "x", 2024-01-02, null]']})
-    assert out == ["100090 (42P18): Duplicate row detected during DML action\nRow Values: [?]"]
+    out = run_macro("it_result_message", {"messages": [
+        '100090 (42P18): Duplicate row detected during DML action\nRow Values: [12345678, "x", 2024-01-02, null]',
+        '100090 (42P18): Duplicate row detected during DML action\nRow Values: [1, [2, 345], {"k": 6}]\nnext line']})
+    assert out == ["100090 (42P18): Duplicate row detected during DML action\nRow Values: [?]",
+                   "100090 (42P18): Duplicate row detected during DML action\nRow Values: [?]\nnext line"]
 
 
 def test_package_declares_the_emitter_vars():

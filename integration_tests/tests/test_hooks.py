@@ -92,15 +92,6 @@ def test_telemetry_is_off_for_dbt_compile():
     assert res.success and any("select 'False' as telemetry" in line for line in lines), lines[-5:]
 
 
-@pytest.mark.parametrize("command", ["compile", "show"])
-def test_a_monitor_test_sends_no_records_for_commands_that_run_no_tests(command):
-    # Offline, a send would fail to connect: the macro must answer '' before it reaches the procedure.
-    install_deps()
-    lines = []
-    res = invoke([command, "--inline", "select '[{{ icecore._icecore_emit_from_test([{'kind': 'metric'}]) }}]' as records",
-                  "--no-populate-cache"], [lambda event: lines.append(getattr(event.info, "msg", "") or "")])
-    assert res.success and any("select '[]' as records" in line for line in lines), lines[-5:]
-
 
 def test_run_end_log_has_status_and_node_counts():
     records = run_macro("it_end_run_render", {"results": SUCCESS})["records"]

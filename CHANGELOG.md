@@ -4,6 +4,8 @@ All notable changes to icecore are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-22
+
 ### Security
 - App, local run (`streamlit/requirements-local.txt`): Streamlit 1.52.2 to 1.67.0 and Pillow 12.3.0 to 13.0.0, which fix every known advisory of both (`pip-audit` finds none). The local app now needs Python 3.11 to 3.13. Inside Snowflake the warehouse runtime still gets Streamlit 1.52.2 and Pillow 12.3.0 from `environment.yml`: the Snowflake Anaconda channel has no newer Streamlit, and its Streamlit 1.52.2 needs Pillow below 13. Those 44 advisories stay unreachable from the app (see 0.2.0).
 
